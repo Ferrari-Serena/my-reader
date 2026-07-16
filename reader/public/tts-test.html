@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TTS Diagnostic</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; }
+  button { padding: 12px 24px; font-size: 16px; margin: 8px 0; width: 100%; }
+  .result { margin: 12px 0; padding: 12px; border-radius: 8px; }
+  .ok { background: #d4edda; color: #155724; }
+  .fail { background: #f8d7da; color: #721c24; }
+  .info { background: #e3f2fd; color: #0d47a1; }
+</style>
+</head>
+<body>
+<h2>TTS Diagnostic</h2>
+<p>Click each button and report what you hear.</p>
+
+<div id="results"></div>
+
+<button onclick="test1()">Test 1: Speak one word ("hello")</button>
+<button onclick="test2()">Test 2: Speak short sentence</button>
+<button onclick="test3()">Test 3: Get available voices</button>
+<button onclick="test4()">Test 4: Speak with cancel+delay</button>
+<button onclick="test5()">Test 5: Speak with resume check</button>
+
+<script>
+function log(msg, type) {
+  const d = document.getElementById('results')
+  d.innerHTML += `<div class="result ${type}">${msg}</div>`
+}
+
+function test1() {
+  log('Test 1: Running...', 'info')
+  try {
+    if (!('speechSynthesis' in window)) {
+      log('FAIL: speechSynthesis not supported in this browser', 'fail')
+      return
+    }
+    const u = new SpeechSynthesisUtterance('hello')
+    u.lang = 'en-US'
+    u.onstart = () => log('Test 1: onstart fired', 'ok')
+    u.onend = () => log('Test 1: onend fired — SUCCESS', 'ok')
+    u.onerror = (e) => log(`Test 1: onerror — ${e.error}`, 'fail')
+    speechSynthesis.speak(u)
+    log('Test 1: speak() called. Listen...', 'info')
+  } catch(e) {
+    log(`Test 1: Exception — ${e.message}`, 'fail')
+  }
+}
+
+function test2() {
+  log('Test 2: Running...', 'info')
+  try {
+    const u = new SpeechSynthesisUtterance('The quick brown fox jumps over the lazy dog.')
+    u.lang = 'en-US'
+    u.rate = 0.9
+    u.onstart = () => log('Test 2: onstart fired', 'ok')
+    u.onend = () => log('Test 2: onend fired — SUCCESS', 'ok')
+    u.onerror = (e) => log(`Test 2: onerror — ${e.error}`, 'fail')
+    speechSynthesis.speak(u)
+  } catch(e) {
+    log(`Test 2: Exception — ${e.message}`, 'fail')
+  }
+}
+
+function test3() {
+  log('Test 3: Running...', 'info')
+  const voices = speechSynthesis.getVoices()
+  log(`Found ${voices.length} voices total`, 'info')
+  const enVoices = voices.filter(v => v.lang.startsWith('en'))
+  enVoices.forEach(v => log(`  - ${v.name} (${v.lang})`, 'info'))
+  log(`${enVoices.length} English voices available`, enVoices.length > 0 ? 'ok' : 'fail')
+}
+
+function test4() {
+  log('Test 4: Cancel+delay test...', 'info')
+  speechSynthesis.cancel()
+  const u = new SpeechSynthesisUtterance('Testing cancel and delay pattern')
+  u.lang = 'en-US'
+  u.onstart = () => log('Test 4: onstart fired', 'ok')
+  u.onend = () => log('Test 4: onend fired — SUCCESS', 'ok')
+  u.onerror = (e) => log(`Test 4: onerror — ${e.error}`, 'fail')
+  setTimeout(() => {
+    log('Test 4: speak() after 80ms delay', 'info')
+    speechSynthesis.speak(u)
+  }, 80)
+}
+
+let timer5 = null
+function test5() {
+  log('Test 5: With resume timer...', 'info')
+  speechSynthesis.cancel()
+  const u = new SpeechSynthesisUtterance('This sentence has a resume timer running every two hundred milliseconds.')
+  u.lang = 'en-US'
+  u.onstart = () => log('Test 5: onstart fired', 'ok')
+  u.onend = () => { log('Test 5: onend fired — SUCCESS', 'ok'); clearInterval(timer5) }
+  u.onerror = (e) => { log(`Test 5: onerror — ${e.error}`, 'fail'); clearInterval(timer5) }
+  timer5 = setInterval(() => {
+    if (speechSynthesis.paused) {
+      log('Test 5: paused detected, resuming...', 'info')
+      speechSynthesis.resume()
+    }
+  }, 200)
+  setTimeout(() => {
+    speechSynthesis.speak(u)
+  }, 80)
+}
+</script>
+</body>
+</html>
