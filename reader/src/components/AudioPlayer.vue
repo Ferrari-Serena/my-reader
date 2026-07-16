@@ -1,57 +1,101 @@
 <template>
   <div class="audio-player" v-if="chapterText">
-    <button class="play-btn" @click="togglePlay" :disabled="loading">
-      <span v-if="loading" class="spinner-sm"></span>
-      <span v-else>{{ isPlaying ? '⏸' : '▶' }}</span>
+    <button class="play-btn" @click="togglePlay" :disabled="state === 'loading'">
+      <span v-if="state === 'loading'" class="spinner-sm"></span>
+      <span v-else>{{ state === 'playing' ? '⏸' : '▶' }}</span>
     </button>
 
     <div class="audio-info">
-      <span class="audio-label">{{ isPlaying ? 'Playing...' : 'Read aloud' }}</span>
+      <span class="audio-label">{{ statusLabel }}</span>
       <span class="audio-source">{{ source }}</span>
     </div>
+
+    <button
+      v-if="state === 'error'"
+      class="fallback-btn"
+      @click="useBrowserTTS"
+    >
+      Use Browser TTS
+    </button>
   </div>
-  <audio ref="audioEl" @ended="onAudioEnded" @error="onAudioError" style="display:none"></audio>
+  <audio ref="audioEl" @ended="onAudioDone" @error="onAudioDone" style="display:none"></audio>
 </template>
 
 <script setup>
-import { ref, onUnmounted } from 'vue'
+import { ref, watch, onUnmounted, computed } from 'vue'
 
 const TTS_WORKER = 'https://my-reader-tts.serena605371358.workers.dev'
+const FETCH_TIMEOUT = 30000
+const CHUNK_MAX = 160
 
 const props = defineProps({
   chapterText: { type: String, default: '' }
 })
 
-const isPlaying = ref(false)
-const loading = ref(false)
+// ---- state machine ----
+
+const state = ref('idle') // idle | loading | playing | error
 const source = ref('Cloud TTS')
 
 const audioEl = ref(null)
+let sessionId = 0
 let abortController = null
+let blobUrl = null
 
-// ---- play / pause ----
+// browser TTS state
+let browserSessionId = 0
+let resumeTimer = null
+let pollTimer = null
+let chunkDone = false
+
+const statusLabel = computed(() => {
+  switch (state.value) {
+    case 'loading': return 'Loading...'
+    case 'playing': return 'Playing...'
+    case 'error': return 'Cloud TTS unavailable'
+    default: return 'Read aloud'
+  }
+})
+
+// ---- chapter change → stop ----
+
+watch(() => props.chapterText, () => {
+  stopAll()
+})
+
+// ---- click handler ----
 
 async function togglePlay() {
-  if (isPlaying.value) {
-    stopPlayback()
+  if (state.value === 'playing') {
+    stopAll()
     return
   }
-  await startPlayback()
+  if (state.value === 'loading') {
+    stopAll()
+    return
+  }
+  await startCloudTTS()
 }
 
-// ---- start ----
+// ---- Cloud TTS (primary) ----
 
-async function startPlayback() {
+async function startCloudTTS() {
   const text = props.chapterText?.trim()
   if (!text) return
 
-  stopPlayback()
-  loading.value = true
+  // clean up any previous session
+  stopAll()
+  const mySid = ++sessionId
+
+  // P0: pre-warm audio element within user gesture to lock autoplay permission
+  await preWarmAudio()
+
+  state.value = 'loading'
   source.value = 'Cloud TTS'
-  isPlaying.value = true
 
   try {
     abortController = new AbortController()
+    const timeoutId = setTimeout(() => abortController.abort(), FETCH_TIMEOUT)
 
     const resp = await fetch(`${TTS_WORKER}/api/tts`, {
       method: 'POST',
@@ -59,88 +103,190 @@ async function startPlayback() {
       body: JSON.stringify({ text, voice: 'asteria' }),
       signal: abortController.signal
     })
+    clearTimeout(timeoutId)
+
+    if (mySid !== sessionId) return // stale
 
     if (!resp.ok) throw new Error(`Worker returned ${resp.status}`)
 
     const blob = await resp.blob()
-    const url = URL.createObjectURL(blob)
+    if (mySid !== sessionId) return // stale
 
-    if (audioEl.value) {
-      audioEl.value.src = url
-      audioEl.value.play().catch(e => {
-        console.warn('Audio play failed:', e)
-        fallbackToBrowser()
-      })
-    }
+    // revoke previous blob URL
+    if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null }
+    blobUrl = URL.createObjectURL(blob)
 
-    loading.value = false
+    const el = audioEl.value
+    if (!el) { state.value = 'error'; return }
+
+    el.src = blobUrl
+    await el.play()
+
+    if (mySid !== sessionId) return // stale
+    state.value = 'playing'
 
   } catch (err) {
-    if (err.name === 'AbortError') return
-    console.warn('Cloud TTS failed, falling back to browser:', err.message)
-    loading.value = false
-    fallbackToBrowser()
+    if (mySid !== sessionId) return
+    if (err.name === 'AbortError' && state.value === 'loading') {
+      // timed out or user cancelled → show error
+    }
+    state.value = 'error'
   }
 }
 
-// ---- stop ----
+// ---- pre-warm: unlock audio autoplay within user gesture ----
 
-function stopPlayback() {
-  if (abortController) {
-    abortController.abort()
-    abortController = null
+async function preWarmAudio() {
+  const el = audioEl.value
+  if (!el) return
+  // tiny silent WAV — locks the user gesture for subsequent play() calls
+  el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+  try { await el.play() } catch { /* expected to throw or be silent */ }
+  el.src = ''
+}
+
+// ---- audio element done (ended or error) ----
+
+function onAudioDone() {
+  if (state.value === 'playing') {
+    stopAll()
   }
+}
+
+// ---- manual browser TTS fallback (user clicks button) ----
+
+function useBrowserTTS() {
+  stopAll()
+  sessionId++  // invalidate any pending Cloud TTS callbacks
+  startBrowserTTS()
+}
+
+function startBrowserTTS() {
+  if (!('speechSynthesis' in window)) {
+    state.value = 'error'
+    return
+  }
+
+  const text = props.chapterText?.trim()
+  if (!text) return
+
+  const mySid = ++browserSessionId
+
+  // chunk text into sentences ≤ CHUNK_MAX chars each
+  const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [text]
+  const chunks = []
+  for (const s of sentences) {
+    const t = s.trim()
+    if (!t) continue
+    if (t.length <= CHUNK_MAX) { chunks.push(t); continue }
+    const words = t.split(/\s+/)
+    let cur = ''
+    for (const w of words) {
+      const cand = cur ? cur + ' ' + w : w
+      if (cand.length > CHUNK_MAX && cur.length > 0) { chunks.push(cur); cur = w }
+      else cur = cand
+    }
+    if (cur) chunks.push(cur)
+  }
+  if (chunks.length === 0) chunks.push(text)
+
+  let idx = 0
+  state.value = 'playing'
+  source.value = 'Browser TTS'
+
+  function speakNext() {
+    if (mySid !== browserSessionId || idx >= chunks.length) {
+      if (mySid === browserSessionId && idx >= chunks.length) stopBrowserTTS()
+      return
+    }
+
+    const chunk = chunks[idx].trim()
+    if (!chunk) { idx++; speakNext(); return }
+
+    chunkDone = false
+    const utt = new SpeechSynthesisUtterance(chunk)
+    utt.lang = 'en-US'
+    utt.rate = 0.9
+
+    utt.onstart = () => {
+      clearTimers()
+      resumeTimer = setInterval(() => {
+        if (mySid !== browserSessionId) { clearTimers(); return }
+        if (speechSynthesis.paused) speechSynthesis.resume()
+      }, 200)
+    }
+
+    utt.onend = () => {
+      if (chunkDone) return; chunkDone = true
+      clearTimers()
+      if (mySid === browserSessionId) { idx++; speakNext() }
+    }
+
+    utt.onerror = (e) => {
+      if (e.error === 'canceled' || e.error === 'interrupted') return
+      if (chunkDone) return; chunkDone = true
+      clearTimers()
+      if (mySid === browserSessionId) {
+        setTimeout(() => { if (mySid === browserSessionId) { idx++; speakNext() } }, 300)
+      }
+    }
+
+    speechSynthesis.speak(utt)
+
+    // poll fallback: advance even if onend never fires (iOS Safari)
+    const estMs = Math.max(3000, chunk.length * 50)
+    const start = Date.now()
+    pollTimer = setInterval(() => {
+      if (mySid !== browserSessionId) { clearTimers(); return }
+      const elap = Date.now() - start
+      if (!speechSynthesis.speaking && elap > 1000) {
+        if (chunkDone) return; chunkDone = true
+        clearTimers()
+        if (mySid === browserSessionId) { idx++; speakNext() }
+        return
+      }
+      if (elap > estMs + 5000) {
+        if (chunkDone) return; chunkDone = true
+        clearTimers()
+        speechSynthesis.cancel()
+        if (mySid === browserSessionId) { idx++; speakNext() }
+      }
+    }, 500)
+  }
+
+  speakNext()
+}
+
+function stopBrowserTTS() {
+  browserSessionId++
+  clearTimers()
+  if ('speechSynthesis' in window) speechSynthesis.cancel()
+  if (state.value === 'playing') state.value = 'idle'
+}
+
+function clearTimers() {
+  if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null }
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
+// ---- stop everything ----
+
+function stopAll() {
+  sessionId++
+  if (abortController) { abortController.abort(); abortController = null }
   if (audioEl.value) {
     audioEl.value.pause()
     audioEl.value.src = ''
   }
-  if ('speechSynthesis' in window) {
-    speechSynthesis.cancel()
-  }
-  isPlaying.value = false
-  loading.value = false
-}
-
-// ---- audio element events ----
-
-function onAudioEnded() {
-  stopPlayback()
-}
-
-function onAudioError(e) {
-  console.warn('Audio playback error, falling back to browser')
-  stopPlayback()
-  fallbackToBrowser()
-}
-
-// ---- browser speechSynthesis fallback ----
-
-function fallbackToBrowser() {
-  if (!('speechSynthesis' in window)) return
-
-  source.value = 'Browser TTS'
-  isPlaying.value = true
-
-  const text = props.chapterText?.trim()
-  if (!text) {
-    isPlaying.value = false
-    return
-  }
-
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'en-US'
-  utterance.rate = 0.9
-
-  utterance.onend = () => { isPlaying.value = false }
-  utterance.onerror = () => { isPlaying.value = false }
-
-  speechSynthesis.speak(utterance)
+  stopBrowserTTS()
+  if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null }
+  state.value = 'idle'
 }
 
 // ---- lifecycle ----
 
 onUnmounted(() => {
-  stopPlayback()
+  stopAll()
 })
 </script>
 
@@ -213,6 +359,22 @@ onUnmounted(() => {
 .audio-source {
   font-size: 11px;
   color: var(--text-secondary, #6e6e73);
+}
+
+.fallback-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  border: 1px solid var(--accent-color, #1a73e8);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-color, #1a73e8);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fallback-btn:hover {
+  background: var(--accent-color, #1a73e8);
+  color: white;
 }
 
 .voice-select {
