@@ -32,10 +32,42 @@ const voiceName = ref('')
 const source = ref('Browser TTS')
 
 let utteranceId = 0
-let currentUtterance = null
 let sentenceQueue = []
 let queueIndex = 0
 let resumeTimer = null
+let pollTimer = null
+let chunkCompleted = false
+
+// ---- chunk splitting ----
+
+function splitIntoChunks(text, maxLen = 180) {
+  const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [text]
+  const result = []
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim()
+    if (!trimmed) continue
+    if (trimmed.length <= maxLen) {
+      result.push(trimmed)
+      continue
+    }
+    // split long sentences at word boundaries
+    const words = trimmed.split(/\s+/)
+    let chunk = ''
+    for (const word of words) {
+      const candidate = chunk ? chunk + ' ' + word : word
+      if (candidate.length > maxLen && chunk.length > 0) {
+        result.push(chunk)
+        chunk = word
+      } else {
+        chunk = candidate
+      }
+    }
+    if (chunk) result.push(chunk)
+  }
+  return result.length > 0 ? result : [text]
+}
+
+// ---- voice loading ----
 
 function loadVoices() {
   if ('speechSynthesis' in window) {
@@ -43,11 +75,15 @@ function loadVoices() {
   }
 }
 
+// ---- play / pause ----
+
 function togglePlay() {
   if (!('speechSynthesis' in window)) {
     alert('Text-to-speech not supported in this browser.')
     return
   }
+  // Force-load voices (mobile may not have loaded them yet)
+  speechSynthesis.getVoices()
   if (isPlaying.value) {
     stopPlayback()
     return
@@ -55,29 +91,46 @@ function togglePlay() {
   startPlayback()
 }
 
+// ---- start / stop ----
+
 function startPlayback() {
-  // Cancel any previous playback first
-  speechSynthesis.cancel()
-  // Increment ID to invalidate any pending callbacks from old utterances
+  const wasActive = speechSynthesis.speaking || speechSynthesis.pending
+  if (wasActive) {
+    speechSynthesis.cancel()
+  }
   const myId = ++utteranceId
 
   const text = props.chapterText?.trim()
   if (!text) return
 
-  // Split into sentences (~200 char chunks to avoid Chrome pause bug)
-  sentenceQueue = text.match(/[^.!?\n]+[.!?\n]+/g) || [text]
-  if (sentenceQueue.length === 0) sentenceQueue = [text]
-
+  sentenceQueue = splitIntoChunks(text, 180)
   queueIndex = 0
+  chunkCompleted = false
   isPlaying.value = true
-  speakNext(myId)
+
+  // P0 fix: iOS Safari needs a tick after cancel before speak.
+  // Without this delay, iOS drops the new utterance silently.
+  const delay = wasActive ? 80 : 10
+  setTimeout(() => {
+    if (myId === utteranceId) {
+      speakNext(myId)
+    }
+  }, delay)
 }
 
+function stopPlayback() {
+  utteranceId++
+  clearResumeTimer()
+  clearPollTimer()
+  speechSynthesis.cancel()
+  isPlaying.value = false
+}
+
+// ---- speak one chunk ----
+
 function speakNext(myId) {
-  // Guard: if playback was stopped or a new playback started, abort
   if (myId !== utteranceId || queueIndex >= sentenceQueue.length) {
     if (myId === utteranceId && queueIndex >= sentenceQueue.length) {
-      // This playback session completed normally
       stopPlayback()
     }
     return
@@ -90,43 +143,43 @@ function speakNext(myId) {
     return
   }
 
-  currentUtterance = new SpeechSynthesisUtterance(chunk)
-  currentUtterance.lang = 'en-US'
-  currentUtterance.rate = 0.9
-  currentUtterance.pitch = 1.0
+  chunkCompleted = false
+  const utterance = new SpeechSynthesisUtterance(chunk)
+  utterance.lang = 'en-US'
+  utterance.rate = 0.9
+  utterance.pitch = 1.0
 
   const voice = voices.value.find(v => v.name === voiceName.value)
-  if (voice) currentUtterance.voice = voice
+  if (voice) utterance.voice = voice
 
-  currentUtterance.onstart = () => {
-    // Start periodic resume check (fixes both Chrome desktop pause bug and mobile silent bug)
+  // --- onstart: resume timer (Chrome pause-bug workaround) ---
+  utterance.onstart = () => {
     clearResumeTimer()
     resumeTimer = setInterval(() => {
-      if (myId !== utteranceId) {
-        clearResumeTimer()
-        return
-      }
-      if (speechSynthesis.paused) {
-        speechSynthesis.resume()
-      }
-      if (!speechSynthesis.speaking && speechSynthesis.pending) {
-        speechSynthesis.resume()
-      }
+      if (myId !== utteranceId) { clearResumeTimer(); return }
+      if (speechSynthesis.paused) speechSynthesis.resume()
+      if (!speechSynthesis.speaking && speechSynthesis.pending) speechSynthesis.resume()
     }, 200)
   }
 
-  currentUtterance.onend = () => {
+  // --- onend: fast path (desktop Chrome) ---
+  utterance.onend = () => {
+    if (chunkCompleted) return
+    chunkCompleted = true
+    clearPollTimer()
     if (myId === utteranceId) {
       queueIndex++
       speakNext(myId)
     }
   }
 
-  currentUtterance.onerror = (e) => {
-    if (e.error === 'canceled' || e.error === 'interrupted') {
-      return
-    }
+  // --- onerror: log and (possibly) recover ---
+  utterance.onerror = (e) => {
+    if (e.error === 'canceled' || e.error === 'interrupted') return
     console.warn('TTS error:', e.error)
+    if (chunkCompleted) return
+    chunkCompleted = true
+    clearPollTimer()
     if (myId === utteranceId) {
       setTimeout(() => {
         if (myId === utteranceId) {
@@ -137,22 +190,54 @@ function speakNext(myId) {
     }
   }
 
-  speechSynthesis.speak(currentUtterance)
+  speechSynthesis.speak(utterance)
+
+  // --- P0 fix: poll timer — advances queue even if onend never fires (iOS Safari) ---
+  const estimatedMs = Math.max(3000, chunk.length * 50)
+  const pollStart = Date.now()
+  clearPollTimer()
+  pollTimer = setInterval(() => {
+    if (myId !== utteranceId) { clearPollTimer(); return }
+
+    const elapsed = Date.now() - pollStart
+    const silent = !speechSynthesis.speaking
+
+    if (silent && elapsed > 1000) {
+      if (chunkCompleted) return
+      chunkCompleted = true
+      clearPollTimer()
+      if (myId === utteranceId) {
+        queueIndex++
+        speakNext(myId)
+      }
+      return
+    }
+
+    // safety timeout: force advance if chunk runs way over estimate
+    if (elapsed > estimatedMs + 5000) {
+      if (chunkCompleted) return
+      chunkCompleted = true
+      clearPollTimer()
+      speechSynthesis.cancel()
+      if (myId === utteranceId) {
+        queueIndex++
+        speakNext(myId)
+      }
+    }
+  }, 500)
 }
+
+// ---- timer cleanup ----
 
 function clearResumeTimer() {
-  if (resumeTimer) {
-    clearInterval(resumeTimer)
-    resumeTimer = null
-  }
+  if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null }
 }
 
-function stopPlayback() {
-  utteranceId++
-  clearResumeTimer()
-  speechSynthesis.cancel()
-  isPlaying.value = false
+function clearPollTimer() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 }
+
+// ---- lifecycle ----
 
 onMounted(() => {
   loadVoices()
