@@ -17,12 +17,6 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    defaults:
-      run:
-        working-directory: reader
 
     steps:
       - name: Checkout
@@ -31,15 +25,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: reader/package-lock.json
+          node-version: '24.x'
 
       - name: Install dependencies
         run: npm ci
+        working-directory: reader
 
       - name: Build
         run: npm run build
+        working-directory: reader
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
