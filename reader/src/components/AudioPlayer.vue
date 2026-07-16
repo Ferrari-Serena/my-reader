@@ -127,10 +127,15 @@ async function startCloudTTS() {
 
   } catch (err) {
     if (mySid !== sessionId) return
-    if (err.name === 'AbortError' && state.value === 'loading') {
-      // timed out or user cancelled → show error
+    if (err.name === 'AbortError') {
+      state.value = 'error'
+      source.value = 'Request timed out'
+      console.error('Cloud TTS: request timed out (30s)')
+      return
     }
+    console.error('Cloud TTS failed:', err.name, err.message)
     state.value = 'error'
+    source.value = err.message || 'Cloud TTS unavailable'
   }
 }
 
