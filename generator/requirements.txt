@@ -1,0 +1,8 @@
+flask==3.1.1
+flask-cors==5.0.1
+ebooklib==0.18
+beautifulsoup4==4.13.4
+lxml==5.3.2
+nltk==3.9.1
+requests==2.32.4
+PyMuPDF==1.25.5

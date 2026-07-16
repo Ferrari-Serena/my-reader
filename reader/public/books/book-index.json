@@ -1,0 +1,11 @@
+{
+  "books": [
+    {
+      "id": "the-giver",
+      "title": "The Giver",
+      "author": "Lois Lowry",
+      "coverUrl": null,
+      "dataUrl": "books/the-giver/"
+    }
+  ]
+}
