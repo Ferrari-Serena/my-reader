@@ -35,6 +35,7 @@ let utteranceId = 0
 let currentUtterance = null
 let sentenceQueue = []
 let queueIndex = 0
+let resumeTimer = null
 
 function loadVoices() {
   if ('speechSynthesis' in window) {
@@ -98,14 +99,23 @@ function speakNext(myId) {
   if (voice) currentUtterance.voice = voice
 
   currentUtterance.onstart = () => {
-    // Chrome workaround: resume if browser paused the utterance
-    if (speechSynthesis.paused) {
-      setTimeout(() => speechSynthesis.resume(), 30)
-    }
+    // Start periodic resume check (fixes both Chrome desktop pause bug and mobile silent bug)
+    clearResumeTimer()
+    resumeTimer = setInterval(() => {
+      if (myId !== utteranceId) {
+        clearResumeTimer()
+        return
+      }
+      if (speechSynthesis.paused) {
+        speechSynthesis.resume()
+      }
+      if (!speechSynthesis.speaking && speechSynthesis.pending) {
+        speechSynthesis.resume()
+      }
+    }, 200)
   }
 
   currentUtterance.onend = () => {
-    // Only advance if this is still the current playback session
     if (myId === utteranceId) {
       queueIndex++
       speakNext(myId)
@@ -114,27 +124,32 @@ function speakNext(myId) {
 
   currentUtterance.onerror = (e) => {
     if (e.error === 'canceled' || e.error === 'interrupted') {
-      // Normal cancellation — don't advance
       return
     }
     console.warn('TTS error:', e.error)
-    // On recoverable error, advance to next chunk after a brief delay
     if (myId === utteranceId) {
       setTimeout(() => {
         if (myId === utteranceId) {
           queueIndex++
           speakNext(myId)
         }
-      }, 200)
+      }, 300)
     }
   }
 
   speechSynthesis.speak(currentUtterance)
 }
 
+function clearResumeTimer() {
+  if (resumeTimer) {
+    clearInterval(resumeTimer)
+    resumeTimer = null
+  }
+}
+
 function stopPlayback() {
-  // Increment ID to invalidate all pending utterance callbacks
   utteranceId++
+  clearResumeTimer()
   speechSynthesis.cancel()
   isPlaying.value = false
 }
