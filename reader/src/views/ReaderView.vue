@@ -46,7 +46,7 @@
           <span
             v-for="(word, wi) in para.text.split(/(\s+)/)" :key="wi"
             :class="['word', { 'annotated': isAnnotated(word, para) }]"
-            :data-word="word.replace(/[^a-zA-Z]/g, '').toLowerCase()"
+            :data-word="word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()"
             @click.stop="onWordClick($event)"
           >{{ word }}</span>
         </p>
@@ -90,6 +90,9 @@ import WordPopup from '../components/WordPopup.vue'
 
 const route = useRoute()
 const router = useRouter()
+
+// M-W 词典代理 Worker（Phase 6b；名字沿用旧 TTS Worker，产品化前改名）
+const DICT_WORKER = 'https://my-reader-tts.serena605371358.workers.dev'
 
 const bookId = computed(() => route.params.bookId)
 const chapterId = computed(() => route.params.chapterId)
@@ -211,14 +214,31 @@ async function onWordClick(event) {
   dictLoading.value = true
 
   const entry = dictionary.value[word]
-  if (entry?.definitions?.length) {
+  if (entry?.definitions?.length || entry?.notFound) {
     dictEntry.value = entry
     dictLoading.value = false
     return
   }
 
+  // 本地词典无释义 → Worker 在线查词兜底（M-W 代理 + D1 边缘缓存）
   dictEntry.value = entry || null
-  dictLoading.value = false
+  const ctrl = new AbortController()
+  const timeoutId = setTimeout(() => ctrl.abort(), 8000)
+  try {
+    const res = await fetch(`${DICT_WORKER}/api/dict/${encodeURIComponent(word)}`, { signal: ctrl.signal })
+    if (selectedWord.value !== word) return // 用户已点了别的词
+    if (res.ok || res.status === 404) {
+      const online = await res.json()
+      // 合并：在线释义 + 本地条目的考试标记/出现章节；notFound 也缓存避免重复请求
+      const merged = { ...(entry || {}), ...online }
+      dictionary.value[word] = merged
+      dictEntry.value = merged
+    }
+  } catch { /* 离线/超时 → 保持本地条目（可能无释义） */ }
+  finally {
+    clearTimeout(timeoutId)
+    if (selectedWord.value === word) dictLoading.value = false
+  }
 }
 
 async function loadBook() {
