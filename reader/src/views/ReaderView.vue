@@ -27,8 +27,9 @@
 
       <article
         class="chapter-content"
-        @touchstart="onTouchStart"
-        @touchend="onTouchEnd"
+        @click="onWordClick"
+        @touchstart.passive="onTouchStart"
+        @touchend.passive="onTouchEnd"
       >
         <h2 class="chapter-title">{{ currentChapter.title }}</h2>
         <p
@@ -47,7 +48,6 @@
             v-for="(word, wi) in para.text.split(/(\s+)/)" :key="wi"
             :class="['word', { 'annotated': isAnnotated(word, para), 'saved': isSavedWord(word) }]"
             :data-word="word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()"
-            @click.stop="onWordClick($event)"
           >{{ word }}</span>
         </p>
       </article>
@@ -228,14 +228,19 @@ async function onAddVocab(word) {
   })
 }
 
+// 滑动切章手势：加方向约束防斜滑误触发（横向位移须 >80px 且明显大于纵向位移，
+// 否则上下滚动时拇指弧线轨迹会被误判为翻章——真机白屏问题的触发源）
 let touchStartX = 0
+let touchStartY = 0
 function onTouchStart(e) {
   touchStartX = e.changedTouches[0].clientX
+  touchStartY = e.changedTouches[0].clientY
 }
 function onTouchEnd(e) {
-  const diff = touchStartX - e.changedTouches[0].clientX
-  if (Math.abs(diff) > 80) {
-    if (diff > 0) nextChapter()
+  const dx = touchStartX - e.changedTouches[0].clientX
+  const dy = touchStartY - e.changedTouches[0].clientY
+  if (Math.abs(dx) > 80 && Math.abs(dx) > 2 * Math.abs(dy)) {
+    if (dx > 0) nextChapter()
     else prevChapter()
   }
 }
@@ -333,9 +338,22 @@ function jumpToChapter(index) {
   setChapter(index)
 }
 
-watch([bookId, chapterId], () => {
+// 换书才重新 loadBook（下载 chapters/dictionary JSON）；
+// 同书换章只做本地 setChapter，零网络请求——去掉 App.vue 的 :key 后由这里接管路由变化
+// ⚠️ 两个 watch 的声明顺序不可调换：同一次导航中按创建顺序执行，
+// bookId watch 必须先跑并同步置 loading=true，chapterId watch 的 guard 才能挡住
+// "拿旧书章节表 findIndex" 的跨书竞态
+watch(bookId, () => {
   if (bookId.value) loadBook()
 }, { immediate: true })
+
+// 浏览器前进/后退或手改地址栏章节时同步视图；setChapter 里的 router.replace
+// 产生的同值变更被 index 比较挡住，不会循环
+watch(chapterId, (id) => {
+  if (!id || loading.value || !chapters.value.length) return
+  const idx = chapters.value.findIndex(c => c.id === id)
+  if (idx >= 0 && idx !== currentChapterIndex.value) setChapter(idx)
+})
 </script>
 
 <style scoped>
