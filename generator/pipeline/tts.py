@@ -61,28 +61,40 @@ def build_pipeline():
     return KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M')  # 'a' = American English
 
 
-def synthesize_chapter(pipeline, chapter: dict, read_title: bool = True) -> np.ndarray:
-    """合成一章：逐段落生成，段落边界插静音"""
-    texts = []
+def synthesize_chapter(pipeline, chapter: dict, read_title: bool = True):
+    """合成一章：逐段落生成，段落边界插静音。返回 (audio, offsets)。
+    offsets: 段落 ID → 在整章音频中的起始秒数（前端点击段落定位播放用）"""
+    items = []  # (段落 id 或 None, 文本)；标题无 id
     if read_title and chapter.get('title'):
-        texts.append(chapter['title'])
-    texts.extend(p['text'] for p in chapter.get('paragraphs', []) if p.get('text', '').strip())
+        items.append((None, chapter['title']))
+    items.extend(
+        (p['id'], p['text'])
+        for p in chapter.get('paragraphs', [])
+        if p.get('text', '').strip()
+    )
 
     silence = np.zeros(int(PARAGRAPH_SILENCE_SEC * SAMPLE_RATE), dtype=np.float32)
     pieces = []
-    for i, text in enumerate(texts):
+    offsets = {}
+    n_samples = 0
+    for i, (pid, text) in enumerate(items):
         if pieces:
             pieces.append(silence)
+            n_samples += silence.size
+        if pid is not None:
+            offsets[pid] = round(n_samples / SAMPLE_RATE, 2)
         # 段内因 510 token 上限自动切出的块直接拼接，不插静音
         for _, _, audio in pipeline(text, voice=VOICE_PATH):
-            pieces.append(np.asarray(audio, dtype=np.float32))
+            arr = np.asarray(audio, dtype=np.float32)
+            pieces.append(arr)
+            n_samples += arr.size
         done = i + 1
-        if done % 10 == 0 or done == len(texts):
-            print(f'  段落 {done}/{len(texts)}', flush=True)
+        if done % 10 == 0 or done == len(items):
+            print(f'  段落 {done}/{len(items)}', flush=True)
 
     if not pieces:
-        return np.zeros(0, dtype=np.float32)
-    return np.concatenate(pieces)
+        return np.zeros(0, dtype=np.float32), offsets
+    return np.concatenate(pieces), offsets
 
 
 def encode_mp3(wav_path: str, mp3_path: str, bitrate: str):
@@ -142,17 +154,22 @@ def main():
         if args.chapters is None and ch['id'] in args.skip:
             print(f'⏭️  跳过 {ch["id"]}（{ch["title"]}）')
             continue
-        outputs = []  # [(mp3_path, bitrate), ...]
+        timings_path = os.path.join(audio_dir, f'{ch["id"]}{args.suffix}.timings.json')
+        timings_missing = not os.path.exists(timings_path)
+        all_outputs = []   # 该章全部码率输出
+        missing = []       # 其中缺失的
         for br in args.bitrate:
             tag = f'_{br}' if multi else ''
             mp3_path = os.path.join(audio_dir, f'{ch["id"]}{args.suffix}{tag}.mp3')
-            if not args.force and os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 0:
-                continue
-            outputs.append((mp3_path, br))
-        if not outputs:
+            all_outputs.append((mp3_path, br))
+            if args.force or not os.path.exists(mp3_path) or os.path.getsize(mp3_path) == 0:
+                missing.append((mp3_path, br))
+        if not missing and not timings_missing and not args.force:
             print(f'✅ 已存在，跳过 {ch["id"]}')
             continue
-        targets.append((ch, outputs))
+        # 缺时间表或缺任一码率时整章重做，保证 mp3 与 timings 永远来自同一次合成
+        outputs = all_outputs if (timings_missing or args.force or missing) else missing
+        targets.append((ch, outputs, timings_path))
 
     if not targets:
         print('没有需要生成的章节。')
@@ -161,15 +178,16 @@ def main():
     print(f'待生成 {len(targets)} 章 → {audio_dir}（码率 {"/".join(args.bitrate)}）')
     pipeline = build_pipeline()
 
-    for idx, (ch, outputs) in enumerate(targets, 1):
+    for idx, (ch, outputs, timings_path) in enumerate(targets, 1):
         n_words = sum(len(p.get('text', '').split()) for p in ch['paragraphs'])
         print(f'\n[{idx}/{len(targets)}] {ch["id"]} — {ch["title"]}（{n_words} 词）')
         t0 = time.time()
 
-        audio = synthesize_chapter(pipeline, ch, read_title=not args.no_title)
+        audio, offsets = synthesize_chapter(pipeline, ch, read_title=not args.no_title)
         if audio.size == 0:
             print(f'⚠️  {ch["id"]} 无文本，跳过')
             continue
+        dur = audio.size / SAMPLE_RATE
 
         wav_tmp = outputs[0][0] + '.tmp.wav'
         try:
@@ -182,8 +200,13 @@ def main():
             if os.path.exists(wav_tmp):
                 os.remove(wav_tmp)
 
-        dur = audio.size / SAMPLE_RATE
-        print(f'   音频 {dur / 60:.1f} 分钟 | 耗时 {time.time() - t0:.0f}s')
+        # 时间表最后写（它同时是该章的"完成标记"，中断后重跑会重新合成）
+        tmp_json = timings_path + '.tmp'
+        with open(tmp_json, 'w', encoding='utf-8') as f:
+            json.dump({'duration': round(dur, 2), 'paragraphs': offsets}, f, ensure_ascii=False)
+        os.replace(tmp_json, timings_path)
+
+        print(f'   音频 {dur / 60:.1f} 分钟 | 时间表 {len(offsets)} 段 | 耗时 {time.time() - t0:.0f}s')
 
     print('\n全部完成。')
 

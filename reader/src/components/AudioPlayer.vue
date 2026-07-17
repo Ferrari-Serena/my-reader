@@ -18,7 +18,7 @@
       Use Browser TTS
     </button>
   </div>
-  <audio ref="audioEl" @ended="onAudioEnded" @error="onAudioError" style="display:none"></audio>
+  <audio ref="audioEl" @ended="onAudioEnded" @error="onAudioError" @timeupdate="onTimeUpdate" style="display:none"></audio>
 </template>
 
 <script setup>
@@ -30,6 +30,8 @@ const props = defineProps({
   chapterText: { type: String, default: '' },
   audioUrl: { type: String, default: '' }
 })
+
+const emit = defineEmits(['time'])
 
 // ---- state machine ----
 
@@ -55,8 +57,14 @@ const statusLabel = computed(() => {
 })
 
 // ---- chapter change → stop ----
+// 用 audioUrl 的 watch 拿旧值：切章瞬间 props 已更新，
+// 在 stopAll 里存进度会把旧章的位置记到新章的 key 上
 
-watch(() => props.chapterText, () => {
+watch(() => props.audioUrl, (_, oldUrl) => {
+  const el = audioEl.value
+  if (el && el.src && !el.ended && el.currentTime > 0 && oldUrl) {
+    savePosition(oldUrl, el.currentTime)
+  }
   stopAll()
 })
 
@@ -87,7 +95,7 @@ function clearLoadTimer() {
   if (loadTimer) { clearTimeout(loadTimer); loadTimer = null }
 }
 
-function startStaticAudio() {
+function startStaticAudio(seekTo = null) {
   stopAll()
   const mySid = ++sessionId
 
@@ -101,6 +109,11 @@ function startStaticAudio() {
   el.play().then(() => {
     if (mySid !== sessionId) return // stale
     clearLoadTimer()
+    // 优先按点击的段落定位，否则恢复上次进度（快到结尾时不恢复，避免一点开就结束）
+    const target = seekTo !== null ? seekTo : savedPosition(props.audioUrl)
+    if (target > 0 && target < (el.duration || Infinity) - 3) {
+      el.currentTime = target
+    }
     state.value = 'playing'
   }).catch((err) => {
     if (mySid !== sessionId) return
@@ -121,11 +134,57 @@ function startStaticAudio() {
   }, LOAD_TIMEOUT)
 }
 
+// ---- playback position memory + paragraph seek ----
+
+const POS_PREFIX = 'reader-audio-pos:'
+let lastSavedAt = 0
+
+function savePosition(url, seconds) {
+  try { localStorage.setItem(POS_PREFIX + url, String(seconds)) } catch { /* quota/private mode */ }
+}
+
+function savedPosition(url) {
+  try {
+    const v = parseFloat(localStorage.getItem(POS_PREFIX + url))
+    return Number.isFinite(v) ? v : 0
+  } catch { return 0 }
+}
+
+function clearPosition(url) {
+  try { localStorage.removeItem(POS_PREFIX + url) } catch { /* ignore */ }
+}
+
+function onTimeUpdate() {
+  const el = audioEl.value
+  if (!el || state.value !== 'playing') return
+  emit('time', el.currentTime)
+  const now = Date.now()
+  if (now - lastSavedAt > 3000) {
+    lastSavedAt = now
+    savePosition(props.audioUrl, el.currentTime)
+  }
+}
+
+// 点击段落 ▶ 从指定秒数开始播（必须保持在用户手势调用栈内）
+function playFrom(seconds) {
+  if (!props.audioUrl) return
+  const el = audioEl.value
+  if (el && el.src && state.value === 'playing') {
+    el.currentTime = seconds
+    savePosition(props.audioUrl, seconds)
+    return
+  }
+  startStaticAudio(seconds)
+}
+
+defineExpose({ playFrom })
+
 // ---- audio element events ----
 // 区分两类 error：加载期（404 等 → 亮出兜底按钮）vs 播放期（当作结束）。
 // stopAll() 里 removeAttribute('src') 后即使个别浏览器触发 error，state 已是 idle，直接忽略。
 
 function onAudioEnded() {
+  clearPosition(props.audioUrl) // 读完整章，下次从头开始
   if (state.value === 'playing') stopAll()
 }
 
@@ -260,11 +319,19 @@ function stopAll() {
   sessionId++
   clearLoadTimer()
   stopBrowserTTS()
-  state.value = 'idle'
-  if (audioEl.value) {
-    audioEl.value.pause()
-    audioEl.value.removeAttribute('src')
+  // 手动停止时顺手存一次进度。切章场景由 audioUrl watcher 用旧 key 保存，
+  // 此处规范化比对 URL 确认 el 里放的还是当前章，防止把旧章位置写进新章的 key
+  const el = audioEl.value
+  if (el && el.src && !el.ended && el.currentTime > 0 && state.value === 'playing'
+      && props.audioUrl && new URL(props.audioUrl, location.href).href === el.src) {
+    savePosition(props.audioUrl, el.currentTime)
   }
+  state.value = 'idle'
+  if (el) {
+    el.pause()
+    el.removeAttribute('src')
+  }
+  emit('time', -1)
 }
 
 // ---- lifecycle ----

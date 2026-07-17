@@ -34,8 +34,15 @@
         <p
           v-for="para in currentChapter.paragraphs"
           :key="para.id"
-          class="paragraph"
+          :id="'para-' + para.id"
+          :class="['paragraph', { 'playing-para': para.id === playingParaId }]"
         >
+          <button
+            v-if="paraStart(para.id) !== null"
+            class="para-play"
+            title="Play from here"
+            @click.stop="playFromPara(para.id)"
+          >▶</button>
           <span
             v-for="(word, wi) in para.text.split(/(\s+)/)" :key="wi"
             :class="['word', { 'annotated': isAnnotated(word, para) }]"
@@ -56,7 +63,12 @@
         @jump="jumpToChapter"
       />
 
-      <AudioPlayer :chapter-text="currentChapterText" :audio-url="currentAudioUrl" />
+      <AudioPlayer
+        ref="audioPlayerRef"
+        :chapter-text="currentChapterText"
+        :audio-url="currentAudioUrl"
+        @time="onAudioTime"
+      />
     </template>
 
     <WordPopup
@@ -105,6 +117,73 @@ const currentChapterText = computed(() => {
 const currentAudioUrl = computed(() => {
   if (!currentChapter.value) return ''
   return `${import.meta.env.BASE_URL}books/${bookId.value}/audio/${currentChapter.value.id}.mp3`
+})
+
+// ---- 段落定位播放（时间表 + 高亮跟随）----
+
+const audioPlayerRef = ref(null)
+const audioTimings = ref(null) // { duration, paragraphs: { 段落id: 起始秒 } }
+const audioTime = ref(-1)      // AudioPlayer 回报的当前播放秒数；-1 = 未在播
+const timingsCache = {}
+
+async function loadTimings(chId) {
+  audioTimings.value = null
+  const key = `${bookId.value}/${chId}`
+  if (!(key in timingsCache)) {
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}books/${bookId.value}/audio/${chId}.timings.json`)
+      timingsCache[key] = res.ok ? await res.json() : null
+    } catch {
+      timingsCache[key] = null
+    }
+  }
+  // 防快速切章/换书串台：比完整 key（bookId + chapterId）
+  if (key === `${bookId.value}/${currentChapter.value?.id}`) audioTimings.value = timingsCache[key]
+}
+
+function paraStart(paraId) {
+  const t = audioTimings.value?.paragraphs
+  return t && paraId in t ? t[paraId] : null
+}
+
+function playFromPara(paraId) {
+  const s = paraStart(paraId)
+  if (s !== null) audioPlayerRef.value?.playFrom(s)
+}
+
+function onAudioTime(t) {
+  audioTime.value = t
+}
+
+const sortedStarts = computed(() => {
+  const t = audioTimings.value?.paragraphs
+  if (!t) return []
+  return Object.entries(t).map(([id, s]) => ({ id, s })).sort((a, b) => a.s - b.s)
+})
+
+const playingParaId = computed(() => {
+  if (audioTime.value < 0 || !sortedStarts.value.length) return null
+  let cur = null
+  for (const e of sortedStarts.value) {
+    if (e.s <= audioTime.value) cur = e.id
+    else break
+  }
+  return cur
+})
+
+// 高亮段落变化时滚动跟随——但只在用户"还在跟读"时（上一个高亮段落在视口内）。
+// 用户手动滚到别处阅读时不打断；播放中点段落 ▶ 属于主动定位，也视为跟读。
+watch(playingParaId, (id, oldId) => {
+  if (!id) return
+  if (oldId) {
+    const oldEl = document.getElementById('para-' + oldId)
+    if (oldEl) {
+      const r = oldEl.getBoundingClientRect()
+      const inView = r.bottom > 0 && r.top < window.innerHeight
+      if (!inView) return // 用户已滚去别处，不拉回
+    }
+  }
+  document.getElementById('para-' + id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 })
 
 function isAnnotated(word, para) {
@@ -180,6 +259,8 @@ function setChapter(index) {
   if (index >= 0 && index < chapters.value.length) {
     currentChapterIndex.value = index
     currentChapter.value = chapters.value[index]
+    audioTime.value = -1
+    loadTimings(chapters.value[index].id)
     router.replace(`/reader/${bookId.value}/${chapters.value[index].id}`)
   }
 }
@@ -258,6 +339,30 @@ watch([bookId, chapterId], () => {
   color: var(--text-primary, #1d1d1f);
   text-align: justify;
   hyphens: auto;
+}
+
+.paragraph.playing-para {
+  background: var(--highlight-bg, #fff3cd);
+  box-shadow: 0 0 0 6px var(--highlight-bg, #fff3cd);
+  border-radius: 4px;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+
+.para-play {
+  border: none;
+  background: none;
+  color: var(--accent-color, #1a73e8);
+  cursor: pointer;
+  font-size: 11px;
+  opacity: 0.45;
+  padding: 0 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+  transition: opacity 0.15s;
+}
+
+.para-play:hover {
+  opacity: 1;
 }
 
 .word {
