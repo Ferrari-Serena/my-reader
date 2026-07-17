@@ -2,5 +2,10 @@ name = "my-reader-tts"
 main = "src/index.js"
 compatibility_date = "2025-07-01"
 
-[ai]
-binding = "AI"
+# 词典缓存（database_id 由 `wrangler d1 create my-reader-dict` 输出后填入）
+[[d1_databases]]
+binding = "DB"
+database_name = "my-reader-dict"
+database_id = "f533d074-ddc9-4117-b560-45d904358b10"
+
+# M-W API Key 用 secret，不进代码：npx wrangler secret put MW_API_KEY
