@@ -56,7 +56,7 @@
         @jump="jumpToChapter"
       />
 
-      <AudioPlayer :chapter-text="currentChapterText" />
+      <AudioPlayer :chapter-text="currentChapterText" :audio-url="currentAudioUrl" />
     </template>
 
     <WordPopup
@@ -97,7 +97,14 @@ const dictLoading = ref(false)
 
 const currentChapterText = computed(() => {
   if (!currentChapter.value) return ''
-  return currentChapter.value.paragraphs.map(p => p.text).join(' ')
+  // 标题也读（与预生成 MP3 的内容保持一致，见 generator/pipeline/tts.py）
+  return [currentChapter.value.title, ...currentChapter.value.paragraphs.map(p => p.text)].join(' ')
+})
+
+// 约定路径：books/<bookId>/audio/<chapterId>.mp3（未生成时前端 404 降级 browser TTS）
+const currentAudioUrl = computed(() => {
+  if (!currentChapter.value) return ''
+  return `${import.meta.env.BASE_URL}books/${bookId.value}/audio/${currentChapter.value.id}.mp3`
 })
 
 function isAnnotated(word, para) {
