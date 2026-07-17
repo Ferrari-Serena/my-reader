@@ -45,7 +45,7 @@
           >▶</button>
           <span
             v-for="(word, wi) in para.text.split(/(\s+)/)" :key="wi"
-            :class="['word', { 'annotated': isAnnotated(word, para) }]"
+            :class="['word', { 'annotated': isAnnotated(word, para), 'saved': isSavedWord(word) }]"
             :data-word="word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()"
             @click.stop="onWordClick($event)"
           >{{ word }}</span>
@@ -76,7 +76,10 @@
       :word="selectedWord"
       :dict-entry="dictEntry"
       :loading-dict="dictLoading"
+      :is-saved="isSelectedSaved"
       @close="selectedWord = null"
+      @add-vocab="onAddVocab"
+      @remove-vocab="onRemoveVocab"
     />
   </div>
 </template>
@@ -87,6 +90,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ChapterNav from '../components/ChapterNav.vue'
 import AudioPlayer from '../components/AudioPlayer.vue'
 import WordPopup from '../components/WordPopup.vue'
+import { useVocabulary } from '../composables/useVocabulary'
 
 const route = useRoute()
 const router = useRouter()
@@ -194,6 +198,36 @@ function isAnnotated(word, para) {
   return clean.length > 0 && (para.annotatedWords || []).includes(clean)
 }
 
+// ---- 生词本 ----
+
+const vocab = useVocabulary()
+vocab.init()
+
+function isSavedWord(word) {
+  const clean = word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()
+  return clean.length > 0 && vocab.savedSet.value.has(clean)
+}
+
+// 存储 key 是 lemma（went → go），弹窗的收藏态按 点击词 或 其 lemma 任一命中判定
+const isSelectedSaved = computed(() => {
+  if (!selectedWord.value) return false
+  return vocab.has(selectedWord.value) || (dictEntry.value?.lemma ? vocab.has(dictEntry.value.lemma) : false)
+})
+
+async function onRemoveVocab(word) {
+  // 与 add 的 key 规则对称：优先按 lemma 移除
+  await vocab.remove(dictEntry.value?.lemma && vocab.has(dictEntry.value.lemma) ? dictEntry.value.lemma : word)
+}
+
+async function onAddVocab(word) {
+  await vocab.add({
+    word,
+    dictEntry: dictEntry.value ? JSON.parse(JSON.stringify(dictEntry.value)) : null,
+    bookId: bookId.value,
+    chapterId: currentChapter.value?.id ?? null
+  })
+}
+
 let touchStartX = 0
 function onTouchStart(e) {
   touchStartX = e.changedTouches[0].clientX
@@ -233,6 +267,8 @@ async function onWordClick(event) {
       const merged = { ...(entry || {}), ...online }
       dictionary.value[word] = merged
       dictEntry.value = merged
+      // 空快照自愈：离线时收藏的词，联网查到释义后自动补全生词本快照
+      if (merged.definitions?.length) vocab.refreshSnapshot(word, merged)
     }
   } catch { /* 离线/超时 → 保持本地条目（可能无释义） */ }
   finally {
@@ -398,6 +434,10 @@ watch([bookId, chapterId], () => {
 
 .word.annotated {
   border-bottom: 2px solid var(--accent-color, #e6a817);
+}
+
+.word.saved {
+  border-bottom: 2px dotted var(--success-color, #34c759);
 }
 
 /* Mobile */

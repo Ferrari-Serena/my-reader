@@ -27,6 +27,12 @@
                 {{ def }}
               </li>
             </ol>
+            <p v-else-if="dictEntry.notFound" class="notfound-hint">
+              Not found in Merriam-Webster.
+              <template v-if="dictEntry.suggestions?.length">
+                Did you mean: {{ dictEntry.suggestions.slice(0, 3).join(', ') }}?
+              </template>
+            </p>
 
             <div class="popup-chapters" v-if="dictEntry.chapters?.length">
               <span class="chapters-label">Appears in:</span>
@@ -37,7 +43,10 @@
               <button class="action-btn" @click="speakWord">
                 🔊 Listen
               </button>
-              <button class="action-btn primary" @click="addToVocab">
+              <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
+                ✓ In Words
+              </button>
+              <button v-else class="action-btn primary" @click="addToVocab">
                 + Add to Words
               </button>
             </div>
@@ -45,9 +54,17 @@
 
           <div v-else class="popup-notfound">
             <p>Definition not available offline.</p>
-            <button class="action-btn" @click="lookupOnline">
-              🌐 Look up online
-            </button>
+            <div class="popup-actions">
+              <button class="action-btn" @click="lookupOnline">
+                🌐 Look up online
+              </button>
+              <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
+                ✓ In Words
+              </button>
+              <button v-else class="action-btn primary" @click="addToVocab">
+                + Add to Words
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -59,10 +76,11 @@
 const props = defineProps({
   word: { type: String, default: '' },
   dictEntry: { type: Object, default: null },
-  loadingDict: { type: Boolean, default: false }
+  loadingDict: { type: Boolean, default: false },
+  isSaved: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['close', 'add-vocab'])
+const emit = defineEmits(['close', 'add-vocab', 'remove-vocab'])
 
 const visible = computed(() => !!props.word)
 
@@ -247,6 +265,19 @@ export default { inheritAttrs: false }
 
 .action-btn:hover {
   background: var(--bg-secondary, #f5f5f7);
+}
+
+.action-btn.saved {
+  border-color: var(--success-color, #34c759);
+  color: var(--success-color, #34c759);
+  background: transparent;
+}
+
+.notfound-hint {
+  font-size: 13px;
+  color: var(--text-secondary, #6e6e73);
+  font-style: italic;
+  margin: 4px 0 12px;
 }
 
 .action-btn.primary {
