@@ -8,7 +8,10 @@
     </header>
 
     <main class="app-main">
-      <router-view :key="$route.fullPath" />
+      <!-- 不给 router-view 加 :key="$route.fullPath"：Reader 内换章只改路由参数，
+           加 key 会导致整个 ReaderView 销毁重建（重新下载书数据 + 重排全部单词），
+           移动端表现为滑动后正文白屏。换书/换章由 ReaderView 内部 watch 处理。 -->
+      <router-view />
     </main>
 
     <nav class="app-tabbar" v-if="showTabbar">
