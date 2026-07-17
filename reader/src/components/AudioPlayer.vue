@@ -1,6 +1,6 @@
 <template>
   <div class="audio-player" v-if="chapterText">
-    <button class="play-btn" @click="togglePlay" :disabled="state === 'loading'">
+    <button class="play-btn" @click="togglePlay">
       <span v-if="state === 'loading'" class="spinner-sm"></span>
       <span v-else>{{ state === 'playing' ? '⏸' : '▶' }}</span>
     </button>
@@ -18,29 +18,26 @@
       Use Browser TTS
     </button>
   </div>
-  <audio ref="audioEl" @ended="onAudioDone" @error="onAudioDone" style="display:none"></audio>
+  <audio ref="audioEl" @ended="onAudioEnded" @error="onAudioError" style="display:none"></audio>
 </template>
 
 <script setup>
 import { ref, watch, onUnmounted, computed } from 'vue'
 
-const TTS_WORKER = 'https://my-reader-tts.serena605371358.workers.dev'
-const FETCH_TIMEOUT = 30000
 const CHUNK_MAX = 160
 
 const props = defineProps({
-  chapterText: { type: String, default: '' }
+  chapterText: { type: String, default: '' },
+  audioUrl: { type: String, default: '' }
 })
 
 // ---- state machine ----
 
 const state = ref('idle') // idle | loading | playing | error
-const source = ref('Cloud TTS')
+const source = ref('Chapter audio')
 
 const audioEl = ref(null)
 let sessionId = 0
-let abortController = null
-let blobUrl = null
 
 // browser TTS state
 let browserSessionId = 0
@@ -52,7 +49,7 @@ const statusLabel = computed(() => {
   switch (state.value) {
     case 'loading': return 'Loading...'
     case 'playing': return 'Playing...'
-    case 'error': return 'Cloud TTS unavailable'
+    case 'error': return 'Chapter audio unavailable'
     default: return 'Read aloud'
   }
 })
@@ -65,95 +62,78 @@ watch(() => props.chapterText, () => {
 
 // ---- click handler ----
 
-async function togglePlay() {
-  if (state.value === 'playing') {
+function togglePlay() {
+  if (state.value === 'playing' || state.value === 'loading') {
     stopAll()
     return
   }
-  if (state.value === 'loading') {
+  if (props.audioUrl) {
+    startStaticAudio()
+  } else {
     stopAll()
-    return
+    startBrowserTTS()
   }
-  await startCloudTTS()
 }
 
-// ---- Cloud TTS (primary) ----
+// ---- static chapter MP3 (primary) ----
+// 约定路径 books/<bookId>/audio/<chapterId>.mp3；404 时降级 browser TTS。
+// src 只在点击时赋值（等效 preload="none"），避免翻章就预下载整章音频。
+// el.play() 必须留在 click 调用栈内，满足 iOS 自动播放策略。
 
-async function startCloudTTS() {
-  const text = props.chapterText?.trim()
-  if (!text) return
+const LOAD_TIMEOUT = 20000
+let loadTimer = null
 
-  // clean up any previous session
+function clearLoadTimer() {
+  if (loadTimer) { clearTimeout(loadTimer); loadTimer = null }
+}
+
+function startStaticAudio() {
   stopAll()
   const mySid = ++sessionId
 
-  // P0: pre-warm audio element within user gesture to lock autoplay permission
-  await preWarmAudio()
+  const el = audioEl.value
+  if (!el) { startBrowserTTS(); return }
 
   state.value = 'loading'
-  source.value = 'Cloud TTS'
+  source.value = 'Chapter audio'
 
-  try {
-    abortController = new AbortController()
-    const timeoutId = setTimeout(() => abortController.abort(), FETCH_TIMEOUT)
-
-    const resp = await fetch(`${TTS_WORKER}/api/tts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice: 'asteria' }),
-      signal: abortController.signal
-    })
-    clearTimeout(timeoutId)
-
+  el.src = props.audioUrl
+  el.play().then(() => {
     if (mySid !== sessionId) return // stale
-
-    if (!resp.ok) throw new Error(`Worker returned ${resp.status}`)
-
-    const blob = await resp.blob()
-    if (mySid !== sessionId) return // stale
-
-    // revoke previous blob URL
-    if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null }
-    blobUrl = URL.createObjectURL(blob)
-
-    const el = audioEl.value
-    if (!el) { state.value = 'error'; return }
-
-    el.src = blobUrl
-    await el.play()
-
-    if (mySid !== sessionId) return // stale
+    clearLoadTimer()
     state.value = 'playing'
-
-  } catch (err) {
+  }).catch((err) => {
     if (mySid !== sessionId) return
-    if (err.name === 'AbortError') {
-      state.value = 'error'
-      source.value = 'Request timed out'
-      console.error('Cloud TTS: request timed out (30s)')
-      return
-    }
-    console.error('Cloud TTS failed:', err.name, err.message)
+    clearLoadTimer()
+    console.error('Chapter audio failed:', err.name, err.message)
     state.value = 'error'
-    source.value = err.message || 'Cloud TTS unavailable'
-  }
+    source.value = err.name === 'NotAllowedError'
+      ? 'Playback blocked — tap Browser TTS'
+      : 'Audio not found — use Browser TTS'
+  })
+
+  // 慢速网络守卫：超时仍在 loading 就放弃，亮出兜底按钮
+  loadTimer = setTimeout(() => {
+    if (mySid !== sessionId || state.value !== 'loading') return
+    if (audioEl.value) { audioEl.value.pause(); audioEl.value.removeAttribute('src') }
+    state.value = 'error'
+    source.value = 'Loading timed out — use Browser TTS'
+  }, LOAD_TIMEOUT)
 }
 
-// ---- pre-warm: unlock audio autoplay within user gesture ----
+// ---- audio element events ----
+// 区分两类 error：加载期（404 等 → 亮出兜底按钮）vs 播放期（当作结束）。
+// stopAll() 里 removeAttribute('src') 后即使个别浏览器触发 error，state 已是 idle，直接忽略。
 
-async function preWarmAudio() {
-  const el = audioEl.value
-  if (!el) return
-  // tiny silent WAV — locks the user gesture for subsequent play() calls
-  el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
-  try { await el.play() } catch { /* expected to throw or be silent */ }
-  el.src = ''
+function onAudioEnded() {
+  if (state.value === 'playing') stopAll()
 }
 
-// ---- audio element done (ended or error) ----
-
-function onAudioDone() {
-  if (state.value === 'playing') {
+function onAudioError() {
+  if (state.value === 'loading') {
+    state.value = 'error'
+    source.value = 'Audio not found — use Browser TTS'
+  } else if (state.value === 'playing') {
     stopAll()
   }
 }
@@ -162,13 +142,13 @@ function onAudioDone() {
 
 function useBrowserTTS() {
   stopAll()
-  sessionId++  // invalidate any pending Cloud TTS callbacks
   startBrowserTTS()
 }
 
 function startBrowserTTS() {
   if (!('speechSynthesis' in window)) {
     state.value = 'error'
+    source.value = 'Browser TTS not supported'
     return
   }
 
@@ -278,14 +258,13 @@ function clearTimers() {
 
 function stopAll() {
   sessionId++
-  if (abortController) { abortController.abort(); abortController = null }
+  clearLoadTimer()
+  stopBrowserTTS()
+  state.value = 'idle'
   if (audioEl.value) {
     audioEl.value.pause()
-    audioEl.value.src = ''
+    audioEl.value.removeAttribute('src')
   }
-  stopBrowserTTS()
-  if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null }
-  state.value = 'idle'
 }
 
 // ---- lifecycle ----
@@ -380,15 +359,5 @@ onUnmounted(() => {
 .fallback-btn:hover {
   background: var(--accent-color, #1a73e8);
   color: white;
-}
-
-.voice-select {
-  font-size: 12px;
-  padding: 4px 8px;
-  border: 1px solid var(--border-color, #d2d2d7);
-  border-radius: 6px;
-  background: var(--bg-primary, #fff);
-  color: var(--text-primary, #1d1d1f);
-  max-width: 120px;
 }
 </style>
