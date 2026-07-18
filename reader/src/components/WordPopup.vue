@@ -8,6 +8,12 @@
             <button class="popup-close" @click="$emit('close')">✕</button>
           </div>
 
+          <!-- 词组信息行：点击的词属于某个已高亮词组时显示 -->
+          <div v-if="phraseInfo" class="phrase-banner">
+            <span class="phrase-text">{{ phraseInfo.phrase }}</span>
+            <span class="phrase-defs">{{ phraseInfo.defs.join('；') }}</span>
+          </div>
+
           <div v-if="loadingDict" class="popup-loading">
             <div class="spinner-sm"></div>
             <span>Looking up...</span>
@@ -77,7 +83,8 @@ const props = defineProps({
   word: { type: String, default: '' },
   dictEntry: { type: Object, default: null },
   loadingDict: { type: Boolean, default: false },
-  isSaved: { type: Boolean, default: false }
+  isSaved: { type: Boolean, default: false },
+  phraseInfo: { type: Object, default: null } // { phrase, defs: [] }
 })
 
 const emit = defineEmits(['close', 'add-vocab', 'remove-vocab'])
@@ -159,6 +166,30 @@ export default { inheritAttrs: false }
   gap: 8px;
   color: var(--text-secondary, #6e6e73);
   padding: 16px 0;
+}
+
+/* 词组信息行 */
+.phrase-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--phrase-bg, rgba(52, 199, 89, 0.10));
+  border-left: 3px solid var(--success-color, #34c759);
+  border-radius: 6px;
+}
+
+.phrase-text {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text-primary, #1d1d1f);
+}
+
+.phrase-defs {
+  font-size: 13px;
+  color: var(--text-secondary, #6e6e73);
 }
 
 .spinner-sm {

@@ -45,9 +45,13 @@
             @click.stop="playFromPara(para.id)"
           >▶</button>
           <span
-            v-for="(word, wi) in para.text.split(/(\s+)/)" :key="wi"
-            :class="['word', { 'annotated': isAnnotated(word, para), 'saved': isSavedWord(word) }]"
+            v-for="(word, wi) in para.text.split(/(\s+)/)" :key="para.id + '-' + wi"
+            :class="['word', Object.fromEntries(
+              [...(paraWordTags[para.id]?.get(wi) || [])].map(t => [t, true])
+            )]"
             :data-word="word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()"
+            :data-para="para.id"
+            :data-idx="wi"
           >{{ word }}</span>
         </p>
       </article>
@@ -77,6 +81,7 @@
       :dict-entry="dictEntry"
       :loading-dict="dictLoading"
       :is-saved="isSelectedSaved"
+      :phrase-info="selectedPhrase"
       @close="selectedWord = null"
       @add-vocab="onAddVocab"
       @remove-vocab="onRemoveVocab"
@@ -91,6 +96,7 @@ import ChapterNav from '../components/ChapterNav.vue'
 import AudioPlayer from '../components/AudioPlayer.vue'
 import WordPopup from '../components/WordPopup.vue'
 import { useVocabulary } from '../composables/useVocabulary'
+import { usePhrases } from '../composables/usePhrases'
 
 const route = useRoute()
 const router = useRouter()
@@ -203,6 +209,70 @@ function isAnnotated(word, para) {
 const vocab = useVocabulary()
 vocab.init()
 
+// ---- 词组词典（懒加载：只在阅读页触发，加载失败静默降级为纯绿点线）----
+
+const phrases = usePhrases()
+phrases.init()
+
+/**
+ * 段落词标记预计算（computed，一次计算覆盖 annotated/saved/phrase 三类标记）。
+ * 模板不调用方法，只做 O(1) 查找 —— 确保 Vue 响应式依赖追踪可靠。
+ * 依赖：currentChapter, vocab.savedSet, phrases.loaded
+ */
+const paraWordTags = computed(() => {
+  const result = {} // paraId → Map<tokenIdx, Set<'annotated'|'saved'|'phrase'>>
+  if (!currentChapter.value) return result
+  const saved = vocab.savedSet.value
+  const phraseLoaded = phrases.loaded.value
+
+  for (const para of currentChapter.value.paragraphs) {
+    const tokens = para.text.split(/(\s+)/)
+    const tagMap = new Map()
+    const annoSet = new Set(para.annotatedWords || [])
+
+    // 先标注词组（最高优先级）
+    const phraseSpans = phraseLoaded ? phrases.scanParagraph(para.text, saved) : []
+    for (const s of phraseSpans) {
+      for (let i = s.start; i <= s.end; i++) {
+        const tags = tagMap.get(i) || new Set()
+        tags.add('phrase')
+        tagMap.set(i, tags)
+      }
+    }
+
+    // 逐 token 标注 saved / annotated（phrase 优先，已标 phrase 不再标）
+    for (let i = 0; i < tokens.length; i++) {
+      const clean = tokens[i].replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()
+      if (!clean) continue
+      const tags = tagMap.get(i) || new Set()
+      if (!tags.has('phrase')) {
+        if (saved.has(clean)) tags.add('saved')
+        if (annoSet.has(clean)) tags.add('annotated')
+      }
+      if (tags.size) tagMap.set(i, tags)
+    }
+
+    result[para.id] = tagMap
+  }
+  return result
+})
+
+// 当前弹窗词所在的词组（点击词组内词时，弹窗顶部显示词组信息行）
+const selectedPhrase = ref(null)
+
+// 词组 spans（供 WordPopup 显示词组信息），基于同一次扫描
+const paraPhraseSpans = computed(() => {
+  const result = {} // paraId → spans[]
+  if (!currentChapter.value || !phrases.loaded.value) return result
+  const saved = vocab.savedSet.value
+  if (!saved.size) return result
+  for (const para of currentChapter.value.paragraphs) {
+    const spans = phrases.scanParagraph(para.text, saved)
+    if (spans.length) result[para.id] = spans
+  }
+  return result
+})
+
 function isSavedWord(word) {
   const clean = word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()
   return clean.length > 0 && vocab.savedSet.value.has(clean)
@@ -248,6 +318,13 @@ function onTouchEnd(e) {
 async function onWordClick(event) {
   const word = event.target.dataset.word
   if (!word || word.length < 2) return
+
+  // 词组信息：点的词若在某个高亮词组范围内，弹窗附带词组释义
+  const paraId = event.target.dataset.para
+  const tokenIdx = Number(event.target.dataset.idx)
+  const span = (paraPhraseSpans.value[paraId] || [])
+    .find(s => tokenIdx >= s.start && tokenIdx <= s.end)
+  selectedPhrase.value = span ? { phrase: span.base, defs: span.defs } : null
 
   selectedWord.value = word
   dictLoading.value = true
@@ -456,6 +533,13 @@ watch(chapterId, (id) => {
 
 .word.saved {
   border-bottom: 2px dotted var(--success-color, #34c759);
+}
+
+/* 词组高亮：收藏词所在的完整词组（连带中间空白，视觉连续）。优先级高于 saved/annotated */
+.word.phrase {
+  background: var(--phrase-bg, rgba(52, 199, 89, 0.10));
+  border-bottom: 2px solid var(--success-color, #34c759);
+  border-radius: 0;
 }
 
 /* Mobile */

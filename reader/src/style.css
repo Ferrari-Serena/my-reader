@@ -11,6 +11,19 @@
   --success-color: #34c759;
   --danger-color: #ff3b30;
 
+  /* 词组高亮（阅读页） */
+  --phrase-bg: rgba(52, 199, 89, 0.10);
+
+  /* FSRS 评级按钮 */
+  --rating-again: #ff3b30;
+  --rating-hard: #ff9500;
+  --rating-good: #34c759;
+  --rating-easy: #007aff;
+
+  /* 测验反馈 */
+  --quiz-correct-bg: rgba(52, 199, 89, 0.12);
+  --quiz-wrong-bg: rgba(255, 59, 48, 0.10);
+
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-serif: 'Georgia', 'Times New Roman', serif;
 }
@@ -26,6 +39,18 @@
     --accent-color: #4da3ff;
     --accent-hover: #6db5ff;
     --highlight-bg: #3d3520;
+    --success-color: #30d158;
+    --danger-color: #ff453a;
+
+    --phrase-bg: rgba(48, 209, 88, 0.16);
+
+    --rating-again: #ff453a;
+    --rating-hard: #ff9f0a;
+    --rating-good: #30d158;
+    --rating-easy: #0a84ff;
+
+    --quiz-correct-bg: rgba(48, 209, 88, 0.18);
+    --quiz-wrong-bg: rgba(255, 69, 58, 0.16);
   }
 }
 

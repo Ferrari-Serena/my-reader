@@ -91,6 +91,37 @@ async function clearAll() {
   state.words = {}
 }
 
+/**
+ * 测验答题记录（quiz 槽位 lazy-init）。
+ * 错题池是派生视图：wrongHistory 非空 且 correctStreak < 3。
+ * 任何测验中的答对都计入 streak；连对 3 次自动"出池"（派生条件不再满足）。
+ */
+async function recordQuizAnswer(word, correct, questionType) {
+  await init()
+  const key = (word + '').toLowerCase()
+  const entry = state.words[key]
+  if (!entry) return
+  const q = entry.quiz && typeof entry.quiz === 'object'
+    ? entry.quiz
+    : { wrongHistory: [], correctStreak: 0, totalAttempts: 0, totalCorrect: 0 }
+  q.totalAttempts++
+  if (correct) {
+    q.totalCorrect++
+    q.correctStreak++
+  } else {
+    q.correctStreak = 0
+    q.wrongHistory.push({ date: new Date().toISOString(), questionType: questionType || '' })
+  }
+  const ok = await storage.updateWord(key, { quiz: q })
+  if (!ok) state.persistFailed = true
+  entry.quiz = q
+}
+
+/** 错题池：答错过且尚未连对 3 次的词 */
+function inErrorPool(entry) {
+  return !!(entry.quiz && entry.quiz.wrongHistory.length > 0 && entry.quiz.correctStreak < 3)
+}
+
 async function exportJSON() {
   await init()
   return {
@@ -125,11 +156,13 @@ export function useVocabulary() {
     count: computed(() => Object.keys(state.words).length),
     savedSet: computed(() => new Set(Object.keys(state.words))),
     persistFailed: computed(() => state.persistFailed),
+    errorPool: computed(() => Object.values(state.words).filter(inErrorPool)),
     has: (word) => !!state.words[(word + '').toLowerCase()],
     init,
     add,
     remove,
     refreshSnapshot,
+    recordQuizAnswer,
     clearAll,
     exportJSON,
     importJSON
