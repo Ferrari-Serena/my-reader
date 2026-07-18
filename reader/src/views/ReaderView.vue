@@ -101,8 +101,8 @@ import { usePhrases } from '../composables/usePhrases'
 const route = useRoute()
 const router = useRouter()
 
-// M-W 词典代理 Worker（Phase 6b；名字沿用旧 TTS Worker，产品化前改名）
-const DICT_WORKER = 'https://my-reader-tts.serena605371358.workers.dev'
+// M-W 词典代理 Worker（绑定自定义域 dict.ferrari11.com，解决 workers.dev 国内 DNS 污染）
+const DICT_WORKER = 'https://dict.ferrari11.com'
 
 const bookId = computed(() => route.params.bookId)
 const chapterId = computed(() => route.params.chapterId)
