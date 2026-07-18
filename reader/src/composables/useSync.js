@@ -24,6 +24,23 @@ const state = reactive({
 // 恢复持久化的同步码
 try { state.code = localStorage.getItem(SYNC_CODE_KEY) || '' } catch { state.code = '' }
 
+// 页面启动时自动拉取一次（已有配对码的情况下）
+let _autoPulled = false
+async function autoPullOnce() {
+  if (_autoPulled || !state.code) return
+  _autoPulled = true
+  try {
+    const data = await apiFetch(`/pull?code=${state.code}`)
+    if (data?.words && Object.keys(data.words).length) {
+      const vocab = useVocabulary()
+      await vocab.init()
+      await mergeAndApply(vocab, data.words)
+      state.lastSync = new Date()
+      state.paired = true
+    }
+  } catch { /* 静默——离线/弱网时本地数据不受影响 */ }
+}
+
 async function apiFetch(path, options = {}) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT)
@@ -150,6 +167,8 @@ function unpair() {
 }
 
 export function useSync() {
+  // 首次调用时触发自动拉取（页面启动 + 已有配对码）
+  autoPullOnce()
   return {
     code: computed(() => state.code),
     paired: computed(() => state.paired),
