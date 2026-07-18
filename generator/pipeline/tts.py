@@ -50,8 +50,8 @@ def load_chapters(book_id: str) -> dict:
     path = os.path.join(BOOKS_DIR, book_id, 'chapters.json')
     if not os.path.exists(path):
         sys.exit(f'❌ 找不到 {path}')
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    with open(path, 'rb') as f:
+        return json.loads(f.read().decode('utf-8-sig'))
 
 
 def build_pipeline():

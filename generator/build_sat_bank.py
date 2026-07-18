@@ -45,7 +45,7 @@ def load_sat_words():
         if not path.exists():
             print(f"WARN: {path} 不存在，跳过")
             continue
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_bytes().decode('utf-8-sig'))
         for item in data:
             w = (item.get("word") or "").strip().lower()
             # 只收纯字母词（跳过专有名词乱入、带空格的条目）
@@ -77,7 +77,7 @@ def load_english_defs():
     if not MERGED_DICT.exists():
         print(f"WARN: {MERGED_DICT} 不存在")
         return {}
-    data = json.loads(MERGED_DICT.read_text(encoding="utf-8"))
+    data = json.loads(MERGED_DICT.read_bytes().decode('utf-8-sig'))
     return {w.lower(): v.get("e", "") for w, v in data.items() if isinstance(v, dict)}
 
 
@@ -190,7 +190,7 @@ def build():
 
     # ---- 注册到 book-index.json（幂等） ----
     index_path = READER_PUBLIC / "books" / "book-index.json"
-    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index = json.loads(index_path.read_bytes().decode('utf-8-sig'))
     if not any(b.get("id") == "sat-practice" for b in index.get("books", [])):
         index["books"].append({
             "id": "sat-practice",

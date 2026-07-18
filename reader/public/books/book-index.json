@@ -1,18 +1,25 @@
-﻿{
-    "books":  [
-                  {
-                      "id":  "the-giver",
-                      "title":  "The Giver",
-                      "author":  "Lois Lowry",
-                      "coverUrl":  null,
-                      "dataUrl":  "books/the-giver/"
-                  },
-                  {
-                      "id":  "sat-practice",
-                      "title":  "SAT Vocabulary Practice",
-                      "author":  "Word Lists",
-                      "coverUrl":  null,
-                      "dataUrl":  "books/sat-practice/"
-                  }
-              ]
+{
+ "books": [
+  {
+   "id": "the-giver",
+   "title": "The Giver",
+   "author": "Lois Lowry",
+   "coverUrl": null,
+   "dataUrl": "books/the-giver/"
+  },
+  {
+   "id": "sat-practice",
+   "title": "SAT Vocabulary Practice",
+   "author": "Word Lists",
+   "coverUrl": null,
+   "dataUrl": "books/sat-practice/"
+  },
+  {
+   "id": "artemis-fowl",
+   "title": "Artemis Fowl 01",
+   "author": "Eoin Colfer",
+   "coverUrl": null,
+   "dataUrl": "books/artemis-fowl/"
+  }
+ ]
 }

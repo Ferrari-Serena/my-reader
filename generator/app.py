@@ -64,12 +64,27 @@ def _safe_book_id(filename):
     return book_id[:60] or 'untitled'
 
 
+def _read_json_bom_safe(path: str) -> dict:
+    """Read a JSON file that may have a UTF-8 BOM. Returns empty dict on error."""
+    try:
+        with open(path, 'rb') as f:
+            raw = f.read()
+        return json.loads(raw.decode('utf-8-sig'))
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeError, OSError):
+        return {}
+
+def _write_json_no_bom(path: str, obj):
+    """Write JSON without BOM (UTF-8, no BOM, consistent newlines)."""
+    text = json.dumps(obj, ensure_ascii=False, indent=2)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(text)
+
+
 def _register_book(book_id, title, author):
     """幂等注册到 book-index.json（复用 build_sat_bank.py 模式）"""
-    index = {'books': []}
-    if os.path.exists(BOOK_INDEX):
-        with open(BOOK_INDEX, 'r', encoding='utf-8') as f:
-            index = json.load(f)
+    index = _read_json_bom_safe(BOOK_INDEX)
+    if not index:
+        index = {'books': []}
     if not any(b.get('id') == book_id for b in index.get('books', [])):
         index['books'].append({
             'id': book_id,
@@ -78,8 +93,7 @@ def _register_book(book_id, title, author):
             'coverUrl': None,
             'dataUrl': f'books/{book_id}/'
         })
-        with open(BOOK_INDEX, 'w', encoding='utf-8') as f:
-            json.dump(index, f, ensure_ascii=False, indent=2)
+        _write_json_no_bom(BOOK_INDEX, index)
 
 
 def _run_pipeline(file_path, ext, book_id):
@@ -103,10 +117,10 @@ def _run_pipeline(file_path, ext, book_id):
         dictionary = lookup_dictionary(word_list, chapters, api_key='')
 
         _set_state(percent=90, message='写出数据文件...')
-        with open(os.path.join(book_dir, 'chapters.json'), 'w', encoding='utf-8') as f:
-            json.dump(chapters, f, ensure_ascii=False, indent=1)
-        with open(os.path.join(book_dir, 'dictionary.json'), 'w', encoding='utf-8') as f:
-            json.dump(dictionary, f, ensure_ascii=False, separators=(',', ':'))
+        _write_json_no_bom(os.path.join(book_dir, 'chapters.json'), chapters)
+        with open(os.path.join(book_dir, 'dictionary.json'), 'w', encoding='utf-8', newline='\n') as f:
+            text = json.dumps(dictionary, ensure_ascii=False, separators=(',', ':'))
+            f.write(text)
 
         _register_book(book_id, chapters.get('title', ''), chapters.get('author', ''))
 
@@ -193,8 +207,8 @@ def tts_progress(book_id):
     if not os.path.exists(chapters_path):
         return jsonify({'error': 'not found'}), 404
 
-    with open(chapters_path, 'r', encoding='utf-8') as f:
-        total = len(json.load(f).get('chapters', []))
+    chapters_data = _read_json_bom_safe(chapters_path)
+    total = len(chapters_data.get('chapters', []))
     audio_dir = os.path.join(book_dir, 'audio')
     done = 0
     if os.path.isdir(audio_dir):

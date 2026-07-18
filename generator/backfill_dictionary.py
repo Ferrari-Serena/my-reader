@@ -51,10 +51,10 @@ def backfill(book_id, force=False):
     if not chapters_path.exists():
         sys.exit(f'❌ 找不到 {chapters_path}')
 
-    chapters_data = json.loads(chapters_path.read_text(encoding='utf-8'))
+    chapters_data = json.loads(chapters_path.read_bytes().decode('utf-8-sig'))
     existing = {}
     if dict_path.exists():
-        existing = json.loads(dict_path.read_text(encoding='utf-8')).get('words', {})
+        existing = json.loads(dict_path.read_bytes().decode('utf-8-sig')).get('words', {})
 
     all_words = extract_all_words(chapters_data)
     print(f'{book_id}: 全书唯一词 {len(all_words)}，现有词条 {len(existing)}')
