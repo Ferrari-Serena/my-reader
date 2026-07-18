@@ -37,6 +37,23 @@ export function sanitizeEntry(raw) {
   for (const f of ['lemma', 'phonetic', 'partOfSpeech', 'audioUrl']) {
     if (typeof entry.snapshot[f] !== 'string') entry.snapshot[f] = ''
   }
+  // quiz/srs 槽位形状校验：非法结构一律归 null（下次写入时由调用方 lazy-init）
+  if (entry.quiz && typeof entry.quiz === 'object' && !Array.isArray(entry.quiz)) {
+    entry.quiz = {
+      wrongHistory: Array.isArray(entry.quiz.wrongHistory)
+        ? entry.quiz.wrongHistory.filter(h => h && typeof h === 'object')
+        : [],
+      correctStreak: Number(entry.quiz.correctStreak) || 0,
+      totalAttempts: Number(entry.quiz.totalAttempts) || 0,
+      totalCorrect: Number(entry.quiz.totalCorrect) || 0
+    }
+  } else {
+    entry.quiz = null
+  }
+  if (!(entry.srs && typeof entry.srs === 'object' && !Array.isArray(entry.srs)
+        && typeof entry.srs.due === 'string')) {
+    entry.srs = null
+  }
   return entry
 }
 
