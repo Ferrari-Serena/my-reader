@@ -352,8 +352,11 @@ async function onWordClick(event) {
       // 空快照自愈：离线时收藏的词，联网查到释义后自动补全生词本快照
       if (merged.definitions?.length) vocab.refreshSnapshot(word, merged)
     }
-  } catch { /* 离线/超时 → 保持本地条目（可能无释义） */ }
-  finally {
+  } catch (e) {
+    // 离线/超时/网络错误 → 保持本地条目（可能无释义）
+    // 注意：不在此处改 dictLoading=false，由 finally 统一处理
+    console.warn(`Dict lookup failed for "${word}":`, e.name || 'Error', e.message || '')
+  } finally {
     clearTimeout(timeoutId)
     if (selectedWord.value === word) dictLoading.value = false
   }
