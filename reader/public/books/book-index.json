@@ -1,18 +1,18 @@
-{
-  "books": [
-    {
-      "id": "the-giver",
-      "title": "The Giver",
-      "author": "Lois Lowry",
-      "coverUrl": null,
-      "dataUrl": "books/the-giver/"
-    },
-    {
-      "id": "sat-practice",
-      "title": "SAT Vocabulary Practice",
-      "author": "Word Lists",
-      "coverUrl": null,
-      "dataUrl": "books/sat-practice/"
-    }
-  ]
+﻿{
+    "books":  [
+                  {
+                      "id":  "the-giver",
+                      "title":  "The Giver",
+                      "author":  "Lois Lowry",
+                      "coverUrl":  null,
+                      "dataUrl":  "books/the-giver/"
+                  },
+                  {
+                      "id":  "sat-practice",
+                      "title":  "SAT Vocabulary Practice",
+                      "author":  "Word Lists",
+                      "coverUrl":  null,
+                      "dataUrl":  "books/sat-practice/"
+                  }
+              ]
 }
