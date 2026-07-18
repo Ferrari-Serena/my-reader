@@ -42,7 +42,8 @@ def extract_all_words(chapters_data):
     return words
 
 
-def backfill(book_id):
+def backfill(book_id, force=False):
+    """force=True 时忽略已有释义，全部重查 ECDICT（修复 ecdict.py 后刷新用）"""
     book_dir = BOOKS_DIR / book_id
     chapters_path = book_dir / 'chapters.json'
     dict_path = book_dir / 'dictionary.json'
@@ -65,8 +66,8 @@ def backfill(book_id):
     for word in sorted(all_words):
         old = existing.get(word)
 
-        # 已有非空释义的词条保留（M-W 在线补全过的优先）
-        if old and old.get('definitions'):
+        # 已有非空释义的词条保留（M-W 在线补全过的优先）；--force 时跳过保留
+        if not force and old and old.get('definitions'):
             result[word] = old
             kept += 1
             continue
@@ -100,6 +101,8 @@ def backfill(book_id):
 
 if __name__ == '__main__':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    if len(sys.argv) < 2:
-        sys.exit('用法: python backfill_dictionary.py <bookId>')
-    backfill(sys.argv[1])
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    force = '--force' in sys.argv
+    if not args:
+        sys.exit('用法: python backfill_dictionary.py <bookId> [--force]')
+    backfill(args[0], force=force)
