@@ -223,6 +223,14 @@ const paraWordTags = computed(() => {
   const result = {} // paraId → Map<tokenIdx, Set<'annotated'|'saved'|'phrase'>>
   if (!currentChapter.value) return result
   const saved = vocab.savedSet.value
+  // 反向索引：snapshot.lemma 也加入查找（修复 children→child 等变形词绿点线不显示）
+  const lookupSet = new Set(saved)
+  if (saved.size) {
+    for (const e of Object.values(vocab.words.value)) {
+      const lem = (e.snapshot?.lemma || '').toLowerCase()
+      if (lem && lem !== e.word) lookupSet.add(lem)
+    }
+  }
   const phraseLoaded = phrases.loaded.value
 
   for (const para of currentChapter.value.paragraphs) {
@@ -231,7 +239,7 @@ const paraWordTags = computed(() => {
     const annoSet = new Set(para.annotatedWords || [])
 
     // 先标注词组（最高优先级）
-    const phraseSpans = phraseLoaded ? phrases.scanParagraph(para.text, saved) : []
+    const phraseSpans = phraseLoaded ? phrases.scanParagraph(para.text, lookupSet) : []
     for (const s of phraseSpans) {
       for (let i = s.start; i <= s.end; i++) {
         const tags = tagMap.get(i) || new Set()
@@ -246,7 +254,7 @@ const paraWordTags = computed(() => {
       if (!clean) continue
       const tags = tagMap.get(i) || new Set()
       if (!tags.has('phrase')) {
-        if (saved.has(clean)) tags.add('saved')
+        if (lookupSet.has(clean)) tags.add('saved')
         if (annoSet.has(clean)) tags.add('annotated')
       }
       if (tags.size) tagMap.set(i, tags)
@@ -264,10 +272,16 @@ const selectedPhrase = ref(null)
 const paraPhraseSpans = computed(() => {
   const result = {} // paraId → spans[]
   if (!currentChapter.value || !phrases.loaded.value) return result
-  const saved = vocab.savedSet.value
-  if (!saved.size) return result
+  const lookupSet2 = new Set(vocab.savedSet.value)
+  if (lookupSet2.size) {
+    for (const e of Object.values(vocab.words.value)) {
+      const lem = (e.snapshot?.lemma || '').toLowerCase()
+      if (lem && lem !== e.word) lookupSet2.add(lem)
+    }
+  }
+  if (!lookupSet2.size) return result
   for (const para of currentChapter.value.paragraphs) {
-    const spans = phrases.scanParagraph(para.text, saved)
+    const spans = phrases.scanParagraph(para.text, lookupSet2)
     if (spans.length) result[para.id] = spans
   }
   return result
