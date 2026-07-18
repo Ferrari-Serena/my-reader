@@ -53,6 +53,8 @@ async function add({ word, dictEntry, bookId, chapterId }) {
   const ok = await storage.addWord(entry)
   if (!ok) state.persistFailed = true
   state.words[key] = entry
+  // 异步推送到远程（开新微任务，不阻塞 UI）
+  Promise.resolve().then(() => _autoPush())
 }
 
 async function remove(word) {
@@ -61,6 +63,7 @@ async function remove(word) {
   const ok = await storage.removeWord(key)
   if (!ok) state.persistFailed = true
   delete state.words[key]
+  Promise.resolve().then(() => _autoPush())
 }
 
 /** 在线释义到达后补全空快照（离线收藏自愈）。
@@ -115,6 +118,7 @@ async function recordQuizAnswer(word, correct, questionType) {
   const ok = await storage.updateWord(key, { quiz: q })
   if (!ok) state.persistFailed = true
   entry.quiz = q
+  Promise.resolve().then(() => _autoPush())
 }
 
 /** 错题池：答错过且尚未连对 3 次的词 */
@@ -148,6 +152,20 @@ async function importJSON(file) {
   const doc = await storage.loadVocabulary()
   state.words = { ...doc.words } // 重新指向合并后的文档
   return result
+}
+
+// 懒加载 useSync（避免循环导入：useSync → useVocabulary → useSync）
+let _pushCache = undefined
+function _autoPush() {
+  if (_pushCache === undefined) {
+    // 懒加载：只在第一次变异操作时 import
+    import('./useSync.js').then(m => {
+      _pushCache = m.useSync
+      if (_pushCache) _pushCache().push()
+    }).catch(() => { _pushCache = null })
+  } else if (_pushCache) {
+    _pushCache().push()
+  }
 }
 
 export function useVocabulary() {

@@ -273,6 +273,12 @@ async function rateCard(rating) {
 
   const srs = rate(entry.srs || createCard(), rating)
   await storage.updateWord(entry.word, { srs })
+  // 同步 reactive state（新卡片是用 spread copy 创建的，需回写）
+  if (vocab.words.value[entry.word]) {
+    vocab.words.value[entry.word].srs = srs
+  }
+  // 异步推送到远程
+  Promise.resolve().then(() => import('../composables/useSync.js').then(m => m.useSync().push()).catch(() => {}))
 
   // 新卡计数
   if (allNew.includes(entry.word)) {
