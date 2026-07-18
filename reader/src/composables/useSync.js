@@ -46,6 +46,8 @@ async function createCode() {
     const data = await apiFetch('/create', { method: 'POST' })
     state.code = data.code
     try { localStorage.setItem(SYNC_CODE_KEY, data.code) } catch { /* quota */ }
+    // 创建码后立即推送本机全量数据，使其他设备配对时能拉到完整数据
+    push()
     return data.code
   } catch (e) {
     state.error = '创建同步码失败，请检查网络'
@@ -122,15 +124,18 @@ async function pull() {
   finally { state.pulling = false }
 }
 
-/** 合并策略：最后写入胜出。远程较新的覆盖本地；本地较新的保留。 */
-function mergeAndApply(vocab, remoteWords) {
+/** 合并策略：最后写入胜出+持久化。远程较新的覆盖本地并写 localStorage。 */
+async function mergeAndApply(vocab, remoteWords) {
+  const storage = await import('../storage/index.js')
   for (const [word, remoteEntry] of Object.entries(remoteWords)) {
     if (word === '__meta__') continue
     const localEntry = vocab.words.value[word]
-    const remoteTime = remoteEntry.addedAt || remoteEntry.updatedAt || ''
-    const localTime = localEntry?.addedAt || localEntry?.updatedAt || ''
+    // 优先比 updatedAt（变异时间），fallback addedAt（创建时间）
+    const remoteTime = remoteEntry.updatedAt || remoteEntry.addedAt || ''
+    const localTime = localEntry?.updatedAt || localEntry?.addedAt || ''
     if (!localEntry || remoteTime > localTime) {
-      vocab.words.value[word] = remoteEntry
+      await storage.addWord(remoteEntry)       // 持久化（内部 sanitizeEntry）
+      vocab.words.value[word] = remoteEntry     // 更新响应式状态
     }
   }
 }

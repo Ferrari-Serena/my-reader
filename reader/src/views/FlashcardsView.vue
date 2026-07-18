@@ -115,7 +115,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useVocabulary } from '../composables/useVocabulary'
-import * as storage from '../storage/index.js'
 import { createCard, rate, Rating, buildQueue, nextDueAt } from '../fsrs.js'
 import { checkSpelling as spellCheck, diffHtml } from '../utils/spelling.js'
 
@@ -272,13 +271,7 @@ async function rateCard(rating) {
   if (!entry) return
 
   const srs = rate(entry.srs || createCard(), rating)
-  await storage.updateWord(entry.word, { srs })
-  // 同步 reactive state（新卡片是用 spread copy 创建的，需回写）
-  if (vocab.words.value[entry.word]) {
-    vocab.words.value[entry.word].srs = srs
-  }
-  // 异步推送到远程
-  Promise.resolve().then(() => import('../composables/useSync.js').then(m => m.useSync().push()).catch(() => {}))
+  await vocab.updateSRS(entry.word, srs)
 
   // 新卡计数
   if (allNew.includes(entry.word)) {
