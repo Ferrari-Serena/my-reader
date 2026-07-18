@@ -145,7 +145,7 @@ async function poll() {
       progressWrap.style.display = 'none'
       result.style.display = 'block'
       resultOk.textContent = '✅ ' + s.message
-      startTtsPoll()
+      // 不在此处启动 TTS 轮询——TTS 尚未开始，由用户点击按钮后再轮询
     } else if (s.stage === 'error') {
       clearInterval(pollTimer)
       progressWrap.style.display = 'none'
@@ -175,7 +175,15 @@ function startTtsPoll() {
       const s = await res.json()
       if (s.total) {
         ttsStatus.textContent = `音频: ${s.done}/${s.total} 章` + (s.running ? '（生成中...）' : '')
+        // 终止条件：全部完成，或子进程已退出（returncode 非 null 表示进程结束）
         if (!s.running && s.done >= s.total) clearInterval(ttsTimer)
+        else if (!s.running && s.returncode !== null && s.returncode !== undefined) {
+          clearInterval(ttsTimer)
+          if (s.returncode !== 0) {
+            ttsStatus.textContent = `⚠️ 音频生成异常退出 (code ${s.returncode})，已生成 ${s.done}/${s.total} 章。重新点击按钮可断点续跑。`
+            btnTts.disabled = false
+          }
+        }
       }
     } catch { /* ignore */ }
   }, 5000)

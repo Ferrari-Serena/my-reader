@@ -8,7 +8,6 @@ Flask 后端：上传页 UI + 后台生成任务 + TTS 触发 + 一键部署
 """
 
 from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
 import json
 import os
 import re
@@ -23,7 +22,8 @@ from pipeline.extractor import extract_vocabulary
 from pipeline.dictionary import lookup_dictionary
 
 app = Flask(__name__)
-CORS(app)
+# 本地同源服务，无需 CORS；上传大小上限 500MB（防误拖大文件占满磁盘）
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, '..', 'uploads')
@@ -98,8 +98,9 @@ def _run_pipeline(file_path, ext, book_id):
         word_list = extract_vocabulary(chapters, NGSL_PATH)
 
         _set_state(stage='dictionary', percent=55, message='查询词典 (ECDICT 本地)...')
-        mw_api_key = os.environ.get('MW_API_KEY', '')
-        dictionary = lookup_dictionary(word_list, chapters, mw_api_key)
+        # M-W API 兜底在本地管道禁用：国内直连 dictionaryapi.com 每词 10s 超时，
+        # 大量专有名词未命中时会把管道拖死。线上 Worker (/api/dict) 已承担兜底职责。
+        dictionary = lookup_dictionary(word_list, chapters, api_key='')
 
         _set_state(percent=90, message='写出数据文件...')
         with open(os.path.join(book_dir, 'chapters.json'), 'w', encoding='utf-8') as f:
@@ -126,10 +127,6 @@ def index():
 
 @app.route('/api/generate', methods=['POST'])
 def generate():
-    with _lock:
-        if _state['stage'] in ('parsing', 'extracting', 'dictionary'):
-            return jsonify({'error': '已有任务在运行'}), 409
-
     if 'file' not in request.files:
         return jsonify({'error': '未找到文件'}), 400
     file = request.files['file']
@@ -141,10 +138,17 @@ def generate():
         return jsonify({'error': f'不支持的格式: {ext}（仅 epub/txt）'}), 400
 
     book_id = _safe_book_id(file.filename)
+
+    # check-and-set 原子化：占位和检查在同一次持锁中完成，防止双任务并发写同一书目录
+    with _lock:
+        if _state['stage'] in ('parsing', 'extracting', 'dictionary'):
+            return jsonify({'error': '已有任务在运行'}), 409
+        _state.update(stage='parsing', percent=0, bookId=book_id,
+                      message='开始处理...', result=None)
+
     file_path = os.path.join(UPLOAD_FOLDER, f'{book_id}{ext}')
     file.save(file_path)
 
-    _set_state(stage='parsing', percent=0, bookId=book_id, message='开始处理...', result=None)
     threading.Thread(target=_run_pipeline, args=(file_path, ext, book_id), daemon=True).start()
     return jsonify({'started': True, 'bookId': book_id})
 
@@ -161,17 +165,23 @@ def start_tts(book_id):
     if not os.path.exists(os.path.join(OUTPUT_FOLDER, book_id, 'chapters.json')):
         return jsonify({'error': f'书 {book_id} 不存在'}), 404
 
-    proc = _tts_procs.get(book_id)
-    if proc and proc.poll() is None:
-        return jsonify({'error': 'TTS 已在运行'}), 409
+    with _lock:
+        old = _tts_procs.get(book_id)
+        if old:
+            if old.poll() is None:
+                return jsonify({'error': 'TTS 已在运行'}), 409
+            else:
+                old.wait()  # 收割已退出的旧子进程
 
     # tts.py 断点续跑：已生成的章节自动跳过
     tts_script = os.path.join(BASE_DIR, 'pipeline', 'tts.py')
-    _tts_procs[book_id] = subprocess.Popen(
+    proc = subprocess.Popen(
         [VENV_PYTHON, tts_script, book_id],
         cwd=BASE_DIR,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
+    with _lock:
+        _tts_procs[book_id] = proc
     return jsonify({'started': True})
 
 
@@ -190,9 +200,12 @@ def tts_progress(book_id):
     if os.path.isdir(audio_dir):
         done = len([f for f in os.listdir(audio_dir)
                     if f.endswith('.mp3') and os.path.getsize(os.path.join(audio_dir, f)) > 0])
-    proc = _tts_procs.get(book_id)
+    with _lock:
+        proc = _tts_procs.get(book_id)
     running = bool(proc and proc.poll() is None)
-    return jsonify({'total': total, 'done': done, 'running': running})
+    # returncode: 子进程已退出时的退出码（非0=异常中断），前端据此终止轮询
+    returncode = proc.returncode if (proc and proc.poll() is not None) else None
+    return jsonify({'total': total, 'done': done, 'running': running, 'returncode': returncode})
 
 
 @app.route('/api/deploy', methods=['POST'])

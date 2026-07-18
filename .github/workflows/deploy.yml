@@ -46,3 +46,18 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # 部署后清 Cloudflare 缓存，避免旧 index.html 引用已删除的 hash chunk
+      # 需要仓库 secrets: CF_ZONE_ID + CF_API_TOKEN（权限 Zone.Cache Purge）
+      - name: Purge Cloudflare Cache
+        if: success()
+        continue-on-error: true
+        run: |
+          if [ -n "${{ secrets.CF_ZONE_ID }}" ] && [ -n "${{ secrets.CF_API_TOKEN }}" ]; then
+            curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
+              -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              --data '{"purge_everything":true}'
+          else
+            echo "CF secrets not configured, skipping cache purge"
+          fi
