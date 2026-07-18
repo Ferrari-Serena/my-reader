@@ -1,108 +1,98 @@
 """
 词典查询器
-输入：word-list.json + Merriam-Webster Collegiate API
+输入：word-list.json + ECDICT 本地 SQLite（主） + Merriam-Webster Collegiate API（可选兜底）
 输出：dictionary.json
 
 查询策略：
-1. 优先查 M-W API（如果 API Key 可用）
-2. API 不可用时生成空词典框架
+1. ECDICT 本地 SQLite 优先（零延迟，中文释义，离线可用）
+2. M-W API 兜底（英文释义，需要 MW_API_KEY 且 ECDICT 未命中时）
 """
 
 import json
 import time
 import requests
+from ecdict import get_ecdict
 
 MW_API_BASE = 'https://www.dictionaryapi.com/api/v3/references/collegiate/json/'
 
 
 def lookup_dictionary(word_list: dict, chapters_data: dict, api_key: str = '') -> dict:
     """
-    为词表中的每个词查询词典释义
-    同时交叉匹配 SAT/AP 词表（内置在代码中）
-
-    返回：dictionary.json 格式
+    为词表中的每个词查询词典释义。
+    ECDICT 命中时直接填入中文释义；未命中且 api_key 非空时回退 M-W API。
     """
     words_data = word_list.get('words', {})
     book_id = word_list.get('bookId', '')
 
-    # 加载 SAT/AP 标记词表
     sat_ap_words = _load_sat_ap_words()
 
     dictionary = {}
     total = len(words_data)
+    ecdict = get_ecdict()
     api_available = bool(api_key)
 
-    if not api_available:
-        print('⚠️  未设置 MW_API_KEY，跳过 API 查询，生成空词典框架')
-
     for i, (lemma, info) in enumerate(words_data.items()):
-        entry = {
-            'lemma': lemma,
-            'phonetic': '',
-            'partOfSpeech': '',
-            'definitions': [],
-            'audioUrl': '',
-            'level': sat_ap_words.get(lemma, None),  # SAT / AP 标记
-            'chapters': info.get('chapters', [])
-        }
+        # 查 ECDICT
+        e = ecdict.lookup(lemma)
+        if e and e.get('definitions'):
+            entry = {
+                'lemma': lemma,
+                'phonetic': e['phonetic'],
+                'partOfSpeech': e['partOfSpeech'],
+                'definitions': e['definitions'][:6],
+                'audioUrl': '',
+                'level': sat_ap_words.get(lemma, None),
+                'chapters': info.get('chapters', [])
+            }
+            dictionary[lemma] = entry
+        else:
+            # ECDICT 未命中 → 空壳 + M-W API 兜底（若有 key）
+            entry = {
+                'lemma': lemma,
+                'phonetic': '',
+                'partOfSpeech': '',
+                'definitions': [],
+                'audioUrl': '',
+                'level': sat_ap_words.get(lemma, None),
+                'chapters': info.get('chapters', [])
+            }
+            if api_available:
+                try:
+                    resp = requests.get(
+                        f'{MW_API_BASE}{lemma}',
+                        params={'key': api_key},
+                        timeout=10
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data and isinstance(data, list) and len(data) > 0:
+                            entry_data = data[0]
+                            if isinstance(entry_data, dict):
+                                hwi = entry_data.get('hwi', {})
+                                prs = hwi.get('prs', [])
+                                if prs:
+                                    entry['phonetic'] = prs[0].get('mw', '')
+                                entry['partOfSpeech'] = entry_data.get('fl', '')
+                                entry['definitions'] = entry_data.get('shortdef', [])[:5]
+                                if prs:
+                                    sound = prs[0].get('sound', {})
+                                    audio = sound.get('audio', '')
+                                    if audio:
+                                        subdir = audio[0] if audio else ''
+                                        entry['audioUrl'] = (
+                                            'https://media.merriam-webster.com/audio/prons/en/us/mp3/'
+                                            f'{subdir}/{audio}.mp3'
+                                        )
+                    elif resp.status_code == 429:
+                        time.sleep(1)
+                except requests.RequestException:
+                    pass
+            dictionary[lemma] = entry
 
-        if api_available:
-            try:
-                resp = requests.get(
-                    f'{MW_API_BASE}{lemma}',
-                    params={'key': api_key},
-                    timeout=10
-                )
-
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data and isinstance(data, list) and len(data) > 0:
-                        entry_data = data[0]
-                        if isinstance(entry_data, dict):
-                            # 音标
-                            hwi = entry_data.get('hwi', {})
-                            prs = hwi.get('prs', [])
-                            if prs:
-                                entry['phonetic'] = prs[0].get('mw', '')
-
-                            # 词性
-                            fl = entry_data.get('fl', '')
-                            entry['partOfSpeech'] = fl
-
-                            # 释义
-                            shortdef = entry_data.get('shortdef', [])
-                            entry['definitions'] = shortdef[:5]  # 最多 5 条
-
-                            # 发音音频
-                            if prs:
-                                sound = prs[0].get('sound', {})
-                                audio = sound.get('audio', '')
-                                if audio:
-                                    # M-W 音频 URL 格式
-                                    subdir = audio[0] if audio else ''
-                                    entry['audioUrl'] = (
-                                        f'https://media.merriam-webster.com/audio/prons/en/us/mp3/'
-                                        f'{subdir}/{audio}.mp3'
-                                    )
-
-                elif resp.status_code == 429:
-                    print(f'  ⚠️  API 限流，暂停 1 秒...')
-                    time.sleep(1)
-
-            except requests.RequestException as e:
-                print(f'  ⚠️  "{lemma}" 查询失败: {e}')
-            except (KeyError, IndexError, TypeError) as e:
-                print(f'  ⚠️  "{lemma}" 解析响应失败: {e}')
-
-        dictionary[lemma] = entry
-
-        if (i + 1) % 50 == 0:
+        if (i + 1) % 200 == 0:
             print(f'  词典进度: {i + 1}/{total}', flush=True)
 
-    return {
-        'bookId': book_id,
-        'words': dictionary
-    }
+    return {'bookId': book_id, 'words': dictionary}
 
 
 def _load_sat_ap_words() -> dict:
