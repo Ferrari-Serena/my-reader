@@ -10,11 +10,13 @@
  * 绑定：env.DB = D1 数据库（表见 schema.sql）；env.MW_API_KEY = wrangler secret
  */
 
+import { handleSync } from './sync.js'
+
 const MW_API_BASE = 'https://www.dictionaryapi.com/api/v3/references/collegiate/json/'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type'
 }
 
@@ -32,6 +34,10 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders })
     }
+
+    // 同步端点分发（匹配 /api/sync/*）
+    const syncRes = await handleSync(request, env)
+    if (syncRes !== null) return syncRes
 
     if (url.pathname === '/health') {
       return json({ status: 'ok' })

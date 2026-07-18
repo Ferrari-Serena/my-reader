@@ -8,11 +8,53 @@
         <div v-if="menuOpen" class="menu-dropdown" @click.stop>
           <button class="menu-item" @click="doExport">Export JSON</button>
           <button class="menu-item" @click="fileInput?.click(); menuOpen = false">Import JSON</button>
+          <button class="menu-item" @click="showSyncPanel = true; menuOpen = false">↻ Sync Devices</button>
           <button class="menu-item danger" @click="doClearAll">Clear all</button>
         </div>
       </div>
       <input ref="fileInput" type="file" accept=".json,application/json" style="display:none" @change="doImport" />
     </div>
+
+    <!-- Sync Panel -->
+    <Teleport to="body">
+      <Transition name="popup">
+        <div v-if="showSyncPanel" class="popup-overlay" @click.self="showSyncPanel = false">
+          <div class="popup-card sync-panel">
+            <div class="popup-header">
+              <h3>↻ Sync Devices</h3>
+              <button class="popup-close" @click="showSyncPanel = false">✕</button>
+            </div>
+            <div v-if="sync.paired.value" class="sync-status">
+              <p>✅ Paired · code: <strong>{{ sync.code.value }}</strong></p>
+              <p class="sync-hint" v-if="sync.lastSync.value">
+                Last sync: {{ sync.lastSync.value.toLocaleTimeString() }}
+              </p>
+              <button class="action-btn primary" @click="sync.pull(); showSyncPanel = false" :disabled="sync.pulling.value">
+                {{ sync.pulling.value ? 'Syncing...' : 'Sync Now' }}
+              </button>
+              <button class="action-btn" @click="sync.unpair()">Unpair</button>
+            </div>
+            <div v-else>
+              <div class="sync-section">
+                <p class="sync-label">Create a sync code on this device:</p>
+                <button class="action-btn primary" @click="doCreateSync">Create Code</button>
+                <p v-if="sync.code.value" class="sync-code-big">{{ sync.code.value }}</p>
+                <p class="sync-hint" v-if="sync.code.value">Enter this code on your other device to pair.</p>
+              </div>
+              <hr class="sync-divider">
+              <div class="sync-section">
+                <p class="sync-label">Or enter a code from another device:</p>
+                <div class="sync-input-row">
+                  <input v-model="pairInput" class="sync-code-input" maxlength="8" placeholder="ABCD1234" autocapitalize="characters" />
+                  <button class="action-btn primary" @click="doPair" :disabled="pairInput.length < 8">Pair</button>
+                </div>
+              </div>
+              <p v-if="sync.error.value" class="sync-error">{{ sync.error.value }}</p>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Search -->
     <input
@@ -110,9 +152,22 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useVocabulary } from '../composables/useVocabulary'
+import { useSync } from '../composables/useSync'
 
 const vocab = useVocabulary()
 vocab.init()
+
+const sync = useSync()
+const showSyncPanel = ref(false)
+const pairInput = ref('')
+
+async function doCreateSync() {
+  await sync.createCode()
+}
+async function doPair() {
+  const ok = await sync.pairCode(pairInput.value)
+  if (ok) { pairInput.value = ''; showSyncPanel.value = false }
+}
 
 // ---- controls state ----
 
@@ -574,4 +629,24 @@ onUnmounted(() => {
   border-color: var(--danger-color, #ff3b30);
   color: #fff;
 }
+
+/* ---- sync panel ---- */
+.sync-panel { max-height: 80vh; }
+.sync-section { margin-bottom: 16px; }
+.sync-label { font-size: 14px; color: var(--text-secondary, #6e6e73); margin-bottom: 8px; }
+.sync-code-big {
+  font-size: 28px; font-weight: 700; letter-spacing: 6px;
+  color: var(--text-primary, #1d1d1f); text-align: center;
+  margin: 12px 0; font-family: monospace;
+}
+.sync-hint { font-size: 12px; color: var(--text-secondary, #6e6e73); margin-top: 6px; }
+.sync-divider { border: none; border-top: 1px solid var(--border-color, #d2d2d7); margin: 16px 0; }
+.sync-input-row { display: flex; gap: 8px; }
+.sync-code-input {
+  flex: 1; padding: 10px 14px; border: 1px solid var(--border-color, #d2d2d7);
+  border-radius: 8px; font-size: 16px; text-transform: uppercase; font-family: monospace;
+  letter-spacing: 4px; text-align: center;
+}
+.sync-status { text-align: center; }
+.sync-error { color: var(--danger-color, #ff3b30); font-size: 13px; margin-top: 8px; text-align: center; }
 </style>
