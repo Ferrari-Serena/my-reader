@@ -48,7 +48,8 @@ async function add({ word, dictEntry, bookId, chapterId }) {
       chapters: Array.isArray(snap.chapters) ? [...snap.chapters] : []
     },
     srs: null,  // 7.2 FSRS 槽位
-    quiz: null  // 7.3 槽位
+    quiz: null,  // 7.3 槽位
+    updatedAt: new Date().toISOString()
   }
   const ok = await storage.addWord(entry)
   if (!ok) state.persistFailed = true
@@ -84,8 +85,11 @@ async function refreshSnapshot(word, dictEntry) {
     definitions: [...dictEntry.definitions],
     audioUrl: dictEntry.audioUrl || ''
   }
-  await storage.updateWord(key, { snapshot })
+  const now = new Date().toISOString()
+  await storage.updateWord(key, { snapshot, updatedAt: now })
   entry.snapshot = snapshot
+  entry.updatedAt = now
+  Promise.resolve().then(() => _autoPush())
 }
 
 async function clearAll() {
@@ -115,10 +119,27 @@ async function recordQuizAnswer(word, correct, questionType) {
     q.correctStreak = 0
     q.wrongHistory.push({ date: new Date().toISOString(), questionType: questionType || '' })
   }
-  const ok = await storage.updateWord(key, { quiz: q })
+  const now = new Date().toISOString()
+  const ok = await storage.updateWord(key, { quiz: q, updatedAt: now })
   if (!ok) state.persistFailed = true
   entry.quiz = q
+  entry.updatedAt = now
   Promise.resolve().then(() => _autoPush())
+}
+
+/** SRS 更新（FlashcardsView 调用，同步更新 localStorage + reactive state） */
+async function updateSRS(word, srsCard) {
+  await init()
+  const key = word.toLowerCase()
+  const entry = state.words[key]
+  if (!entry) return false
+  const now = new Date().toISOString()
+  entry.srs = srsCard
+  entry.updatedAt = now
+  const ok = await storage.updateWord(key, { srs: srsCard, updatedAt: now })
+  if (!ok) state.persistFailed = true
+  Promise.resolve().then(() => _autoPush())
+  return ok
 }
 
 /** 错题池：答错过且尚未连对 3 次的词 */
@@ -181,6 +202,7 @@ export function useVocabulary() {
     remove,
     refreshSnapshot,
     recordQuizAnswer,
+    updateSRS,
     clearAll,
     exportJSON,
     importJSON

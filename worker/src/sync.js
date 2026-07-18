@@ -45,10 +45,17 @@ export async function handleSync(request, env) {
   // POST /api/sync/create
   if (request.method === 'POST' && url.pathname === '/api/sync/create') {
     const code = randCode()
-    // 插入一条空占位（也可直接依赖 push 的第一批数据，但无占位则无法配对校验）
+    // 插入占位（配对校验）+ 清除 7 天前废弃的同步码
+    const now = new Date().toISOString()
     await env.DB.prepare(
       'INSERT OR IGNORE INTO sync_data (code, word, payload, updated_at) VALUES (?, ?, ?, ?)'
-    ).bind(code, '__meta__', JSON.stringify({ created: Date.now() }), new Date().toISOString()).run()
+    ).bind(code, '__meta__', JSON.stringify({ created: now }), now).run()
+    // 清理 7 天前的废弃同步码
+    try {
+      await env.DB.prepare(
+        "DELETE FROM sync_data WHERE code IN (SELECT code FROM sync_data WHERE word = '__meta__' AND updated_at < ?)"
+      ).bind(new Date(Date.now() - 7 * 86400000).toISOString()).run()
+    } catch { /* 最佳努力清理，不阻塞 create */ }
     return json({ code })
   }
 
