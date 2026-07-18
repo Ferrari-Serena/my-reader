@@ -425,7 +425,7 @@ def build():
     # ── 2. staging 词组搭配（SAT 数据）──
     added_colloc = 0
     if STAGING.exists():
-        staging = json.loads(STAGING.read_text(encoding="utf-8"))
+        staging = json.loads(STAGING.read_bytes().decode('utf-8-sig'))
         seen = set()
         for item in staging:
             p = (item.get("phrase") or "").strip().lower()
