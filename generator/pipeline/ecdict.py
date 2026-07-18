@@ -73,9 +73,10 @@ class Ecdict:
         if not definitions:
             return None
 
-        # pos "n:60/v:40" → 主词性；ECDICT 代码映射为常规缩写（j→adj, r→adv 等）
+        # pos "n:60/v:40" → 主词性；ECDICT BNC 代码映射为常规缩写
+        # ECDICT 代码: j=adj, r=adv, v=verb, n=noun, m=num, c=conj, i=prep, p=pronoun, a=article, d=det, u=interj
         POS_MAP = {'j': 'adj', 'r': 'adv', 'v': 'v', 'n': 'n', 'm': 'num',
-                   'c': 'conj', 'p': 'prep', 'u': 'interj', 'd': 'det', 't': 'pron'}
+                   'c': 'conj', 'i': 'prep', 'p': 'pron', 'a': 'art', 'd': 'det', 'u': 'interj'}
         pos = ''
         if row['pos']:
             first = row['pos'].split('/')[0].split(':')[0].strip()

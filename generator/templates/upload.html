@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>my-reader 本地生成器</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: #1d1d1f;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: #fff; border-radius: 18px; padding: 32px;
+    max-width: 520px; width: 100%;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #6e6e73; font-size: 13px; margin-bottom: 24px; }
+
+  .dropzone {
+    border: 2px dashed #d2d2d7; border-radius: 14px;
+    padding: 48px 24px; text-align: center; cursor: pointer;
+    transition: all 0.2s; color: #6e6e73; font-size: 15px;
+  }
+  .dropzone.dragover { border-color: #1a73e8; background: #f0f7ff; color: #1a73e8; }
+  .dropzone .icon { font-size: 40px; display: block; margin-bottom: 10px; }
+
+  .progress-wrap { margin-top: 20px; display: none; }
+  .progress-bar {
+    height: 8px; background: #f5f5f7; border-radius: 4px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; background: #1a73e8; border-radius: 4px;
+    transition: width 0.4s; width: 0%;
+  }
+  .progress-msg { font-size: 13px; color: #6e6e73; margin-top: 8px; }
+
+  .result { margin-top: 20px; display: none; }
+  .result-ok {
+    background: #e8f8ee; border-radius: 10px; padding: 14px;
+    color: #1d7a3d; font-size: 14px; margin-bottom: 14px;
+  }
+  .result-err {
+    background: #ffefef; border-radius: 10px; padding: 14px;
+    color: #c62828; font-size: 14px; margin-bottom: 14px; display: none;
+  }
+  .btn {
+    display: inline-block; width: 100%; padding: 12px 0; margin-top: 8px;
+    border: none; border-radius: 10px; font-size: 15px; font-weight: 600;
+    cursor: pointer; text-align: center; transition: opacity 0.2s;
+  }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-tts { background: #fff3e0; color: #e65100; }
+  .btn-deploy { background: #1a73e8; color: #fff; }
+  .tts-status { font-size: 13px; color: #6e6e73; margin-top: 6px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>📚 my-reader 本地生成器</h1>
+  <p class="sub">拖入 epub/txt → 解析章节 + ECDICT 词典 → 可选生成音频 → 一键部署</p>
+
+  <div class="dropzone" id="dropzone">
+    <span class="icon">📖</span>
+    拖拽 epub / txt 文件到此处<br>或点击选择文件
+    <input type="file" id="fileInput" accept=".epub,.txt" style="display:none">
+  </div>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <p class="progress-msg" id="progressMsg">准备中...</p>
+  </div>
+
+  <div class="result" id="result">
+    <div class="result-ok" id="resultOk"></div>
+    <button class="btn btn-tts" id="btnTts">🎵 生成朗读音频（后台运行，一本书数小时）</button>
+    <p class="tts-status" id="ttsStatus"></p>
+    <button class="btn btn-deploy" id="btnDeploy">🚀 部署到 www.ferrari11.com</button>
+  </div>
+
+  <div class="result-err" id="resultErr"></div>
+</div>
+
+<script>
+const dropzone = document.getElementById('dropzone')
+const fileInput = document.getElementById('fileInput')
+const progressWrap = document.getElementById('progressWrap')
+const progressFill = document.getElementById('progressFill')
+const progressMsg = document.getElementById('progressMsg')
+const result = document.getElementById('result')
+const resultOk = document.getElementById('resultOk')
+const resultErr = document.getElementById('resultErr')
+const btnTts = document.getElementById('btnTts')
+const btnDeploy = document.getElementById('btnDeploy')
+const ttsStatus = document.getElementById('ttsStatus')
+
+let currentBookId = null
+let pollTimer = null
+let ttsTimer = null
+
+dropzone.onclick = () => fileInput.click()
+fileInput.onchange = () => { if (fileInput.files[0]) upload(fileInput.files[0]) }
+
+;['dragover', 'dragenter'].forEach(ev =>
+  dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('dragover') }))
+;['dragleave', 'drop'].forEach(ev =>
+  dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('dragover') }))
+dropzone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0]
+  if (f) upload(f)
+})
+
+async function upload(file) {
+  hideError()
+  result.style.display = 'none'
+  progressWrap.style.display = 'block'
+  progressFill.style.width = '0%'
+  progressMsg.textContent = '上传中...'
+
+  const fd = new FormData()
+  fd.append('file', file)
+  try {
+    const res = await fetch('/api/generate', { method: 'POST', body: fd })
+    const data = await res.json()
+    if (!res.ok) { showError(data.error || '上传失败'); return }
+    currentBookId = data.bookId
+    pollTimer = setInterval(poll, 800)
+  } catch (e) {
+    showError('无法连接后端: ' + e.message)
+  }
+}
+
+async function poll() {
+  try {
+    const res = await fetch('/api/progress')
+    const s = await res.json()
+    progressFill.style.width = (s.percent || 0) + '%'
+    progressMsg.textContent = s.message || s.stage
+
+    if (s.stage === 'done') {
+      clearInterval(pollTimer)
+      progressWrap.style.display = 'none'
+      result.style.display = 'block'
+      resultOk.textContent = '✅ ' + s.message
+      startTtsPoll()
+    } else if (s.stage === 'error') {
+      clearInterval(pollTimer)
+      progressWrap.style.display = 'none'
+      showError(s.message)
+    }
+  } catch { /* 后端暂时不可达，下次轮询重试 */ }
+}
+
+btnTts.onclick = async () => {
+  if (!currentBookId) return
+  btnTts.disabled = true
+  try {
+    const res = await fetch('/api/tts/' + currentBookId, { method: 'POST' })
+    const data = await res.json()
+    if (!res.ok) { showError(data.error); btnTts.disabled = false; return }
+    ttsStatus.textContent = '音频生成已启动（后台运行）'
+    startTtsPoll()
+  } catch (e) { showError(e.message); btnTts.disabled = false }
+}
+
+function startTtsPoll() {
+  clearInterval(ttsTimer)
+  ttsTimer = setInterval(async () => {
+    if (!currentBookId) return
+    try {
+      const res = await fetch('/api/tts-progress/' + currentBookId)
+      const s = await res.json()
+      if (s.total) {
+        ttsStatus.textContent = `音频: ${s.done}/${s.total} 章` + (s.running ? '（生成中...）' : '')
+        if (!s.running && s.done >= s.total) clearInterval(ttsTimer)
+      }
+    } catch { /* ignore */ }
+  }, 5000)
+}
+
+btnDeploy.onclick = async () => {
+  btnDeploy.disabled = true
+  btnDeploy.textContent = '部署中...'
+  try {
+    const res = await fetch('/api/deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: `Add book: ${currentBookId || 'update'}` })
+    })
+    const data = await res.json()
+    if (!res.ok) { showError(data.error) }
+    else { resultOk.textContent = '✅ ' + data.message }
+  } catch (e) { showError(e.message) }
+  btnDeploy.disabled = false
+  btnDeploy.textContent = '🚀 部署到 www.ferrari11.com'
+}
+
+function showError(msg) {
+  resultErr.textContent = '❌ ' + msg
+  resultErr.style.display = 'block'
+}
+function hideError() { resultErr.style.display = 'none' }
+</script>
+</body>
+</html>
