@@ -1,6 +1,6 @@
 {
   "name": "my-reader",
-  "short_name": "reader",
+  "short_name": "my-reader",
   "description": "English book reader with built-in dictionary and audio",
   "start_url": "/",
   "display": "standalone",

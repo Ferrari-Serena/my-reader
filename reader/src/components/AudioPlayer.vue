@@ -228,8 +228,10 @@ function teardownMediaSession() {
   navigator.mediaSession.setActionHandler('stop', null)
   navigator.mediaSession.setActionHandler('previoustrack', null)
   navigator.mediaSession.setActionHandler('nexttrack', null)
-  navigator.mediaSession.setActionHandler('seekbackward', null)
-  navigator.mediaSession.setActionHandler('seekforward', null)
+  if (hasPositionState) {
+    navigator.mediaSession.setActionHandler('seekbackward', null)
+    navigator.mediaSession.setActionHandler('seekforward', null)
+  }
   navigator.mediaSession.metadata = null // Issue C fix
   navigator.mediaSession.playbackState = 'none'
 }
@@ -267,7 +269,7 @@ function playFrom(seconds) {
   startStaticAudio(seconds)
 }
 
-defineExpose({ playFrom })
+defineExpose({ playFrom, stop: stopAll })
 
 // ---- audio element events ----
 // 区分两类 error：加载期（404 等 → 亮出兜底按钮）vs 播放期（当作结束）。
@@ -298,6 +300,7 @@ function useBrowserTTS() {
 }
 
 function startBrowserTTS() {
+  teardownMediaSession() // Browser TTS 锁屏不可靠，清除旧的 MP3 锁屏信息
   if (!('speechSynthesis' in window)) {
     state.value = 'error'
     source.value = 'Browser TTS not supported'

@@ -469,10 +469,18 @@ function setChapter(index) {
 }
 
 function prevChapter() {
+  if (currentChapterIndex.value <= 0) {
+    audioPlayerRef.value?.stop() // 第一章 → 停止播放，给用户明确反馈
+    return
+  }
   setChapter(currentChapterIndex.value - 1)
 }
 
 function nextChapter() {
+  if (currentChapterIndex.value >= chapters.value.length - 1) {
+    audioPlayerRef.value?.stop() // 最后一章 → 停止播放
+    return
+  }
   setChapter(currentChapterIndex.value + 1)
 }
 
