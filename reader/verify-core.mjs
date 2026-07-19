@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 核心逻辑端到端验证（不依赖浏览器）：
  *   1. fsrs.js — 卡片创建/评分/到期队列/日期序列化
  *   2. spelling.js — 拼写比对/差异标注
@@ -10,6 +10,10 @@ import { createCard, rate, isDue, buildQueue, nextDueAt } from './src/fsrs.js'
 import { checkSpelling, levenshtein } from './src/utils/spelling.js'
 import { generateQuestions, generatePhraseQuestions } from './src/quizGen.js'
 import { readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 let pass = 0, fail = 0
 function t(name, cond) {
@@ -59,8 +63,8 @@ t('levenshtein 对称', levenshtein('abc', 'abd') === 1)
 
 // ═══ 3. quizGen ═══
 console.log('\n[quizGen.js]')
-const satDict = JSON.parse(readFileSync('./public/books/sat-practice/dictionary.json', 'utf8'))
-const satChapters = JSON.parse(readFileSync('./public/books/sat-practice/chapters.json', 'utf8'))
+const satDict = JSON.parse(readFileSync(join(__dirname, 'public/books/sat-practice/dictionary.json'), 'utf8'))
+const satChapters = JSON.parse(readFileSync(join(__dirname, 'public/books/sat-practice/chapters.json'), 'utf8'))
 const entries = Object.entries(satDict.words).slice(0, 300).map(([w, d]) => ({
   word: w,
   snapshot: { lemma: d.lemma, partOfSpeech: d.partOfSpeech, definitions: d.definitions, level: d.level }
@@ -89,7 +93,7 @@ t('句子填空题干含空格线', clozeQs.every(q => q.stem.includes('_______'
 t('句子填空题干不含答案词', clozeQs.every(q => !new RegExp(`\\b${q.word}\\b`, 'i').test(q.stem)))
 
 // 词组题
-const phrasesData = JSON.parse(readFileSync('./public/data/phrases.json', 'utf8'))
+const phrasesData = JSON.parse(readFileSync(join(__dirname, 'public/data/phrases.json'), 'utf8'))
 const phraseList = Object.entries(phrasesData).map(([phrase, e]) => ({ phrase, ...e }))
 const pqs = generatePhraseQuestions(phraseList, 10)
 t('词组题生成', pqs.length > 0)
