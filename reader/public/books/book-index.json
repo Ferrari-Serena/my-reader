@@ -1,25 +1,32 @@
 {
- "books": [
-  {
-   "id": "the-giver",
-   "title": "The Giver",
-   "author": "Lois Lowry",
-   "coverUrl": null,
-   "dataUrl": "books/the-giver/"
-  },
-  {
-   "id": "sat-practice",
-   "title": "SAT Vocabulary Practice",
-   "author": "Word Lists",
-   "coverUrl": null,
-   "dataUrl": "books/sat-practice/"
-  },
-  {
-   "id": "artemis-fowl",
-   "title": "Artemis Fowl 01",
-   "author": "Eoin Colfer",
-   "coverUrl": null,
-   "dataUrl": "books/artemis-fowl/"
-  }
- ]
+  "books": [
+    {
+      "id": "the-giver",
+      "title": "The Giver",
+      "author": "Lois Lowry",
+      "coverUrl": null,
+      "dataUrl": "books/the-giver/"
+    },
+    {
+      "id": "sat-practice",
+      "title": "SAT Vocabulary Practice",
+      "author": "Word Lists",
+      "coverUrl": null,
+      "dataUrl": "books/sat-practice/"
+    },
+    {
+      "id": "artemis-fowl",
+      "title": "Artemis Fowl 01",
+      "author": "Eoin Colfer",
+      "coverUrl": null,
+      "dataUrl": "books/artemis-fowl/"
+    },
+    {
+      "id": "divergent-series-ultimate-four-book-collection--veronica-rot",
+      "title": "The Divergent Library: Divergent; Insurgent; Allegiant; Four: The Transfer, The Initiate, The Son, and The Traitor (Divergent Series)",
+      "author": "Roth, Veronica",
+      "coverUrl": null,
+      "dataUrl": "books/divergent-series-ultimate-four-book-collection--veronica-rot/"
+    }
+  ]
 }
