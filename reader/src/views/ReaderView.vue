@@ -90,13 +90,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ChapterNav from '../components/ChapterNav.vue'
 import AudioPlayer from '../components/AudioPlayer.vue'
 import WordPopup from '../components/WordPopup.vue'
 import { useVocabulary } from '../composables/useVocabulary'
 import { usePhrases } from '../composables/usePhrases'
+import { savePosition, loadPosition } from '../composables/useReadingPosition'
 
 const route = useRoute()
 const router = useRouter()
@@ -198,6 +199,28 @@ watch(playingParaId, (id, oldId) => {
   }
   document.getElementById('para-' + id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 })
+
+// ---- 阅读进度持久化 ----
+
+/** 当前视口内第一个可见段落的 index（用于保存阅读位置） */
+function getCurrentParagraphIndex() {
+  const paras = document.querySelectorAll('.paragraph')
+  for (let i = 0; i < paras.length; i++) {
+    const rect = paras[i].getBoundingClientRect()
+    if (rect.bottom > 0) return i  // 第一个尚未滚出视口的段落
+  }
+  // 所有段落都在视口上方（已滚过章末）→ 返回最后一段
+  return Math.max(0, paras.length - 1)
+}
+
+function saveCurrentPosition() {
+  if (!currentChapter.value) return
+  savePosition(bookId.value, currentChapter.value.id, getCurrentParagraphIndex())
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === 'hidden') saveCurrentPosition()
+}
 
 function isAnnotated(word, para) {
   const clean = word.replace(/[^a-zA-Z]/g, '').toLowerCase()
@@ -398,11 +421,38 @@ async function loadBook() {
       dictionary.value = dictData.words || {}
     }
 
-    // Navigate to requested chapter or first
-    const targetIndex = chapterId.value
-      ? chapters.value.findIndex(c => c.id === chapterId.value)
-      : 0
-    setChapter(targetIndex >= 0 ? targetIndex : 0)
+    // Navigate: URL chapter param > saved position > first chapter
+    let targetIndex = -1
+    if (chapterId.value) {
+      // 显式 URL 章节：优先使用
+      targetIndex = chapters.value.findIndex(c => c.id === chapterId.value)
+    } else {
+      // 无显式章节：尝试恢复上次阅读位置
+      const saved = loadPosition(bookId.value)
+      if (saved) {
+        targetIndex = chapters.value.findIndex(c => c.id === saved.chapterId)
+      }
+    }
+    // fallback 必须在 if/else 外部：无效章节 / 无存档 / 存档章节已删除 → 第一章
+    if (targetIndex < 0) targetIndex = 0
+    setChapter(targetIndex)
+
+    // 从存档恢复 → 等 DOM 渲染完成后滚动到目标段落
+    if (!chapterId.value) {
+      const saved = loadPosition(bookId.value)
+      if (saved && saved.paragraphIndex > 0) {
+        const savedParaIndex = saved.paragraphIndex
+        const restoredChapterIndex = targetIndex
+        nextTick(() => {
+          requestAnimationFrame(() => {
+            const paraId = chapters.value[restoredChapterIndex]?.paragraphs?.[savedParaIndex]?.id
+            if (paraId) {
+              document.getElementById('para-' + paraId)?.scrollIntoView({ block: 'nearest' })
+            }
+          })
+        })
+      }
+    }
   } catch (e) {
     error.value = e.message
   } finally {
@@ -412,6 +462,10 @@ async function loadBook() {
 
 function setChapter(index) {
   if (index >= 0 && index < chapters.value.length) {
+    // 切章前保存旧章位置（首次加载时 currentChapter 为 null，跳过避免写垃圾数据）
+    if (currentChapter.value) {
+      savePosition(bookId.value, currentChapter.value.id, getCurrentParagraphIndex())
+    }
     currentChapterIndex.value = index
     currentChapter.value = chapters.value[index]
     audioTime.value = -1
@@ -444,9 +498,29 @@ watch(bookId, () => {
 // 浏览器前进/后退或手改地址栏章节时同步视图；setChapter 里的 router.replace
 // 产生的同值变更被 index 比较挡住，不会循环
 watch(chapterId, (id) => {
-  if (!id || loading.value || !chapters.value.length) return
+  if (loading.value || !chapters.value.length) return
+  if (!id) {
+    // 回退到 /reader/<bookId>（无章节参数）：恢复存档阅读位置
+    const saved = loadPosition(bookId.value)
+    const idx = saved ? chapters.value.findIndex(c => c.id === saved.chapterId) : -1
+    if (idx >= 0 && idx !== currentChapterIndex.value) setChapter(idx)
+    return
+  }
   const idx = chapters.value.findIndex(c => c.id === id)
   if (idx >= 0 && idx !== currentChapterIndex.value) setChapter(idx)
+})
+
+// ---- 阅读进度：页面隐藏 / 离开时保存位置 ----
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('pagehide', saveCurrentPosition)
+})
+
+onBeforeUnmount(() => {
+  // 离开阅读页（切 tab、返回书架等）→ 保存当前位置
+  saveCurrentPosition()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('pagehide', saveCurrentPosition)
 })
 </script>
 
