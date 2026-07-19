@@ -153,7 +153,9 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useVocabulary } from '../composables/useVocabulary'
 import { useSync } from '../composables/useSync'
+import { useTTS } from '../composables/useTTS.js'
 
+const tts = useTTS()
 const vocab = useVocabulary()
 vocab.init()
 
@@ -250,11 +252,7 @@ async function onRemove(word) {
 }
 
 function speak(word) {
-  if (!('speechSynthesis' in window)) return
-  const utt = new SpeechSynthesisUtterance(word)
-  utt.lang = 'en-US'
-  utt.rate = 0.9
-  speechSynthesis.speak(utt)
+  tts.speak(word)
 }
 
 function formatDate(iso) {
