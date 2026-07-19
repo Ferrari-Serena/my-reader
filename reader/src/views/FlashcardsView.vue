@@ -117,20 +117,18 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useVocabulary } from '../composables/useVocabulary'
 import { createCard, rate, Rating, buildQueue, nextDueAt } from '../fsrs.js'
 import { checkSpelling as spellCheck, diffHtml } from '../utils/spelling.js'
+import { useTTS } from '../composables/useTTS.js'
 
+const tts = useTTS()
 const vocab = useVocabulary()
 vocab.init()
 
 // ---- utility ----
 
 function speakWord() {
-  if (!('speechSynthesis' in window)) return
   const word = currentWord.value?.word
   if (!word) return
-  const utt = new SpeechSynthesisUtterance(word)
-  utt.lang = 'en-US'
-  utt.rate = 0.9
-  speechSynthesis.speak(utt)
+  tts.speak(word)
 }
 
 // ---- state machine ----

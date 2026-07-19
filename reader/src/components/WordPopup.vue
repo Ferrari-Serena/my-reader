@@ -79,6 +79,8 @@
 </template>
 
 <script setup>
+import { useTTS } from '../composables/useTTS.js'
+
 const props = defineProps({
   word: { type: String, default: '' },
   dictEntry: { type: Object, default: null },
@@ -89,15 +91,11 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'add-vocab', 'remove-vocab'])
 
+const tts = useTTS()
 const visible = computed(() => !!props.word)
 
 function speakWord() {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(props.word)
-    utterance.lang = 'en-US'
-    utterance.rate = 0.9
-    speechSynthesis.speak(utterance)
-  }
+  tts.speak(props.word)
 }
 
 function addToVocab() {
