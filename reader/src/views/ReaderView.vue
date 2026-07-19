@@ -71,7 +71,11 @@
         ref="audioPlayerRef"
         :chapter-text="currentChapterText"
         :audio-url="currentAudioUrl"
+        :book-title="bookTitle"
+        :chapter-title="currentChapter?.title || ''"
         @time="onAudioTime"
+        @next-track="nextChapter"
+        @prev-track="prevChapter"
       />
     </template>
 

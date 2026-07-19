@@ -28,10 +28,12 @@ const CHUNK_MAX = 160
 
 const props = defineProps({
   chapterText: { type: String, default: '' },
-  audioUrl: { type: String, default: '' }
+  audioUrl: { type: String, default: '' },
+  bookTitle: { type: String, default: '' },
+  chapterTitle: { type: String, default: '' }
 })
 
-const emit = defineEmits(['time'])
+const emit = defineEmits(['time', 'next-track', 'prev-track'])
 
 // ---- state machine ----
 
@@ -115,6 +117,9 @@ function startStaticAudio(seekTo = null) {
       el.currentTime = target
     }
     state.value = 'playing'
+    // Media Session 注册锁屏控件
+    setupMediaSession()
+    navigator.mediaSession.playbackState = 'playing'
   }).catch((err) => {
     if (mySid !== sessionId) return
     clearLoadTimer()
@@ -154,10 +159,95 @@ function clearPosition(url) {
   try { localStorage.removeItem(POS_PREFIX + url) } catch { /* ignore */ }
 }
 
+// ---- Media Session API（锁屏音频控制）----
+
+const hasMediaSession = 'mediaSession' in navigator
+// iOS Safari 15+ 不支持 setPositionState / seek 按钮（Q4 fix）
+const hasPositionState = hasMediaSession && typeof navigator.mediaSession.setPositionState === 'function'
+let posStateThrottle = 0 // positionState 每秒最多更新一次
+
+function mediaMeta() {
+  // 回退 title：取 chapterText 第一句话，避免长篇文字截断成乱码（Q15 fix）
+  const firstSentence = props.chapterText?.match(/^[^.!\n]+[.!\n]?/)?.[0]?.trim()
+  const meta = {
+    title: props.chapterTitle || firstSentence || 'Chapter',
+    artist: props.bookTitle || 'my-reader',
+    album: props.bookTitle || '',
+    artwork: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }]
+  }
+  return new MediaMetadata(meta)
+}
+
+function setupMediaSession() {
+  if (!hasMediaSession) return
+  navigator.mediaSession.metadata = mediaMeta()
+
+  // 锁屏 play 守卫：有 MP3 才调用 togglePlay，避免误触 Browser TTS（Issue E fix）
+  navigator.mediaSession.setActionHandler('play', () => {
+    if (props.audioUrl) togglePlay()
+  })
+  navigator.mediaSession.setActionHandler('pause', () => stopAll())
+  navigator.mediaSession.setActionHandler('stop', () => stopAll()) // Issue F fix
+  navigator.mediaSession.setActionHandler('previoustrack', () => emit('prev-track'))
+  navigator.mediaSession.setActionHandler('nexttrack', () => emit('next-track'))
+
+  if (hasPositionState) {
+    navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+      const el = audioEl.value
+      if (el && Number.isFinite(el.duration)) {
+        el.currentTime = Math.max(0, el.currentTime - (details.seekOffset || 10))
+      }
+    })
+    navigator.mediaSession.setActionHandler('seekforward', (details) => {
+      const el = audioEl.value
+      if (el && Number.isFinite(el.duration)) {
+        el.currentTime = Math.min(el.duration, el.currentTime + (details.seekOffset || 10))
+      }
+    })
+  }
+}
+
+function updatePositionState() {
+  if (!hasPositionState) return // iOS no-op（Q4 fix）
+  const el = audioEl.value
+  if (!el || !Number.isFinite(el.duration)) return
+  const now = Date.now()
+  if (now - posStateThrottle < 1000) return // 每秒最多一次
+  posStateThrottle = now
+  navigator.mediaSession.setPositionState({
+    duration: el.duration,
+    playbackRate: el.playbackRate || 1,
+    position: el.currentTime
+  })
+}
+
+function teardownMediaSession() {
+  if (!hasMediaSession) return
+  navigator.mediaSession.setActionHandler('play', null)
+  navigator.mediaSession.setActionHandler('pause', null)
+  navigator.mediaSession.setActionHandler('stop', null)
+  navigator.mediaSession.setActionHandler('previoustrack', null)
+  navigator.mediaSession.setActionHandler('nexttrack', null)
+  navigator.mediaSession.setActionHandler('seekbackward', null)
+  navigator.mediaSession.setActionHandler('seekforward', null)
+  navigator.mediaSession.metadata = null // Issue C fix
+  navigator.mediaSession.playbackState = 'none'
+}
+
+// 切章/换书时 meta 数据变化 → 如果 Media Session 处于激活状态则同步更新（Q9 fix）
+watch([() => props.bookTitle, () => props.chapterTitle], () => {
+  if (!hasMediaSession) return
+  // 仅在之前已设置了 metadata 的情况下更新（避免凭空创建 Now Playing 条目）
+  if (navigator.mediaSession.metadata) {
+    navigator.mediaSession.metadata = mediaMeta()
+  }
+})
+
 function onTimeUpdate() {
   const el = audioEl.value
   if (!el || state.value !== 'playing') return
   emit('time', el.currentTime)
+  updatePositionState()
   const now = Date.now()
   if (now - lastSavedAt > 3000) {
     lastSavedAt = now
@@ -185,6 +275,8 @@ defineExpose({ playFrom })
 
 function onAudioEnded() {
   clearPosition(props.audioUrl) // 读完整章，下次从头开始
+  // 保持 paused 状态而非 none → 锁屏 play 按钮仍可用，用户可重播本章（Q5 fix）
+  if (hasMediaSession) navigator.mediaSession.playbackState = 'paused'
   if (state.value === 'playing') stopAll()
 }
 
@@ -193,6 +285,7 @@ function onAudioError() {
     state.value = 'error'
     source.value = 'Audio not found — use Browser TTS'
   } else if (state.value === 'playing') {
+    if (hasMediaSession) navigator.mediaSession.playbackState = 'paused' // Issue D fix
     stopAll()
   }
 }
@@ -316,6 +409,8 @@ function clearTimers() {
 // ---- stop everything ----
 
 function stopAll() {
+  // 暂停时保持 handlers 存活 → 用户可从锁屏恢复播放（Q5 fix）
+  if (hasMediaSession) navigator.mediaSession.playbackState = 'paused'
   sessionId++
   clearLoadTimer()
   stopBrowserTTS()
@@ -338,6 +433,7 @@ function stopAll() {
 
 onUnmounted(() => {
   stopAll()
+  teardownMediaSession() // 组件销毁时彻底清理锁屏控件
 })
 </script>
 
@@ -347,6 +443,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
   background: var(--bg-primary, #fff);
   border-top: 1px solid var(--border-color, #d2d2d7);
   position: fixed;
