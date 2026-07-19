@@ -27,6 +27,3 @@ export function loadPosition(bookId) {
   } catch { return null }
 }
 
-export function clearPosition(bookId) {
-  try { localStorage.removeItem(PREFIX + bookId) } catch { /* ignore */ }
-}

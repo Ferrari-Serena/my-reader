@@ -222,11 +222,6 @@ function onVisibilityChange() {
   if (document.visibilityState === 'hidden') saveCurrentPosition()
 }
 
-function isAnnotated(word, para) {
-  const clean = word.replace(/[^a-zA-Z]/g, '').toLowerCase()
-  return clean.length > 0 && (para.annotatedWords || []).includes(clean)
-}
-
 // ---- 生词本 ----
 
 const vocab = useVocabulary()
@@ -309,11 +304,6 @@ const paraPhraseSpans = computed(() => {
   }
   return result
 })
-
-function isSavedWord(word) {
-  const clean = word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()
-  return clean.length > 0 && vocab.savedSet.value.has(clean)
-}
 
 // 存储 key 是 lemma（went → go），弹窗的收藏态按 点击词 或 其 lemma 任一命中判定
 const isSelectedSaved = computed(() => {
