@@ -8,4 +8,8 @@ binding = "DB"
 database_name = "my-reader-dict"
 database_id = "f533d074-ddc9-4117-b560-45d904358b10"
 
+[[r2_buckets]]
+binding = "AUDIO"
+bucket_name = "my-reader-audio"
+
 # M-W API Key 用 secret，不进代码：npx wrangler secret put MW_API_KEY
