@@ -10,3 +10,5 @@ uploads/
 *.egg-info/
 .DS_Store
 Thumbs.db
+# 音频经 R2 分发，不进 git
+reader/public/books/*/audio/

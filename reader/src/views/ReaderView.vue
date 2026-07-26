@@ -131,10 +131,11 @@ const currentChapterText = computed(() => {
   return [currentChapter.value.title, ...currentChapter.value.paragraphs.map(p => p.text)].join(' ')
 })
 
-// 约定路径：books/<bookId>/audio/<chapterId>.mp3（未生成时前端 404 降级 browser TTS）
+// R2 音频经 Worker 代理：/api/audio/<bookId>/<chapterId>.mp3
+const AUDIO_BASE = 'https://www.ferrari11.com/api/audio'
 const currentAudioUrl = computed(() => {
   if (!currentChapter.value) return ''
-  return `${import.meta.env.BASE_URL}books/${bookId.value}/audio/${currentChapter.value.id}.mp3`
+  return `${AUDIO_BASE}/${bookId.value}/${currentChapter.value.id}.mp3`
 })
 
 // ---- 段落定位播放（时间表 + 高亮跟随）----
@@ -149,7 +150,7 @@ async function loadTimings(chId) {
   const key = `${bookId.value}/${chId}`
   if (!(key in timingsCache)) {
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}books/${bookId.value}/audio/${chId}.timings.json`)
+      const res = await fetch(`${AUDIO_BASE}/${bookId.value}/${chId}.timings.json`)
       timingsCache[key] = res.ok ? await res.json() : null
     } catch {
       timingsCache[key] = null

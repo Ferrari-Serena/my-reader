@@ -43,6 +43,22 @@ export default {
       return json({ status: 'ok' })
     }
 
+    // R2 音频代理：/api/audio/<bookId>/<file>
+    const audioMatch = pathname.match(/^\/api\/audio\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)$/)
+    if (audioMatch && request.method === 'GET') {
+      const key = `${audioMatch[1]}/${audioMatch[2]}`
+      const obj = await env.AUDIO.get(key)
+      if (!obj) return new Response('Not found', { status: 404, headers: corsHeaders })
+      const ct = key.endsWith('.mp3') ? 'audio/mpeg' : key.endsWith('.json') ? 'application/json' : 'application/octet-stream'
+      return new Response(obj.body, {
+        headers: {
+          'Content-Type': ct,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          ...corsHeaders,
+        }
+      })
+    }
+
     // 先 decode 再匹配，兼容把撇号编码成 %27 的客户端
     let pathname = url.pathname
     try { pathname = decodeURIComponent(pathname) } catch { /* 非法编码按原样匹配 */ }
