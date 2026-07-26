@@ -44,7 +44,7 @@ export default {
     }
 
     // R2 音频代理：/api/audio/<bookId>/<file>
-    const audioMatch = pathname.match(/^\/api\/audio\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)$/)
+    const audioMatch = url.pathname.match(/^\/api\/audio\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)$/)
     if (audioMatch && request.method === 'GET') {
       const key = `${audioMatch[1]}/${audioMatch[2]}`
       const obj = await env.AUDIO.get(key)
