@@ -27,33 +27,75 @@
 
       <article
         class="chapter-content"
-        @click="onWordClick"
+        @click="onChapterClick"
         @touchstart.passive="onTouchStart"
         @touchend.passive="onTouchEnd"
       >
-        <h2 class="chapter-title">{{ currentChapter.title }}</h2>
-        <p
-          v-for="para in currentChapter.paragraphs"
-          :key="para.id"
-          :id="'para-' + para.id"
-          :class="['paragraph', { 'playing-para': para.id === playingParaId }]"
-        >
-          <button
-            v-if="paraStart(para.id) !== null"
-            class="para-play"
-            title="Play from here"
-            @click.stop="playFromPara(para.id)"
-          >▶</button>
-          <span
-            v-for="(word, wi) in para.text.split(/(\s+)/)" :key="para.id + '-' + wi"
-            :class="['word', Object.fromEntries(
-              [...(paraWordTags[para.id]?.get(wi) || [])].map(t => [t, true])
-            )]"
-            :data-word="word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()"
-            :data-para="para.id"
-            :data-idx="wi"
-          >{{ word }}</span>
-        </p>
+        <!-- Image mode -->
+        <template v-if="isImageBook">
+          <div class="image-page" ref="imageContainerRef">
+            <img
+              :src="imageUrl"
+              :width="imageWidth"
+              :height="imageHeight"
+              class="page-image"
+              @load="onImageLoad"
+              alt="Page image"
+            />
+            <!-- Image word tooltip -->
+            <div
+              v-if="imageWord"
+              class="image-word-tooltip"
+              :style="tooltipStyle"
+            >
+              <span class="tooltip-word">{{ imageWord }}</span>
+              <button class="tooltip-btn" @click.stop="speakImageWord" title="发音">&#x1f50a;</button>
+              <button class="tooltip-btn" @click.stop="addImageWordToVocab" title="加入生词本">+ 生词本</button>
+            </div>
+          </div>
+          <!-- Page jumper -->
+          <div class="page-jumper">
+            <button @click="prevChapter" :disabled="currentChapterIndex <= 0" class="jumper-btn">&larr;</button>
+            <span class="jumper-label">Page</span>
+            <input
+              type="number"
+              :value="currentPageNumber"
+              @keydown.enter="jumpToPage($event)"
+              :min="1"
+              :max="totalPages"
+              class="page-input"
+            />
+            <span class="jumper-label">/ {{ totalPages }}</span>
+            <button @click="nextChapter" :disabled="currentChapterIndex >= chapters.length - 1" class="jumper-btn">&rarr;</button>
+          </div>
+        </template>
+
+        <!-- Text mode (existing, unchanged) -->
+        <template v-else>
+          <h2 class="chapter-title">{{ currentChapter.title }}</h2>
+          <p
+            v-for="para in currentChapter.paragraphs"
+            :key="para.id"
+            :id="'para-' + para.id"
+            :class="['paragraph', { 'playing-para': para.id === playingParaId }]"
+          >
+            <button
+              v-if="paraStart(para.id) !== null"
+              class="para-play"
+              title="Play from here"
+              @click.stop="playFromPara(para.id)"
+            >&#x25b6;</button>
+            <span
+              v-for="(word, wi) in para.text.split(/(\s+)/)" :key="para.id + '-' + wi"
+              :class="['word', Object.fromEntries(
+                [...(paraWordTags[para.id]?.get(wi) || [])].map(t => [t, true])
+              )]"
+              :data-word="word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()"
+              :data-para="para.id"
+              :data-idx="wi"
+            >{{ word }}</span>
+          </p>
+        </template>
       </article>
 
       <ChapterNav
@@ -125,9 +167,41 @@ const selectedWord = ref(null)
 const dictEntry = ref(null)
 const dictLoading = ref(false)
 
+// ---- Image mode ----
+
+const isImageBook = computed(() => {
+  return chapters.value.length > 0 && chapters.value[0].image != null
+})
+
+const imageContainerRef = ref(null)
+const imageWord = ref(null)
+const tooltipStyle = ref({})
+const imageNaturalWidth = ref(0)
+const imageNaturalHeight = ref(0)
+
+const imageUrl = computed(() => {
+  if (!isImageBook.value || !currentChapter.value?.image) return ''
+  const base = `${import.meta.env.BASE_URL}books/${bookId.value}`
+  return `${base}/${currentChapter.value.image.url}`
+})
+
+const imageWidth = computed(() => currentChapter.value?.image?.width || 0)
+const imageHeight = computed(() => currentChapter.value?.image?.height || 0)
+
+const currentPageNumber = computed(() => {
+  const ch = currentChapter.value
+  if (!ch?.id) return 1
+  const match = ch.id.match(/ch-(\d+)/)
+  return match ? parseInt(match[1], 10) : 1
+})
+
+const totalPages = computed(() => chapters.value.length)
+
 const currentChapterText = computed(() => {
   if (!currentChapter.value) return ''
-  // 标题也读（与预生成 MP3 的内容保持一致，见 generator/pipeline/tts.py）
+  // Image books have no text to speak; AudioPlayer won't render
+  if (isImageBook.value) return ''
+  // Title is read as well (matches pre-generated MP3 content, see generator/pipeline/tts.py)
   return [currentChapter.value.title, ...currentChapter.value.paragraphs.map(p => p.text)].join(' ')
 })
 
@@ -207,8 +281,9 @@ watch(playingParaId, (id, oldId) => {
 
 // ---- 阅读进度持久化 ----
 
-/** 当前视口内第一个可见段落的 index（用于保存阅读位置） */
+/** 当前视口内第一个可见段落的 index（用于保存阅读位置）。图片模式返回 0。 */
 function getCurrentParagraphIndex() {
+  if (isImageBook.value) return 0
   const paras = document.querySelectorAll('.paragraph')
   for (let i = 0; i < paras.length; i++) {
     const rect = paras[i].getBoundingClientRect()
@@ -244,7 +319,7 @@ phrases.init()
  */
 const paraWordTags = computed(() => {
   const result = {} // paraId → Map<tokenIdx, Set<'annotated'|'saved'|'phrase'>>
-  if (!currentChapter.value) return result
+  if (!currentChapter.value || isImageBook.value) return result
   const saved = vocab.savedSet.value
   // 反向索引：snapshot.lemma 也加入查找（修复 children→child 等变形词绿点线不显示）
   const lookupSet = new Set(saved)
@@ -294,7 +369,7 @@ const selectedPhrase = ref(null)
 // 词组 spans（供 WordPopup 显示词组信息），基于同一次扫描
 const paraPhraseSpans = computed(() => {
   const result = {} // paraId → spans[]
-  if (!currentChapter.value || !phrases.loaded.value) return result
+  if (!currentChapter.value || isImageBook.value || !phrases.loaded.value) return result
   const lookupSet2 = new Set(vocab.savedSet.value)
   if (lookupSet2.size) {
     for (const e of Object.values(vocab.words.value)) {
@@ -345,6 +420,93 @@ function onTouchEnd(e) {
     if (dx > 0) nextChapter()
     else prevChapter()
   }
+}
+
+async function onChapterClick(event) {
+  if (isImageBook.value) {
+    handleImageClick(event)
+  } else {
+    onWordClick(event)
+  }
+}
+
+function handleImageClick(event) {
+  const img = event.target.closest('img')
+  if (!img) return
+
+  // Calculate click position on the natural-resolution image
+  const rect = img.getBoundingClientRect()
+  const scaleX = imageWidth.value / rect.width
+  const scaleY = imageHeight.value / rect.height
+  const x = (event.clientX - rect.left) * scaleX
+  const y = (event.clientY - rect.top) * scaleY
+
+  const hit = findWordAt(currentChapter.value.words || [], x, y)
+  if (!hit) {
+    imageWord.value = null
+    return
+  }
+
+  // Pronounce
+  import('../composables/useTTS').then(({ useTTS }) => {
+    useTTS().speak(hit.text)
+  })
+
+  // Show tooltip near click position
+  imageWord.value = hit.text
+  tooltipStyle.value = {
+    left: (event.clientX - rect.left) + 'px',
+    top: (event.clientY - rect.top - 10) + 'px'
+  }
+}
+
+function findWordAt(words, x, y, tolerance = 5) {
+  for (const w of words) {
+    if (x >= w.x - tolerance && x <= w.x + w.w + tolerance &&
+        y >= w.y - tolerance && y <= w.y + w.h + tolerance) {
+      return w
+    }
+  }
+  return null
+}
+
+function speakImageWord() {
+  if (!imageWord.value) return
+  import('../composables/useTTS').then(({ useTTS }) => {
+    useTTS().speak(imageWord.value)
+  })
+}
+
+async function addImageWordToVocab() {
+  const word = imageWord.value
+  if (!word) return
+  const entry = dictionary.value?.[word.toLowerCase()] || {}
+  await vocab.add({
+    word: word,
+    dictEntry: {
+      lemma: word,
+      phonetic: entry.phonetic || '',
+      definitions: entry.definitions || ['见图片释义'],
+      partOfSpeech: entry.partOfSpeech || '',
+      chapters: [currentChapter.value?.id]
+    },
+    bookId: bookId.value,
+    chapterId: currentChapter.value?.id ?? null
+  })
+  imageWord.value = null
+}
+
+function jumpToPage(event) {
+  const page = parseInt(event.target.value, 10)
+  if (page >= 1 && page <= chapters.value.length) {
+    const targetId = `ch-${String(page).padStart(3, '0')}`
+    const idx = chapters.value.findIndex(c => c.id === targetId)
+    if (idx >= 0) setChapter(idx)
+  }
+}
+
+function onImageLoad() {
+  // Track natural dimensions for coordinate scaling
 }
 
 async function onWordClick(event) {
@@ -432,8 +594,8 @@ async function loadBook() {
     if (targetIndex < 0) targetIndex = 0
     setChapter(targetIndex)
 
-    // 从存档恢复 → 等 DOM 渲染完成后滚动到目标段落
-    if (!chapterId.value) {
+    // 从存档恢复 → 等 DOM 渲染完成后滚动到目标段落（图片模式跳过）
+    if (!chapterId.value && !isImageBook.value) {
       const saved = loadPosition(bookId.value)
       if (saved && saved.paragraphIndex > 0) {
         const savedParaIndex = saved.paragraphIndex
@@ -663,6 +825,118 @@ onBeforeUnmount(() => {
   .reader-view {
     padding: 0 32px 64px;
     max-width: 760px;
+  }
+}
+
+/* ---- Image mode styles ---- */
+
+.image-page {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 16px;
+}
+
+.page-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  cursor: crosshair;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.image-word-tooltip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--border-color, #d2d2d7);
+  border-radius: 8px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.tooltip-word {
+  font-weight: 600;
+  color: var(--text-primary, #1d1d1f);
+}
+
+.tooltip-btn {
+  border: none;
+  background: var(--accent-color, #1a73e8);
+  color: white;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: opacity 0.15s;
+}
+
+.tooltip-btn:hover {
+  opacity: 0.85;
+}
+
+/* Page jumper */
+.page-jumper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 20px 0 32px;
+  font-size: 15px;
+  color: var(--text-secondary, #6e6e73);
+}
+
+.jumper-btn {
+  border: 1px solid var(--border-color, #d2d2d7);
+  background: var(--bg-primary, #ffffff);
+  color: var(--text-primary, #1d1d1f);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.15s;
+}
+
+.jumper-btn:hover:not(:disabled) {
+  background: var(--highlight-bg, #fff3cd);
+}
+
+.jumper-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.jumper-label {
+  color: var(--text-secondary, #6e6e73);
+}
+
+.page-input {
+  width: 56px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color, #d2d2d7);
+  border-radius: 6px;
+  text-align: center;
+  font-size: 15px;
+  color: var(--text-primary, #1d1d1f);
+  background: var(--bg-primary, #ffffff);
+}
+
+.page-input:focus {
+  outline: none;
+  border-color: var(--accent-color, #1a73e8);
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+}
+
+/* Image mode: wider container for full-page images */
+@media (min-width: 768px) {
+  .reader-view:has(.image-page) {
+    max-width: 900px;
   }
 }
 </style>
