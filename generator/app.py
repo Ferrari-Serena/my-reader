@@ -17,7 +17,7 @@ import threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'pipeline'))
 
-from pipeline.parser import parse_epub, parse_txt
+from pipeline.parser import parse_epub, parse_txt, parse_pdf
 from pipeline.extractor import extract_vocabulary
 from pipeline.dictionary import lookup_dictionary
 
@@ -102,19 +102,31 @@ def _run_pipeline(file_path, ext, book_id):
         _set_state(stage='parsing', percent=10, message='解析章节...')
         if ext == '.epub':
             chapters = parse_epub(file_path, book_id)
+        elif ext == '.pdf':
+            chapters = parse_pdf(file_path, book_id,
+                progress_callback=lambda pct, msg: _set_state(percent=pct, message=msg))
         else:
             chapters = parse_txt(file_path, book_id)
 
         book_dir = os.path.join(OUTPUT_FOLDER, book_id)
         os.makedirs(book_dir, exist_ok=True)
 
-        _set_state(stage='extracting', percent=35, message='提取词汇...')
-        word_list = extract_vocabulary(chapters, NGSL_PATH)
+        if chapters.get('type') == 'image':
+            # Image book: use OCR word list directly, skip NGSL filtering
+            _set_state(stage='extracting', percent=35, message='整理词表...')
+            word_list = chapters.pop('_wordList')
 
-        _set_state(stage='dictionary', percent=55, message='查询词典 (ECDICT 本地)...')
-        # M-W API 兜底在本地管道禁用：国内直连 dictionaryapi.com 每词 10s 超时，
-        # 大量专有名词未命中时会把管道拖死。线上 Worker (/api/dict) 已承担兜底职责。
-        dictionary = lookup_dictionary(word_list, chapters, api_key='')
+            _set_state(stage='dictionary', percent=55, message='查询词典 (ECDICT 本地)...')
+            dictionary = lookup_dictionary(word_list, chapters, api_key='')
+        else:
+            # Text book: existing extraction flow (unchanged)
+            _set_state(stage='extracting', percent=35, message='提取词汇...')
+            word_list = extract_vocabulary(chapters, NGSL_PATH)
+
+            _set_state(stage='dictionary', percent=55, message='查询词典 (ECDICT 本地)...')
+            # M-W API 兜底在本地管道禁用：国内直连 dictionaryapi.com 每词 10s 超时，
+            # 大量专有名词未命中时会把管道拖死。线上 Worker (/api/dict) 已承担兜底职责。
+            dictionary = lookup_dictionary(word_list, chapters, api_key='')
 
         _set_state(percent=90, message='写出数据文件...')
         _write_json_no_bom(os.path.join(book_dir, 'chapters.json'), chapters)
@@ -148,8 +160,8 @@ def generate():
         return jsonify({'error': '文件名为空'}), 400
 
     ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in ('.epub', '.txt'):
-        return jsonify({'error': f'不支持的格式: {ext}（仅 epub/txt）'}), 400
+    if ext not in ('.epub', '.txt', '.pdf'):
+        return jsonify({'error': f'不支持的格式: {ext}（仅 epub/txt/pdf）'}), 400
 
     book_id = _safe_book_id(file.filename)
 

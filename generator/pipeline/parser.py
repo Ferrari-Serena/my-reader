@@ -1,6 +1,6 @@
 """
-epub/txt 解析器
-输入：epub 或 txt 文件路径
+epub/txt/pdf 解析器
+输入：epub / txt / pdf 文件路径
 输出：chapters.json 数据结构
 """
 
@@ -28,7 +28,7 @@ def _safe_decode(raw: bytes) -> str:
             text = raw.decode(encoding)
             # If the result starts with BOM (which shouldn't happen with utf-8-sig
             # but could with plain utf-8), strip it
-            if text and text[0] == '﻿':
+            if text and text[0] == '\ufeff':
                 text = text[1:]
             return text
         except (UnicodeDecodeError, UnicodeError):
@@ -60,7 +60,7 @@ def _safe_json_dump(obj, file_path: str, **kwargs):
 # ---- main parser entry points ----
 
 def parse_epub(file_path: str, book_id: str) -> dict:
-    """解析 epub 文件，提取章节结构和文本内容。
+    """Parse epub file, extract chapter structure and text content.
 
     Handles non-standard epubs with:
     - UTF-8 BOM in content files
@@ -77,7 +77,7 @@ def parse_epub(file_path: str, book_id: str) -> dict:
     toc = book.toc
     spine = book.spine
 
-    # 获取所有文档项
+    # Get all document items
     all_items = {}
     for item in book.get_items_of_type(9):  # ITEM_DOCUMENT = 9
         all_items[item.get_id()] = item
@@ -85,7 +85,7 @@ def parse_epub(file_path: str, book_id: str) -> dict:
     chapter_index = 0
     seen_texts = set()
 
-    # 如果有目录，优先使用目录结构
+    # Prefer TOC structure if available
     if toc:
         for toc_item in _flatten_toc(toc):
             href = toc_item.href.split('#')[0] if toc_item.href else ''
@@ -132,7 +132,7 @@ def parse_epub(file_path: str, book_id: str) -> dict:
             if matched:
                 continue
 
-            # Still not matched — try using the href itself as content (unlikely but safe fallback)
+            # Still not matched - try using the href itself as content
             content = _clean_html(href)
             paragraphs = _split_paragraphs(content, chapter_index, seen_texts)
             if paragraphs:
@@ -143,7 +143,7 @@ def parse_epub(file_path: str, book_id: str) -> dict:
                     'paragraphs': paragraphs
                 })
 
-    # 如果目录解析没有产出章节，按 spine 顺序解析全部文档
+    # Fall back to spine order if TOC yielded nothing
     if not chapters:
         chapter_index = 0
         for spine_entry in spine:
@@ -176,7 +176,7 @@ def parse_epub(file_path: str, book_id: str) -> dict:
 
 
 def parse_txt(file_path: str, book_id: str) -> dict:
-    """解析 txt 文件，按章节标记分割。Handles BOM in the file."""
+    """Parse txt file, split by chapter markers. Handles BOM in the file."""
     raw_bytes = None
     with open(file_path, 'rb') as f:
         raw_bytes = f.read()
@@ -184,12 +184,12 @@ def parse_txt(file_path: str, book_id: str) -> dict:
 
     title = os.path.splitext(os.path.basename(file_path))[0]
 
-    # 按章节标记分割（支持多种格式）
+    # Split by chapter markers (supports multiple formats)
     chapter_pattern = re.compile(
         r'(?:^|\n)\s*'
         r'(?:Chapter|CHAPTER|Ch\.|CH\.)\s*'
         r'(\d+|[IVXLCDM]+)'
-        r'\s*[\n:.\-—]?\s*',
+        r'\s*[\n:.\-\u2014]?\s*',
         re.IGNORECASE
     )
 
@@ -202,7 +202,7 @@ def parse_txt(file_path: str, book_id: str) -> dict:
             end = splits[i + 1].start() if i + 1 < len(splits) else len(text)
             chapter_text = text[start:end].strip()
 
-            # 尝试获取章节标题（第一行）
+            # Try to get chapter title from first line
             lines = chapter_text.split('\n')
             chapter_title = lines[0].strip() if lines else f'Chapter {i + 1}'
 
@@ -223,7 +223,7 @@ def parse_txt(file_path: str, book_id: str) -> dict:
                     'paragraphs': paragraphs
                 })
     else:
-        # 没有章节标记，整本书作为一个章节
+        # No chapter markers: entire book as one chapter
         paragraphs = []
         para_texts = [p.strip() for p in text.split('\n\n') if p.strip()]
         for j, p in enumerate(para_texts):
@@ -246,6 +246,268 @@ def parse_txt(file_path: str, book_id: str) -> dict:
         'author': 'Unknown',
         'chapters': chapters
     }
+
+
+def parse_pdf(file_path: str, book_id: str, progress_callback=None) -> dict:
+    """Parse PDF file. Auto-detects PDF type:
+    - Text-layer PDF (sample first 5 pages) -> text extraction with chapter/paragraph splitting
+    - Image-only PDF (no text layer) -> render JPG + OCR word coordinates for image reading mode
+
+    Returns image-mode data when image PDF detected:
+    {bookId, title, author, type:'image',
+     chapters: [{id, title, paragraphs:[], image:{url,width,height},
+                 words:[{text,x,y,w,h}]}],
+     _wordList: {bookId, words:{lemma:{lemma,chapters,totalOccurrences}}}}
+    """
+    import fitz  # PyMuPDF
+
+    doc = fitz.open(file_path)
+
+    # Get metadata
+    meta = doc.metadata or {}
+    title = meta.get('title') or os.path.splitext(os.path.basename(file_path))[0]
+    author = meta.get('author') or 'Unknown'
+
+    # Detect PDF type: sample first 5 pages
+    sample_pages = min(5, doc.page_count)
+    sample_text = ''.join(doc[i].get_text('text') for i in range(sample_pages))
+
+    if len(sample_text.strip()) > 200:
+        # Text-layer PDF: use existing text extraction path
+        result = _parse_text_pdf(doc, title, author, book_id)
+        doc.close()
+        return result
+
+    # Image-only PDF: render JPG + OCR word coordinates
+    result = _parse_image_pdf(doc, title, author, book_id, file_path, progress_callback)
+    doc.close()
+    return result
+
+
+def _parse_text_pdf(doc, title: str, author: str, book_id: str) -> dict:
+    """Text-layer PDF extraction: split by chapter markers, or group every 5 pages."""
+    all_pages = []
+    for page in doc:
+        text = page.get_text('text')
+        all_pages.append(text)
+
+    chapter_pattern = re.compile(
+        r'(?:^|\n)\s*'
+        r'(?:Chapter|CHAPTER|Ch\.|CH\.)\s*'
+        r'(\d+|[IVXLCDM]+)'
+        r'\s*[\n:.\-\u2014]?\s*',
+        re.IGNORECASE
+    )
+
+    full_text = '\n'.join(all_pages)
+    splits = list(chapter_pattern.finditer(full_text))
+
+    chapters = []
+    seen_texts = set()
+
+    if splits and len(splits) >= 1:
+        if splits[0].start() > 0:
+            preamble = full_text[:splits[0].start()].strip()
+            pre_paragraphs = _split_paragraphs(preamble, 0, seen_texts)
+            if pre_paragraphs:
+                chapters.append({
+                    'id': 'ch-00',
+                    'title': '\u524d\u8a00',  # 前言
+                    'paragraphs': pre_paragraphs
+                })
+
+        for i, match in enumerate(splits):
+            start = match.end()
+            end = splits[i + 1].start() if i + 1 < len(splits) else len(full_text)
+            chapter_text = full_text[start:end].strip()
+
+            lines = chapter_text.split('\n')
+            chapter_title = lines[0].strip() if lines else f'Chapter {i + 1}'
+
+            paragraphs = _split_paragraphs(chapter_text, i + 1, seen_texts)
+            if paragraphs:
+                chapters.append({
+                    'id': f'ch-{i+1:02d}',
+                    'title': _clean_text(chapter_title[:100]),
+                    'paragraphs': paragraphs
+                })
+    else:
+        page_chunks = []
+        chunk_size = 5
+        for i in range(0, len(all_pages), chunk_size):
+            chunk_text = '\n'.join(all_pages[i:i + chunk_size]).strip()
+            if chunk_text:
+                page_chunks.append(chunk_text)
+
+        if page_chunks:
+            if len(page_chunks) == 1:
+                paragraphs = _split_paragraphs(page_chunks[0], 0, seen_texts)
+                if paragraphs:
+                    chapters.append({
+                        'id': 'ch-01',
+                        'title': title,
+                        'paragraphs': paragraphs
+                    })
+            else:
+                for i, chunk in enumerate(page_chunks):
+                    paragraphs = _split_paragraphs(chunk, i, seen_texts)
+                    if paragraphs:
+                        chapters.append({
+                            'id': f'ch-{i+1:02d}',
+                            'title': f'Pages {i * chunk_size + 1}-{min((i + 1) * chunk_size, len(all_pages))}',
+                            'paragraphs': paragraphs
+                        })
+
+    # Post-process: normalize whitespace
+    for ch in chapters:
+        for p in ch['paragraphs']:
+            p['text'] = _clean_text(p['text'])
+
+    return {
+        'bookId': book_id,
+        'title': title,
+        'author': author,
+        'chapters': chapters
+    }
+
+
+def _parse_image_pdf(doc, title: str, author: str, book_id: str,
+                     file_path: str, progress_callback=None) -> dict:
+    """Image-only PDF: render each page as JPG + OCR English word coordinates.
+
+    Returns image-mode data with:
+    - type: 'image'
+    - Each chapter = one page with image URL, dimensions, and clickable word coordinates
+    - _wordList for dictionary lookup pipeline step
+    """
+    import os as _os
+
+    # Tesseract environment
+    tess_path = r'C:\Program Files\Tesseract-OCR'
+    _os.environ['PATH'] = tess_path + ';' + _os.environ.get('PATH', '')
+    _os.environ['TESSDATA_PREFIX'] = tess_path + r'\tessdata'
+
+    DPI = 200
+    scale = DPI / 72.0  # PDF points -> image pixels conversion factor
+
+    # Image output directory: my-reader/reader/public/books/<book_id>/pages/
+    pages_dir = _os.path.join(
+        _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))),
+        'reader', 'public', 'books', book_id, 'pages'
+    )
+    _os.makedirs(pages_dir, exist_ok=True)
+
+    total = doc.page_count
+    chapters = []
+    all_words = {}  # word_lower -> set of chapter_ids
+
+    for i in range(total):
+        page = doc[i]
+
+        # Render page as JPG at 200 DPI
+        pix = page.get_pixmap(dpi=DPI)
+        img_filename = f'page_{i+1:03d}.jpg'
+        img_url = f'pages/{img_filename}'
+        pix.save(_os.path.join(pages_dir, img_filename), 'jpeg', 85)
+
+        img_width = pix.width
+        img_height = pix.height
+
+        # OCR English word coordinates at same DPI for alignment
+        words = []
+        try:
+            tp = page.get_textpage_ocr(language='eng', dpi=DPI)
+            raw_words = page.get_text('words', textpage=tp)
+
+            for w in raw_words:
+                x0, y0, x1, y1, text, block, line, word_no = w
+                t = text.strip()
+                if not _is_valid_english_word(t):
+                    continue
+
+                # Coordinate conversion: PDF points -> image pixels
+                x_px = round(x0 * scale, 1)
+                y_px = round(y0 * scale, 1)
+                w_px = round((x1 - x0) * scale, 1)
+                h_px = round((y1 - y0) * scale, 1)
+
+                words.append({
+                    'text': t,
+                    'x': x_px, 'y': y_px,
+                    'w': w_px, 'h': h_px
+                })
+
+                word_lower = t.lower()
+                ch_id = f'ch-{i+1:03d}'
+                if word_lower not in all_words:
+                    all_words[word_lower] = set()
+                all_words[word_lower].add(ch_id)
+        except Exception:
+            # Single page OCR failure doesn't abort the whole book
+            pass
+
+        chapters.append({
+            'id': f'ch-{i+1:03d}',
+            'title': f'Page {i+1}',
+            'paragraphs': [],
+            'image': {
+                'url': img_url,
+                'width': img_width,
+                'height': img_height
+            },
+            'words': words
+        })
+
+        if progress_callback and (i + 1) % 10 == 0:
+            pct = 10 + int(25 * (i + 1) / total)
+            progress_callback(pct, f'Rendering+OCR... ({i+1}/{total} pages)')
+
+    # Build word_list for dictionary lookup (format compatible with extractor output)
+    word_list = {
+        'bookId': book_id,
+        'words': {
+            word: {
+                'lemma': word,
+                'chapters': sorted(list(chs)),
+                'totalOccurrences': len(chs)
+            }
+            for word, chs in all_words.items()
+        }
+    }
+
+    return {
+        'bookId': book_id,
+        'title': title,
+        'author': author,
+        'type': 'image',
+        'chapters': chapters,
+        '_wordList': word_list
+    }
+
+
+def _is_valid_english_word(text: str) -> bool:
+    """Filter OCR noise: decorative lines, watermarks, gibberish.
+
+    Rules:
+    1. Length >= 2
+    2. Alpha ratio > 50% (excludes pure symbol/number OCR fragments)
+    3. No character repeated 4+ times consecutively (excludes "eeeeee" decorative lines)
+    4. Contains at least one vowel (excludes consonant-only OCR fragments)
+    """
+    t = text.strip()
+    if len(t) < 2:
+        return False
+    # Alpha ratio > 50%
+    alpha = sum(1 for c in t if c.isalpha())
+    if alpha / len(t) < 0.5:
+        return False
+    # No character repeated 4+ times consecutively
+    if re.search(r'(.)\1{3,}', t):
+        return False
+    # Contains at least one vowel
+    if not re.search(r'[aeiouAEIOU]', t):
+        return False
+    return True
 
 
 # ---- internal helpers ----
@@ -278,9 +540,6 @@ def _repair_epub_boms(file_path: str) -> bool:
         with open(file_path, 'rb') as f:
             zip_data = bytearray(f.read())
 
-        # We can't easily modify a zip in-place, but we can create a temp copy
-        # Actually, let's just read the zip and check if any internal XML has BOM.
-        # If it does, we strip and re-zip.
         with zipfile.ZipFile(io.BytesIO(bytes(zip_data)), 'r') as zf:
             bom_files = []
             all_files = {}
@@ -314,7 +573,7 @@ def _repair_epub_boms(file_path: str) -> bool:
 
 
 def _clean_html(html_content: str) -> str:
-    """清理 HTML/XHTML，提取纯文本。Handles BOM, empty content, and malformed markup."""
+    """Clean HTML/XHTML, extract plain text. Handles BOM, empty content, and malformed markup."""
     import warnings
     from bs4 import XMLParsedAsHTMLWarning
     warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
@@ -323,14 +582,14 @@ def _clean_html(html_content: str) -> str:
         return ''
 
     # Strip any residual BOM that might have survived decoding
-    if html_content and html_content[0] == '﻿':
+    if html_content and html_content[0] == '\ufeff':
         html_content = html_content[1:]
 
     # Try 'xml' parser first (best for XHTML epubs), fall back to 'html.parser'
     for parser in ('xml', 'lxml-xml', 'html.parser', 'lxml'):
         try:
             soup = BeautifulSoup(html_content, parser)
-            # 移除 script/style 标签
+            # Remove script/style tags
             for tag in soup(['script', 'style', 'head', 'title']):
                 tag.decompose()
             text = soup.get_text('\n')
@@ -344,17 +603,17 @@ def _clean_html(html_content: str) -> str:
 
 
 def _split_paragraphs(text: str, chapter_index: int, seen_texts: set) -> list:
-    """将文本分割为段落，去重"""
+    """Split text into paragraphs, deduplicate"""
     paragraphs = []
     raw_paras = [p.strip() for p in text.split('\n\n') if p.strip()]
 
     para_idx = 0
     for p in raw_paras:
-        # 跳过太短的文本和纯数字/符号行
+        # Skip too-short text and pure number/symbol lines
         clean = _clean_text(p)
         if len(clean) < 30:
             continue
-        # 去重
+        # Deduplicate
         text_hash = clean[:100]
         if text_hash in seen_texts:
             continue
@@ -371,14 +630,73 @@ def _split_paragraphs(text: str, chapter_index: int, seen_texts: set) -> list:
 
 
 def _clean_text(text: str) -> str:
-    """清理文本：合并多余空白、移除控制字符"""
+    """Clean text: merge excess whitespace, remove control characters"""
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 
+def _clean_ocr_text(text: str) -> str:
+    """Clean OCR noise lines (decorative lines misrecognized as characters, low-info lines)"""
+    if not text:
+        return ''
+    lines = text.split('\n')
+    kept = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Filter low-alpha-ratio lines (pure symbols/numbers/spaces, length > 10)
+        alpha_count = sum(1 for c in stripped if c.isalpha())
+        if len(stripped) > 10 and alpha_count / len(stripped) < 0.3:
+            continue
+        # Filter repeated-char lines (decorative lines recognized as "eeeeee..." or "======", length > 20)
+        if len(stripped) > 20:
+            top_count = max((stripped.count(c) for c in set(stripped)), default=0)
+            if top_count / len(stripped) > 0.7:
+                continue
+        kept.append(stripped)
+    return '\n'.join(kept)
+
+
+def _ocr_image_pdf(doc, total_pages, progress_callback=None):
+    """OCR each page of an image PDF, return list of page texts.
+    Returns None if Tesseract is unavailable.
+
+    Uses PyMuPDF's built-in get_textpage_ocr() which calls the local Tesseract CLI.
+    Does not depend on pytesseract.
+    """
+    import os as _os
+    tess_path = r'C:\Program Files\Tesseract-OCR'
+    if not _os.path.exists(tess_path):
+        return None
+
+    _os.environ['PATH'] = tess_path + ';' + _os.environ.get('PATH', '')
+    _os.environ['TESSDATA_PREFIX'] = tess_path + r'\tessdata'
+
+    ocr_texts = []
+    try:
+        for i, page in enumerate(doc):
+            try:
+                tp = page.get_textpage_ocr(language='eng+chi_sim', dpi=200)
+                text = page.get_text('text', textpage=tp)
+                cleaned = _clean_ocr_text(text)
+                ocr_texts.append(cleaned)
+            except Exception:
+                ocr_texts.append('')  # Single page OCR failure doesn't abort whole book
+
+            # Report progress every 10 pages
+            if progress_callback and (i + 1) % 10 == 0:
+                pct = 10 + int(25 * (i + 1) / total_pages)
+                progress_callback(pct, f'OCR in progress... ({i + 1}/{total_pages} pages)')
+    except Exception:
+        return None
+
+    return ocr_texts
+
+
 def _safe_get(metadata_list, fallback):
-    """安全获取元数据"""
+    """Safely get metadata"""
     if metadata_list and len(metadata_list) > 0:
         item = metadata_list[0]
         if isinstance(item, tuple) and len(item) > 0:
@@ -388,7 +706,7 @@ def _safe_get(metadata_list, fallback):
 
 
 def _flatten_toc(toc, depth=0):
-    """展平 epub 目录树"""
+    """Flatten epub TOC tree"""
     items = []
     if not toc:
         return items
