@@ -27,6 +27,13 @@
       "author": "Roth, Veronica",
       "coverUrl": null,
       "dataUrl": "books/divergent-series-ultimate-four-book-collection--veronica-rot/"
+    },
+    {
+      "id": "test-ocr",
+      "title": "500 SAT 真题难词（含例句）",
+      "author": "WPS_1614925560",
+      "coverUrl": null,
+      "dataUrl": "books/test-ocr/"
     }
   ]
 }
