@@ -6,6 +6,7 @@
 import { reactive, computed } from 'vue'
 import * as storage from '../storage/index.js'
 import { SCHEMA_VERSION, migrate } from '../storage/schema.js'
+import { nowIso } from '../sync/clock.js'
 
 const state = reactive({
   words: {},   // key: lemma 小写 → WordEntry
@@ -14,6 +15,31 @@ const state = reactive({
 })
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024
+
+/**
+ * 待推送的脏词集合。同步只推这些词，而不是每次变异都推全量词表——
+ * 原来每答一道测验题就推一次全部词条，词表上千时那是上千条 upsert。
+ * 由 useSync 在推送成功时取走；推送失败会还回来。
+ */
+let _dirty = new Set()
+
+function markDirty(...keys) {
+  for (const k of keys) {
+    if (typeof k === 'string' && k) _dirty.add(k.toLowerCase())
+  }
+}
+
+/** 取走并清空脏集合（useSync 调用） */
+function takeDirty() {
+  const out = [..._dirty]
+  _dirty = new Set()
+  return out
+}
+
+/** 把当前所有词标脏（新建同步码时用：本机数据对远程来说全是新的） */
+function markAllDirty() {
+  for (const k of Object.keys(state.words)) _dirty.add(k)
+}
 
 async function init() {
   if (state.loaded) return
@@ -37,7 +63,7 @@ async function add({ word, dictEntry, bookId, chapterId }) {
     word: key,
     bookId: bookId || null,
     chapterId: chapterId || null,
-    addedAt: new Date().toISOString(),
+    addedAt: nowIso(),
     snapshot: {
       lemma: snap.lemma || key,
       phonetic: snap.phonetic || '',
@@ -49,22 +75,24 @@ async function add({ word, dictEntry, bookId, chapterId }) {
     },
     srs: null,  // 7.2 FSRS 槽位
     quiz: null,  // 7.3 槽位
-    updatedAt: new Date().toISOString()
+    updatedAt: nowIso()
   }
   const ok = await storage.addWord(entry)
   if (!ok) state.persistFailed = true
   state.words[key] = entry
+  markDirty(key)
   // 异步推送到远程（开新微任务，不阻塞 UI）
-  Promise.resolve().then(() => _autoPush())
+  Promise.resolve().then(() => _schedulePush())
 }
 
 async function remove(word) {
   await init()
   const key = word.toLowerCase()
+  // 删除台账由 storage.removeWord 自动记下，同步时作为墓碑推出去
   const ok = await storage.removeWord(key)
   if (!ok) state.persistFailed = true
   delete state.words[key]
-  Promise.resolve().then(() => _autoPush())
+  Promise.resolve().then(() => _schedulePush())
 }
 
 /** 在线释义到达后补全空快照（离线收藏自愈）。
@@ -85,17 +113,21 @@ async function refreshSnapshot(word, dictEntry) {
     definitions: [...dictEntry.definitions],
     audioUrl: dictEntry.audioUrl || ''
   }
-  const now = new Date().toISOString()
+  const now = nowIso()
   await storage.updateWord(key, { snapshot, updatedAt: now })
   entry.snapshot = snapshot
   entry.updatedAt = now
-  Promise.resolve().then(() => _autoPush())
+  markDirty(key)
+  Promise.resolve().then(() => _schedulePush())
 }
 
 async function clearAll() {
+  // clearVocabulary 会给每个被清掉的词记墓碑，同步时作为删除推出去；
+  // 以前这里根本没有推送调用，整本清空从来不会同步到别的设备
   const ok = await storage.clearVocabulary()
   if (!ok) state.persistFailed = true
   state.words = {}
+  Promise.resolve().then(() => _schedulePush())
 }
 
 /**
@@ -117,14 +149,16 @@ async function recordQuizAnswer(word, correct, questionType) {
     q.correctStreak++
   } else {
     q.correctStreak = 0
-    q.wrongHistory.push({ date: new Date().toISOString(), questionType: questionType || '' })
+    q.wrongHistory.push({ date: nowIso(), questionType: questionType || '' })
   }
-  const now = new Date().toISOString()
+  const now = nowIso()
   const ok = await storage.updateWord(key, { quiz: q, updatedAt: now })
   if (!ok) state.persistFailed = true
   entry.quiz = q
   entry.updatedAt = now
-  Promise.resolve().then(() => _autoPush())
+  markDirty(key)
+  // 每次答题都变异，但推送由 useSync 尾随防抖收拢，不再一题一推
+  Promise.resolve().then(() => _schedulePush())
 }
 
 /** SRS 更新（FlashcardsView 调用，同步更新 localStorage + reactive state） */
@@ -133,12 +167,13 @@ async function updateSRS(word, srsCard) {
   const key = word.toLowerCase()
   const entry = state.words[key]
   if (!entry) return false
-  const now = new Date().toISOString()
+  const now = nowIso()
   entry.srs = srsCard
   entry.updatedAt = now
   const ok = await storage.updateWord(key, { srs: srsCard, updatedAt: now })
   if (!ok) state.persistFailed = true
-  Promise.resolve().then(() => _autoPush())
+  markDirty(key)
+  Promise.resolve().then(() => _schedulePush())
   return ok
 }
 
@@ -169,23 +204,32 @@ async function importJSON(file) {
   }
   const data = migrate(envelope.data)
   if (!data) throw new Error('Unrecognized data version')
+  const before = new Set(Object.keys(state.words))
   const result = await storage.importVocabulary(data, 'merge')
   const doc = await storage.loadVocabulary()
   state.words = { ...doc.words } // 重新指向合并后的文档
+  // 导入进来的词必须推给别的设备——以前这个函数里根本没有推送调用，
+  // 「从文件导入生词本」是个纯本地动作，换台设备就没了
+  const imported = Object.keys(state.words).filter(k => !before.has(k))
+  if (imported.length) {
+    markDirty(...imported)
+    Promise.resolve().then(() => _schedulePush())
+  }
   return result
 }
 
 // 懒加载 useSync（避免循环导入：useSync → useVocabulary → useSync）
 let _pushCache = undefined
-function _autoPush() {
+function _schedulePush() {
   if (_pushCache === undefined) {
     // 懒加载：只在第一次变异操作时 import
     import('./useSync.js').then(m => {
       _pushCache = m.useSync
-      if (_pushCache) _pushCache().push()
-    }).catch(() => { _pushCache = null })
+      if (_pushCache) _pushCache().pushSoon()
+    }).catch(() => { _pushCache = undefined }) // 失败保持 undefined，下次调用还能重试
   } else if (_pushCache) {
-    _pushCache().push()
+    // 走尾随防抖：连点答题不再一题一推，由 useSync 收拢成一次
+    _pushCache().pushSoon()
   }
 }
 
@@ -205,6 +249,10 @@ export function useVocabulary() {
     updateSRS,
     clearAll,
     exportJSON,
-    importJSON
+    importJSON,
+    // 同步层用来做「只推脏词」：useSync 取走脏集合，推送失败再还回来
+    markDirty,
+    takeDirty,
+    markAllDirty
   }
 }

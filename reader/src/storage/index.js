@@ -11,5 +11,7 @@ export {
   updateWord,
   clearVocabulary,
   importVocabulary,
+  loadTombstones,
+  clearTombstones,
   sync
 } from './localAdapter.js'

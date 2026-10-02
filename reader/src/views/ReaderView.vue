@@ -113,6 +113,8 @@
         ref="audioPlayerRef"
         :chapter-text="currentChapterText"
         :audio-url="currentAudioUrl"
+        :book-id="bookId"
+        :chapter-id="currentChapter?.id || ''"
         :book-title="bookTitle"
         :chapter-title="currentChapter?.title || ''"
         @time="onAudioTime"
@@ -143,6 +145,7 @@ import AudioPlayer from '../components/AudioPlayer.vue'
 import WordPopup from '../components/WordPopup.vue'
 import { useVocabulary } from '../composables/useVocabulary'
 import { usePhrases } from '../composables/usePhrases'
+import { useSync } from '../composables/useSync'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
 
 const route = useRoute()
@@ -298,9 +301,47 @@ function saveCurrentPosition() {
   savePosition(bookId.value, currentChapter.value.id, getCurrentParagraphIndex())
 }
 
+/** 等这一章渲染完，滚到第 n 段 */
+function scrollToParagraph(chapterIndex, paragraphIndex) {
+  if (isImageBook.value || paragraphIndex <= 0) return
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      const paraId = chapters.value[chapterIndex]?.paragraphs?.[paragraphIndex]?.id
+      if (paraId) document.getElementById('para-' + paraId)?.scrollIntoView({ block: 'nearest' })
+    })
+  })
+}
+
 function onVisibilityChange() {
   if (document.visibilityState === 'hidden') saveCurrentPosition()
 }
+
+// ---- 远程阅读位置（别的设备读到哪了）----
+// 首屏不等同步：同步超时是 8 秒，等内容到了再渲染等于每次冷启动都可能卡满 8 秒。
+// 所以先用本地位置渲染，远程位置随后到达时——且用户还没动过——才跟随过去。
+
+let userTouched = false // 普通变量即可：只在 watch 回调里读，不需要响应式
+function markTouched() { userTouched = true }
+
+const sync = useSync()
+
+// 进来时 URL 里就带着章节 → 用户是特意来的，远程位置不该抢。
+// 必须记在 loadBook 里而不是当场读 chapterId：setChapter 自己会 router.replace 回填章节参数，
+// 加载完之后那个值永远是真的，拿它当判据等于这段逻辑永远不执行。
+let explicitChapterOnLoad = false
+
+watch(() => sync.progressRevision.value, () => {
+  if (userTouched || loading.value || !currentChapter.value) return
+  if (explicitChapterOnLoad) return
+  const saved = loadPosition(bookId.value)
+  if (!saved || saved.chapterId === currentChapter.value.id) return
+  const idx = chapters.value.findIndex(c => c.id === saved.chapterId)
+  if (idx < 0 || idx === currentChapterIndex.value) return
+  // record:false —— 这次跳转是远程位置驱动的。照常记录会拿本地旧位置打上「现在」
+  // 的时间戳，等于把刚落地的远程位置立刻盖掉再回推，两边都跟着错。
+  setChapter(idx, { record: false })
+  scrollToParagraph(idx, saved.paragraphIndex)
+})
 
 // ---- 生词本 ----
 
@@ -559,6 +600,7 @@ async function onWordClick(event) {
 async function loadBook() {
   loading.value = true
   error.value = null
+  explicitChapterOnLoad = !!chapterId.value
 
   try {
     const baseUrl = `${import.meta.env.BASE_URL}books/${bookId.value}`
@@ -595,20 +637,9 @@ async function loadBook() {
     setChapter(targetIndex)
 
     // 从存档恢复 → 等 DOM 渲染完成后滚动到目标段落（图片模式跳过）
-    if (!chapterId.value && !isImageBook.value) {
+    if (!chapterId.value) {
       const saved = loadPosition(bookId.value)
-      if (saved && saved.paragraphIndex > 0) {
-        const savedParaIndex = saved.paragraphIndex
-        const restoredChapterIndex = targetIndex
-        nextTick(() => {
-          requestAnimationFrame(() => {
-            const paraId = chapters.value[restoredChapterIndex]?.paragraphs?.[savedParaIndex]?.id
-            if (paraId) {
-              document.getElementById('para-' + paraId)?.scrollIntoView({ block: 'nearest' })
-            }
-          })
-        })
-      }
+      if (saved) scrollToParagraph(targetIndex, saved.paragraphIndex)
     }
   } catch (e) {
     error.value = e.message
@@ -617,10 +648,16 @@ async function loadBook() {
   }
 }
 
-function setChapter(index) {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.record] 是否记下「离开旧章时读到哪」。
+ *   同步层应用远程位置时传 false：那次跳转不是用户读出来的位置，
+ *   记下来会覆盖掉刚拉到的远程进度，并把它当作本地新值回推。
+ */
+function setChapter(index, { record = true } = {}) {
   if (index >= 0 && index < chapters.value.length) {
     // 切章前保存旧章位置（首次加载时 currentChapter 为 null，跳过避免写垃圾数据）
-    if (currentChapter.value) {
+    if (record && currentChapter.value) {
       savePosition(bookId.value, currentChapter.value.id, getCurrentParagraphIndex())
     }
     currentChapterIndex.value = index
@@ -676,9 +713,15 @@ watch(chapterId, (id) => {
 })
 
 // ---- 阅读进度：页面隐藏 / 离开时保存位置 ----
+const TOUCH_EVENTS = ['pointerdown', 'keydown', 'wheel']
+
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('pagehide', saveCurrentPosition)
+  // 用户一动就不再应用远程位置（见上面的 watch）
+  for (const ev of TOUCH_EVENTS) {
+    window.addEventListener(ev, markTouched, { passive: true, once: true })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -686,6 +729,7 @@ onBeforeUnmount(() => {
   saveCurrentPosition()
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('pagehide', saveCurrentPosition)
+  for (const ev of TOUCH_EVENTS) window.removeEventListener(ev, markTouched)
 })
 </script>
 

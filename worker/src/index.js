@@ -5,7 +5,7 @@
  *
  * GET /api/dict/<word>  → { lemma, phonetic, partOfSpeech, definitions[], audioUrl }
  *                         未收录时 → 404 { notFound: true, suggestions[] }
- * GET /api/audio/<bookId>/<file>  → R2 对象本体
+ * GET /api/audio/<bookId>/<file>  → R2 对象本体（支持 Range → 206 / 416）
  * HEAD /api/audio/<bookId>/<file> → 同上但不回 body（上传校验脚本探活用）
  * GET /health           → { status: 'ok' }
  *
@@ -13,13 +13,15 @@
  */
 
 import { handleSync } from './sync.js'
+import { parseRange } from './range.js'
 
 const MW_API_BASE = 'https://www.dictionaryapi.com/api/v3/references/collegiate/json/'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type'
+  // Range 是给脚本发起的 range 请求用的；媒体元素自己的请求不走预检
+  'Access-Control-Allow-Headers': 'Content-Type, Range'
 }
 
 function json(data, status = 200, extra = {}) {
@@ -53,15 +55,63 @@ export default {
       const headers = {
         'Content-Type': ct,
         'Cache-Control': 'public, max-age=31536000, immutable',
+        // 不声明这个，浏览器根本不会尝试 seek，只会整份下完
+        'Accept-Ranges': 'bytes',
         ...corsHeaders,
       }
+      const rangeHeader = request.headers.get('Range')
+
       // HEAD 只回元数据。上传校验脚本靠 HEAD 探活，不能让它把整章音频读出来；
       // 而且这里若不接住 HEAD，请求会掉到兜底的 404，校验脚本会误报「全部失败」。
       if (request.method === 'HEAD') {
         const meta = await env.AUDIO.head(key)
         if (!meta) return new Response(null, { status: 404, headers: corsHeaders })
+        const r = parseRange(rangeHeader, meta.size)
+        if (r === 'unsatisfiable') {
+          return new Response(null, {
+            status: 416,
+            headers: { ...headers, 'Content-Range': `bytes */${meta.size}` },
+          })
+        }
+        if (r) {
+          return new Response(null, {
+            status: 206,
+            headers: {
+              ...headers,
+              'Content-Range': `bytes ${r.offset}-${r.offset + r.length - 1}/${meta.size}`,
+              'Content-Length': String(r.length),
+            },
+          })
+        }
         return new Response(null, { headers: { ...headers, 'Content-Length': String(meta.size) } })
       }
+
+      // 有 Range 时必须先 head 拿总长：后缀式（bytes=-N）和越界判定都得知道文件多大
+      if (rangeHeader) {
+        const meta = await env.AUDIO.head(key)
+        if (!meta) return new Response('Not found', { status: 404, headers: corsHeaders })
+        const r = parseRange(rangeHeader, meta.size)
+        if (r === 'unsatisfiable') {
+          return new Response(null, {
+            status: 416,
+            headers: { ...headers, 'Content-Range': `bytes */${meta.size}` },
+          })
+        }
+        if (r) {
+          const obj = await env.AUDIO.get(key, { range: { offset: r.offset, length: r.length } })
+          if (!obj || !obj.body) return new Response('Not found', { status: 404, headers: corsHeaders })
+          return new Response(obj.body, {
+            status: 206,
+            headers: {
+              ...headers,
+              'Content-Range': `bytes ${r.offset}-${r.offset + r.length - 1}/${meta.size}`,
+              'Content-Length': String(r.length),
+            },
+          })
+        }
+        // r === null：语法不认识（多段等）→ 按 RFC 忽略 Range，落到下面回整份 200
+      }
+
       const obj = await env.AUDIO.get(key)
       if (!obj) return new Response('Not found', { status: 404, headers: corsHeaders })
       return new Response(obj.body, { headers })
