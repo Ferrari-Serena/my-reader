@@ -71,7 +71,9 @@ async function add({ word, dictEntry, bookId, chapterId }) {
       definitions: Array.isArray(snap.definitions) ? [...snap.definitions] : [],
       audioUrl: snap.audioUrl || '',
       level: snap.level ?? null,
-      chapters: Array.isArray(snap.chapters) ? [...snap.chapters] : []
+      chapters: Array.isArray(snap.chapters) ? [...snap.chapters] : [],
+      // 词条记住正文里它出现过的写法（词典 surfaces）：收藏态高亮要靠它
+      surfaces: Array.isArray(snap.surfaces) ? [...snap.surfaces] : []
     },
     srs: null,  // 7.2 FSRS 槽位
     quiz: null,  // 7.3 槽位
@@ -111,7 +113,10 @@ async function refreshSnapshot(word, dictEntry) {
     phonetic: dictEntry.phonetic || '',
     partOfSpeech: dictEntry.partOfSpeech || '',
     definitions: [...dictEntry.definitions],
-    audioUrl: dictEntry.audioUrl || ''
+    audioUrl: dictEntry.audioUrl || '',
+    surfaces: Array.isArray(dictEntry.surfaces) && dictEntry.surfaces.length
+      ? [...dictEntry.surfaces]
+      : (entry.snapshot.surfaces || [])
   }
   const now = nowIso()
   await storage.updateWord(key, { snapshot, updatedAt: now })

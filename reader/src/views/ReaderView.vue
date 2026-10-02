@@ -145,6 +145,7 @@ import AudioPlayer from '../components/AudioPlayer.vue'
 import WordPopup from '../components/WordPopup.vue'
 import { useVocabulary } from '../composables/useVocabulary'
 import { usePhrases } from '../composables/usePhrases'
+import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
 import { useSync } from '../composables/useSync'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
 
@@ -353,6 +354,11 @@ vocab.init()
 const phrases = usePhrases()
 phrases.init()
 
+// ---- 词典表面形别名表（实现在 utils/dictIndex.js，纯函数、可单测）----
+
+let dictAlias = new Map() // 表面形 → 词条 key
+const resolveKey = (word) => resolveDictKey(word, dictionary.value, dictAlias)
+
 /**
  * 段落词标记预计算（computed，一次计算覆盖 annotated/saved/phrase 三类标记）。
  * 模板不调用方法，只做 O(1) 查找 —— 确保 Vue 响应式依赖追踪可靠。
@@ -362,13 +368,11 @@ const paraWordTags = computed(() => {
   const result = {} // paraId → Map<tokenIdx, Set<'annotated'|'saved'|'phrase'>>
   if (!currentChapter.value || isImageBook.value) return result
   const saved = vocab.savedSet.value
-  // 反向索引：snapshot.lemma 也加入查找（修复 children→child 等变形词绿点线不显示）
+  // 反向索引：把词头 + 正文里出现过的表面形都加进来 ——
+  // 收藏 abandon 之后，正文里的 abandoned / abandoning 也要亮绿点线
   const lookupSet = new Set(saved)
   if (saved.size) {
-    for (const e of Object.values(vocab.words.value)) {
-      const lem = (e.snapshot?.lemma || '').toLowerCase()
-      if (lem && lem !== e.word) lookupSet.add(lem)
-    }
+    for (const e of Object.values(vocab.words.value)) addEntryForms(lookupSet, e)
   }
   const phraseLoaded = phrases.loaded.value
 
@@ -413,10 +417,7 @@ const paraPhraseSpans = computed(() => {
   if (!currentChapter.value || isImageBook.value || !phrases.loaded.value) return result
   const lookupSet2 = new Set(vocab.savedSet.value)
   if (lookupSet2.size) {
-    for (const e of Object.values(vocab.words.value)) {
-      const lem = (e.snapshot?.lemma || '').toLowerCase()
-      if (lem && lem !== e.word) lookupSet2.add(lem)
-    }
+    for (const e of Object.values(vocab.words.value)) addEntryForms(lookupSet2, e)
   }
   if (!lookupSet2.size) return result
   for (const para of currentChapter.value.paragraphs) {
@@ -521,7 +522,8 @@ function speakImageWord() {
 async function addImageWordToVocab() {
   const word = imageWord.value
   if (!word) return
-  const entry = dictionary.value?.[word.toLowerCase()] || {}
+  const imgKey = resolveKey(word)
+  const entry = (imgKey && dictionary.value[imgKey]) || {}
   await vocab.add({
     word: word,
     dictEntry: {
@@ -564,7 +566,9 @@ async function onWordClick(event) {
   selectedWord.value = word
   dictLoading.value = true
 
-  const entry = dictionary.value[word]
+  // 词典以词头为键，点上来的可能是屈折形 → 先过别名表（离线也能命中）
+  const dictKey = resolveKey(word)
+  const entry = dictKey ? dictionary.value[dictKey] : undefined
   if (entry?.definitions?.length || entry?.notFound) {
     dictEntry.value = entry
     dictLoading.value = false
@@ -582,7 +586,8 @@ async function onWordClick(event) {
       const online = await res.json()
       // 合并：在线释义 + 本地条目的考试标记/出现章节；notFound 也缓存避免重复请求
       const merged = { ...(entry || {}), ...online }
-      dictionary.value[word] = merged
+      // 写回别名的目标 key：下次点它的其它形态也能直接命中，不重复联网
+      dictionary.value[dictKey || word] = merged
       dictEntry.value = merged
       // 空快照自愈：离线时收藏的词，联网查到释义后自动补全生词本快照
       if (merged.definitions?.length) vocab.refreshSnapshot(word, merged)
@@ -618,6 +623,7 @@ async function loadBook() {
     if (dictRes.ok) {
       const dictData = await dictRes.json()
       dictionary.value = dictData.words || {}
+      dictAlias = buildDictAlias(dictionary.value)
     }
 
     // Navigate: URL chapter param > saved position > first chapter

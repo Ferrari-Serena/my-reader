@@ -112,28 +112,77 @@ def _simple_lemmatize(word: str) -> str:
     return w
 
 
+def _resolve_lemma(word: str, ecdict=None) -> str:
+    """
+    表面形 → 词头。**ECDICT 优先，手写规则兜底**。
+
+    为什么不是规则优先：ECDICT 自己的变形表（exchange 的 ``0:`` 字段）就是权威映射，
+    实测 accustomed→accustom、benches→bench、chuckled→chuckle、buttressed→buttress 全对。
+    手写规则只靠后缀猜，会出两类错：把词根多砍一字母（accustomed→accusto）或
+    命中同形异义词（chuckled→chuck，而 chuck 本身是合法词条，事后查不出来）。
+    """
+    if ecdict is not None:
+        try:
+            entry = ecdict.lookup(word)
+        except Exception:
+            entry = None
+        if entry:
+            lemma = (entry.get('lemma') or '').strip().lower()
+            if lemma:
+                return lemma
+    return _simple_lemmatize(word)
+
+
+def load_lemma_resolver(ecdict=None):
+    """返回一个带缓存的 (token -> 词头) 解析器；ECDICT 不可用时静默退回规则法。"""
+    if ecdict is None:
+        try:
+            from ecdict import get_ecdict
+            ecdict = get_ecdict()
+            print('词形还原：ECDICT 词头表（优先）')
+        except Exception as exc:
+            ecdict = None
+            print(f'⚠️  ECDICT 不可用（{type(exc).__name__}），词形还原退回规则法')
+
+    cache = {}
+
+    def resolve(token: str) -> str:
+        key = cache.get(token)
+        if key is None:
+            key = _resolve_lemma(token, ecdict)
+            cache[token] = key
+        return key
+
+    return resolve
+
+
 def tokenize(text: str) -> list:
     """从文本中提取纯字母单词（≥3 字符）"""
     words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
     return [w.lower() for w in words]
 
 
-def extract_vocabulary(chapters_data: dict, ngsl_path: str) -> dict:
+def extract_vocabulary(chapters_data: dict, ngsl_path: str, ecdict=None) -> dict:
     """
     从章节数据中提取候选词汇
-    返回：{ words: { word: { lemma, chapters, totalOccurrences } } }
+    返回：{ words: { lemma: { lemma, chapters, totalOccurrences, surfaces } } }
+
+    surfaces = 该书正文里映射到这个词头的**全部表面形**（小写、去重、含自身）。
+    阅读端用它建「表面形 → 词条」别名表：点 abandoned 也能离线命中 abandon 的词条，
+    不必再依赖联网兜底；「已收藏」绿点线也靠它（数据模型里终于有表面形这个字段）。
     """
     ngsl = load_ngsl(ngsl_path)
     print(f'NGSL 词表加载了 {len(ngsl)} 个常见词')
+    resolve = load_lemma_resolver(ecdict)
 
-    word_info = {}  # word -> { lemma, chapters: set, count: int }
+    word_info = {}  # lemma -> { lemma, chapters: set, count: int, surfaces: set }
 
     for chapter in chapters_data.get('chapters', []):
         ch_id = chapter['id']
         for para in chapter.get('paragraphs', []):
             tokens = tokenize(para['text'])
             for token in tokens:
-                lemma = _simple_lemmatize(token)
+                lemma = resolve(token)
 
                 # 过滤：常见词、短词、纯数字
                 if lemma in ngsl or token in ngsl:
@@ -146,10 +195,12 @@ def extract_vocabulary(chapters_data: dict, ngsl_path: str) -> dict:
                     word_info[key] = {
                         'lemma': lemma,
                         'chapters': set(),
-                        'totalOccurrences': 0
+                        'totalOccurrences': 0,
+                        'surfaces': set()
                     }
                 word_info[key]['chapters'].add(ch_id)
                 word_info[key]['totalOccurrences'] += 1
+                word_info[key]['surfaces'].add(token)
 
     # 转为可序列化格式
     words = {}
@@ -157,10 +208,12 @@ def extract_vocabulary(chapters_data: dict, ngsl_path: str) -> dict:
         words[lemma] = {
             'lemma': info['lemma'],
             'chapters': sorted(info['chapters']),
-            'totalOccurrences': info['totalOccurrences']
+            'totalOccurrences': info['totalOccurrences'],
+            'surfaces': sorted(info['surfaces'])
         }
 
-    print(f'提取了 {len(words)} 个候选词汇（过滤掉了 {len(ngsl)} 个 NGSL 词）')
+    n_forms = sum(len(w['surfaces']) for w in words.values())
+    print(f'提取了 {len(words)} 个候选词汇，覆盖 {n_forms} 个表面形（过滤掉了 {len(ngsl)} 个 NGSL 词）')
     return {
         'bookId': chapters_data.get('bookId', ''),
         'words': words
