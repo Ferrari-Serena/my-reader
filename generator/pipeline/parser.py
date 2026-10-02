@@ -8,6 +8,7 @@ import os
 import re
 import json
 import io
+import bisect
 import zipfile
 from ebooklib import epub
 from bs4 import BeautifulSoup
@@ -284,58 +285,239 @@ def parse_pdf(file_path: str, book_id: str, progress_callback=None) -> dict:
     return result
 
 
-def _parse_text_pdf(doc, title: str, author: str, book_id: str) -> dict:
-    """Text-layer PDF extraction: split by chapter markers, or group every 5 pages."""
-    all_pages = []
+def _normalize_head_line(line: str) -> str:
+    """Normalize a line for running-head comparison."""
+    line = re.sub(r'[\x00-\x1f\xad]', '', line)
+    return re.sub(r'\s+', ' ', line).strip().lower()
+
+
+def _pdf_lines(doc) -> list:
+    """Per-page body lines with layout geometry: [[(text, x0, x1), ...], ...].
+
+    Character counts are a poor stand-in for how wide a line actually is, since
+    the type is proportional. The x-coordinates let paragraph breaks be read off
+    the real layout instead of guessed from text length.
+    """
+    pages = []
     for page in doc:
-        text = page.get_text('text')
-        all_pages.append(text)
+        lines = []
+        for block in page.get_text('dict')['blocks']:
+            if block.get('type') != 0:  # 0 = text block; skip images
+                continue
+            for line in block['lines']:
+                text = ''.join(span['text'] for span in line['spans'])
+                if text.strip():
+                    x0, _, x1, _ = line['bbox']
+                    lines.append((text, x0, x1))
+        pages.append(lines)
+    return pages
+
+
+def _strip_running_heads(page_lines: list) -> list:
+    """Remove running headers/footers and page numbers from each page.
+
+    Page furniture is detected by frequency rather than by hard-coded text: a
+    short line recurring in the top/bottom margin of at least 30% of pages is a
+    running head (e.g. the author name on versos, the book title on rectos).
+    Page numbers -- pure digits, or the stray control glyphs some PDFs emit in
+    their place -- are dropped from those same margin zones.
+
+    Body text is never touched: only the first/last two lines of a page are
+    examined, so a phrase that happens to repeat mid-page survives.
+
+    Never empties a page: if stripping would leave nothing, the page is returned
+    as-is, so a book whose every page is one repeated line still parses.
+    """
+    if len(page_lines) < 3:
+        return page_lines
+
+    counts = {}
+    for lines in page_lines:
+        margin = lines[:2] + lines[-2:]
+        for norm in {_normalize_head_line(t) for t, _, _ in margin}:
+            if norm:
+                counts[norm] = counts.get(norm, 0) + 1
+
+    threshold = max(3, int(len(page_lines) * 0.3))
+    running_heads = {n for n, c in counts.items() if c >= threshold and len(n) <= 60}
+
+    cleaned_pages = []
+    for lines in page_lines:
+        kept = []
+        for i, (text, x0, x1) in enumerate(lines):
+            norm = _normalize_head_line(text)
+            if norm and norm in running_heads:
+                continue
+            # Page-number zones are only the first/last two lines.
+            if (i < 2 or i >= len(lines) - 2) and (not norm or norm.isdigit()):
+                continue
+            kept.append((text, x0, x1))
+        cleaned_pages.append(kept or lines)
+
+    return cleaned_pages
+
+
+# Bullet glyphs used as section-heading furniture by some typeset PDFs.
+_BULLET_CHARS = '•·●▪⁃'
+# Words that begin the continuation line of a heading wrapped across two lines.
+_HEADING_CONTINUATIONS = {
+    'of', 'the', 'and', 'to', 'in', 'a', 'an', 'for', 'at', 'on', 'with', 'from',
+}
+_HEADING_LINE_RE = re.compile(
+    r'^\s*[%s]\s*(.+?)\s*[%s]\s*$' % (_BULLET_CHARS, _BULLET_CHARS)
+)
+# A line falling this far short of the right margin (in points) ends a paragraph.
+# Hyphenated continuation lines stop ~2pt short, so they are unaffected.
+_PARAGRAPH_SHORTFALL_PT = 25.0
+
+
+def _title_case_heading(title: str) -> str:
+    """Capitalize each word's first letter, leaving apostrophes alone.
+
+    str.title() would turn "jekyll's" into "Jekyll'S"; matching the apostrophe
+    as part of the word ("lanyon's" is one word, not "lanyon" + "s") keeps it
+    as "Jekyll's".
+    """
+    return re.sub(
+        r"[A-Za-z][A-Za-z'’]*",
+        lambda m: m.group(0)[0].upper() + m.group(0)[1:],
+        title,
+    )
+
+
+def _find_heading_lines(lines: list) -> list:
+    """Find ``bullet title bullet`` heading lines, as [(line_index, title)].
+
+    A heading wrapped across two lines ("• ...full statement •" / "• of the
+    case •") is merged back into one title, but only when the two heading lines
+    are adjacent and the second reads as a continuation.
+    """
+    found = []
+    for i, (text, _, _) in enumerate(lines):
+        match = _HEADING_LINE_RE.match(text)
+        if not match:
+            continue
+        title = _clean_text(match.group(1))
+        if title and len(title) <= 120:
+            found.append([i, title])
+
+    if len(found) < 2:
+        return []
+
+    merged = [found[0]]
+    for index, title in found[1:]:
+        prev = merged[-1]
+        if index == prev[0] + 1:
+            first_word = title.split(' ', 1)[0].strip('.,;:').lower()
+            if first_word in _HEADING_CONTINUATIONS:
+                prev[1] = f'{prev[1]} {title}'
+                prev[0] = index
+                continue
+        merged.append([index, title])
+
+    return [tuple(m) for m in merged]
+
+
+def _group_paragraphs(lines: list) -> list:
+    """Group hard-wrapped lines into paragraphs using the page layout.
+
+    A PDF of prose has no blank lines: text is hard-wrapped to a fixed column
+    and paragraphs run straight on, so splitting on blank lines yields one
+    paragraph per page -- or, once chapters are real, one per whole chapter.
+
+    Two typographic signals recover the real breaks: a paragraph's last line
+    falls short of the right margin, and the next paragraph's first line is
+    indented past the left margin of the continuation lines.
+    """
+    if not lines:
+        return []
+
+    lefts = sorted(x0 for _, x0, _ in lines)
+    left_margin = lefts[len(lefts) // 2]  # continuation lines are the majority
+    right_margin = max(x1 for _, _, x1 in lines)
+
+    groups, current = [], []
+    for text, x0, x1 in lines:
+        indented = x0 > left_margin + 3
+        prev_ended_short = bool(current) and current[-1][2] < right_margin - _PARAGRAPH_SHORTFALL_PT
+        if current and (indented or prev_ended_short):
+            groups.append(current)
+            current = []
+        current.append((text, x0, x1))
+    if current:
+        groups.append(current)
+
+    return [' '.join(t for t, _, _ in group) for group in groups]
+
+
+def _parse_text_pdf(doc, title: str, author: str, book_id: str) -> dict:
+    """Text-layer PDF extraction: split by "Chapter N" markers, by bulleted
+    section headings, or -- failing both -- group every 5 pages."""
+    all_pages = _strip_running_heads(_pdf_lines(doc))
+    flat = [line for lines in all_pages for line in lines]
+    full_text = '\n'.join(text for text, _, _ in flat)
 
     chapter_pattern = re.compile(
         r'(?:^|\n)\s*'
         r'(?:Chapter|CHAPTER|Ch\.|CH\.)\s*'
         r'(\d+|[IVXLCDM]+)'
-        r'\s*[\n:.\-\u2014]?\s*',
+        r'\s*[\n:.\-—]?\s*',
         re.IGNORECASE
     )
-
-    full_text = '\n'.join(all_pages)
     splits = list(chapter_pattern.finditer(full_text))
 
     chapters = []
     seen_texts = set()
+    sections = []  # (chapter number or None for the preamble, title, start, stop)
 
-    if splits and len(splits) >= 1:
-        if splits[0].start() > 0:
-            preamble = full_text[:splits[0].start()].strip()
-            pre_paragraphs = _split_paragraphs(preamble, 0, seen_texts)
-            if pre_paragraphs:
-                chapters.append({
-                    'id': 'ch-00',
-                    'title': '\u524d\u8a00',  # 前言
-                    'paragraphs': pre_paragraphs
-                })
+    if splits:
+        # Map each "Chapter N" marker to the line holding it, so both chapter
+        # paths can cut the line list and reflow real paragraphs the same way.
+        line_starts, position = [], 0
+        for text, _, _ in flat:
+            line_starts.append(position)
+            position += len(text) + 1  # +1 for the '\n' joining the lines
+        cuts = [max(0, bisect.bisect_right(line_starts, m.start()) - 1) for m in splits]
 
-        for i, match in enumerate(splits):
-            start = match.end()
-            end = splits[i + 1].start() if i + 1 < len(splits) else len(full_text)
-            chapter_text = full_text[start:end].strip()
+        if cuts[0] > 0:
+            sections.append((None, '前言', 0, cuts[0]))  # 前言
+        for i, cut in enumerate(cuts):
+            stop = cuts[i + 1] if i + 1 < len(cuts) else len(flat)
+            sections.append((i + 1, _clean_text(flat[cut][0][:100]), cut, stop))
+    else:
+        headings = _find_heading_lines(flat)
 
-            lines = chapter_text.split('\n')
-            chapter_title = lines[0].strip() if lines else f'Chapter {i + 1}'
+        if headings:
+            # No "Chapter N" markers, but the book does mark its sections with
+            # bulleted headings -> take both the breaks and the titles from them.
+            if headings[0][0] > 0:
+                sections.append((None, '前言', 0, headings[0][0]))  # 前言
+            for i, (index, heading) in enumerate(headings):
+                stop = headings[i + 1][0] if i + 1 < len(headings) else len(flat)
+                sections.append((i + 1, _title_case_heading(heading[:100]), index, stop))
 
-            paragraphs = _split_paragraphs(chapter_text, i + 1, seen_texts)
+    if sections:
+        for number, chapter_title, start, stop in sections:
+            index = number or 0
+            # Reflow the hard-wrapped lines into real paragraphs first: without
+            # this a whole chapter collapses into a single block, which breaks
+            # the per-paragraph audio offsets and the reading progress.
+            body = '\n\n'.join(_group_paragraphs(flat[start:stop]))
+            paragraphs = _split_paragraphs(body, index, seen_texts)
             if paragraphs:
                 chapters.append({
-                    'id': f'ch-{i+1:02d}',
-                    'title': _clean_text(chapter_title[:100]),
+                    'id': f'ch-{index:02d}',
+                    'title': chapter_title,
                     'paragraphs': paragraphs
                 })
     else:
+        # Last resort: this book has no chapter markers at all -- group by pages.
         page_chunks = []
         chunk_size = 5
         for i in range(0, len(all_pages), chunk_size):
-            chunk_text = '\n'.join(all_pages[i:i + chunk_size]).strip()
+            chunk_text = '\n'.join(
+                text for page in all_pages[i:i + chunk_size] for text, _, _ in page
+            ).strip()
             if chunk_text:
                 page_chunks.append(chunk_text)
 
@@ -631,6 +813,10 @@ def _split_paragraphs(text: str, chapter_index: int, seen_texts: set) -> list:
 
 def _clean_text(text: str) -> str:
     """Clean text: merge excess whitespace, remove control characters"""
+    # Soft hyphen marks an automatic line-break hyphen: drop it and rejoin the
+    # word ("sen\xad\ntiment" -> "sentiment"). A soft hyphen never renders as a
+    # visible hyphen, so removing it is correct in every case.
+    text = re.sub(r'\xad\s*', '', text)
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()

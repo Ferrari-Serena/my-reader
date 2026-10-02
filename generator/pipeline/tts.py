@@ -13,12 +13,13 @@ Kokoro TTS 章节音频生成器（CLI）
   python tts.py the-giver                       # 全书（跳过已生成）
   python tts.py the-giver --chapters ch-03      # 只生成指定章节
   python tts.py the-giver --chapters ch-03 --bitrate 32k --suffix _32k   # 码率对比试听
-  python tts.py the-giver --skip ch-01 ch-02    # 跳过版权页/书目页
+  python tts.py the-giver                       # 版权页/目录页自动跳过（<150 词）
 """
 
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -44,6 +45,15 @@ FFMPEG = os.path.join(
 # 仓库根目录 = 本文件的上两级（generator/pipeline/tts.py）
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 BOOKS_DIR = os.path.join(REPO_ROOT, 'reader', 'public', 'books')
+
+# 版权页/目录页这类前置页的标题开头词，配合词数阈值判断该不该朗读
+_FRONT_MATTER_RE = re.compile(
+    r'^\s*(contents|table of contents|dedication|epigraph|praise|credits?|copyright|'
+    r'title page|half title|frontispiece|colophon|about the author|about the publisher|'
+    r'books by|also by|acknowledge?ments?|index|'
+    r'前言|目录|版权|扉页|出版)',
+    re.IGNORECASE,
+)
 
 
 def load_chapters(book_id: str) -> dict:
@@ -120,8 +130,10 @@ def main():
     ap = argparse.ArgumentParser(description='Kokoro 章节音频生成器')
     ap.add_argument('book_id', help='书 ID（reader/public/books/ 下的目录名）')
     ap.add_argument('--chapters', nargs='*', default=None, help='只生成这些章节 ID')
-    ap.add_argument('--skip', nargs='*', default=['ch-01', 'ch-02'],
-                    help='跳过的章节 ID（默认版权页 ch-01 ch-02）')
+    ap.add_argument('--skip', nargs='*', default=[],
+                    help='额外跳过的章节 ID')
+    ap.add_argument('--min-words', type=int, default=150,
+                    help='词数低于此值的章节按版权页/目录页跳过（默认 150；0 = 全都生成）')
     ap.add_argument('--bitrate', nargs='+', default=['48k'],
                     help='MP3 码率（默认 48k；传多个值时一次合成、多档转码，文件名自动加 _<码率> 后缀）')
     ap.add_argument('--suffix', default='', help='输出文件名后缀（码率对比试听用）')
@@ -154,6 +166,15 @@ def main():
         if args.chapters is None and ch['id'] in args.skip:
             print(f'⏭️  跳过 {ch["id"]}（{ch["title"]}）')
             continue
+        # 版权页/目录页按内容判，不按序号：章节序号会随解析器改变，而写死的
+        # ch-01/ch-02 会把真章节一起跳掉（Jekyll 的 ch-01/ch-02 就是正文开篇，
+        # artemis-fowl 的 ch-02 是 CHAPTER 1）。要「短」且「标题像前置页」同时
+        # 成立才跳，这样 Divergent 里 "Chapter Fifty-Two"（60 词）这种真·短章不会被误伤。
+        if args.chapters is None and args.min_words:
+            words = sum(len(p.get('text', '').split()) for p in ch.get('paragraphs', []))
+            if words < args.min_words and _FRONT_MATTER_RE.match(ch.get('title', '')):
+                print(f'⏭️  跳过 {ch["id"]}（{ch["title"]}，仅 {words} 词）')
+                continue
         timings_path = os.path.join(audio_dir, f'{ch["id"]}{args.suffix}.timings.json')
         timings_missing = not os.path.exists(timings_path)
         all_outputs = []   # 该章全部码率输出
