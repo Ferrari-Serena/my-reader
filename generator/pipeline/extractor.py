@@ -91,14 +91,18 @@ def _simple_lemmatize(word: str) -> str:
         return w[:-3] + 'y'
     if w.endswith('ves') and len(w) > 5:
         return w[:-3] + 'f'
+    # 双写辅音还原一个：running → runn → run。判据必须是「末两字母相同」——
+    # 原先写的 base.endswith(base[-1]) 是恒真式（末字母当然等于它自己），
+    # 于是所有 ed/ing 词都被多砍一字母，accustomed → accustom → accusto
+    # 这种残根会被当成词典 key 写进 dictionary.json（查不到释义）。
     if w.endswith('ing') and len(w) > 5:
         base = w[:-3]
-        if base.endswith(base[-1]) and len(base) > 2:
+        if len(base) > 2 and base[-1] == base[-2]:
             base = base[:-1]
         return base
     if w.endswith('ed') and len(w) > 5:
         base = w[:-2]
-        if base.endswith(base[-1]) and len(base) > 2:
+        if len(base) > 2 and base[-1] == base[-2]:
             base = base[:-1]
         return base
     # 复数 s — 只在足够长的词上处理，避免破坏人名（Jonas, James 等）

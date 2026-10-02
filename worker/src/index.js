@@ -5,6 +5,8 @@
  *
  * GET /api/dict/<word>  → { lemma, phonetic, partOfSpeech, definitions[], audioUrl }
  *                         未收录时 → 404 { notFound: true, suggestions[] }
+ * GET /api/audio/<bookId>/<file>  → R2 对象本体
+ * HEAD /api/audio/<bookId>/<file> → 同上但不回 body（上传校验脚本探活用）
  * GET /health           → { status: 'ok' }
  *
  * 绑定：env.DB = D1 数据库（表见 schema.sql）；env.MW_API_KEY = wrangler secret
@@ -45,18 +47,24 @@ export default {
 
     // R2 音频代理：/api/audio/<bookId>/<file>
     const audioMatch = url.pathname.match(/^\/api\/audio\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)$/)
-    if (audioMatch && request.method === 'GET') {
+    if (audioMatch && (request.method === 'GET' || request.method === 'HEAD')) {
       const key = `${audioMatch[1]}/${audioMatch[2]}`
+      const ct = key.endsWith('.mp3') ? 'audio/mpeg' : key.endsWith('.json') ? 'application/json' : 'application/octet-stream'
+      const headers = {
+        'Content-Type': ct,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        ...corsHeaders,
+      }
+      // HEAD 只回元数据。上传校验脚本靠 HEAD 探活，不能让它把整章音频读出来；
+      // 而且这里若不接住 HEAD，请求会掉到兜底的 404，校验脚本会误报「全部失败」。
+      if (request.method === 'HEAD') {
+        const meta = await env.AUDIO.head(key)
+        if (!meta) return new Response(null, { status: 404, headers: corsHeaders })
+        return new Response(null, { headers: { ...headers, 'Content-Length': String(meta.size) } })
+      }
       const obj = await env.AUDIO.get(key)
       if (!obj) return new Response('Not found', { status: 404, headers: corsHeaders })
-      const ct = key.endsWith('.mp3') ? 'audio/mpeg' : key.endsWith('.json') ? 'application/json' : 'application/octet-stream'
-      return new Response(obj.body, {
-        headers: {
-          'Content-Type': ct,
-          'Cache-Control': 'public, max-age=31536000, immutable',
-          ...corsHeaders,
-        }
-      })
+      return new Response(obj.body, { headers })
     }
 
     // 先 decode 再匹配，兼容把撇号编码成 %27 的客户端
