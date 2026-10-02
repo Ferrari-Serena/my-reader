@@ -39,9 +39,14 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSync } from './composables/useSync'
+import { migrateAudioPositions } from './sync/progressMigrate.js'
 
 const router = useRouter()
 const route = useRoute()
+
+// 一次性迁移必须跑在 useSync() 之前：同步一启动就会采集进度载荷，
+// 而旧格式的续播位置（裸秒数、无 updatedAt）在采集时是直接被跳过的。
+migrateAudioPositions()
 
 // 启动即触发一次自动拉取（未配对时是空操作）。
 // 以前只有 VocabularyView mount 时才拉，等于「不打开生词本页就永不同步」——

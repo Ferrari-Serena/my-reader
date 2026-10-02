@@ -7,7 +7,9 @@
 export {
   loadVocabulary,
   addWord,
+  addWords,
   removeWord,
+  removeWords,
   updateWord,
   clearVocabulary,
   importVocabulary,

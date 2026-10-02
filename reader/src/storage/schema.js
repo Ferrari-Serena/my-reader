@@ -20,7 +20,10 @@ export function emptyVocab() {
  * 重载后 mergeAndApply 只能退化成比 addedAt（创建时间，跨设备相同）。
  */
 const ENTRY_FIELDS = ['word', 'bookId', 'chapterId', 'addedAt', 'updatedAt', 'snapshot', 'srs', 'quiz']
-const SNAPSHOT_FIELDS = ['lemma', 'phonetic', 'partOfSpeech', 'definitions', 'audioUrl', 'level', 'chapters']
+// surfaces（词条在正文里出现过的写法）必须在列：不在就会在 addWord / mergeAndApply 写盘时被剔掉，
+// 而收藏态高亮正好靠 entry.snapshot.surfaces 把屈折形也算进查找集合，
+// 于是重载/同步一次后就只剩词头能亮。
+const SNAPSHOT_FIELDS = ['lemma', 'phonetic', 'partOfSpeech', 'definitions', 'audioUrl', 'level', 'chapters', 'surfaces']
 
 export function sanitizeEntry(raw) {
   if (!raw || typeof raw !== 'object' || typeof raw.word !== 'string') return null
@@ -33,7 +36,9 @@ export function sanitizeEntry(raw) {
   entry.updatedAt = typeof raw.updatedAt === 'string' && raw.updatedAt ? raw.updatedAt : entry.addedAt
   const snap = raw.snapshot && typeof raw.snapshot === 'object' ? raw.snapshot : {}
   entry.snapshot = {}
-  for (const f of SNAPSHOT_FIELDS) entry.snapshot[f] = snap[f] ?? (f === 'definitions' || f === 'chapters' ? [] : '')
+  for (const f of SNAPSHOT_FIELDS) {
+    entry.snapshot[f] = snap[f] ?? (f === 'definitions' || f === 'chapters' || f === 'surfaces' ? [] : '')
+  }
   // 类型收紧：导入的脏数据不能崩渲染。
   // level 只有两种合法取值：非空字符串 或 null（全项目都用 null 表示「无 level」）。
   // 必须显式吃掉 null —— 上面那个 `snap[f] ?? ''` 会把 null 变成 ''，
@@ -46,6 +51,9 @@ export function sanitizeEntry(raw) {
     : []
   entry.snapshot.chapters = Array.isArray(entry.snapshot.chapters)
     ? entry.snapshot.chapters.filter(c => typeof c === 'string')
+    : []
+  entry.snapshot.surfaces = Array.isArray(entry.snapshot.surfaces)
+    ? entry.snapshot.surfaces.filter(s => typeof s === 'string')
     : []
   for (const f of ['lemma', 'phonetic', 'partOfSpeech', 'audioUrl']) {
     if (typeof entry.snapshot[f] !== 'string') entry.snapshot[f] = ''

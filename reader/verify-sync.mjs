@@ -11,9 +11,10 @@
 
 // ── localStorage 打桩（必须在 import 业务模块之前） ──
 const store = new Map()
+let setCount = 0 // 统计落盘次数：批量写应当只写一次，逐条写会写成 N 次
 globalThis.localStorage = {
   getItem: k => (store.has(k) ? store.get(k) : null),
-  setItem: (k, v) => store.set(k, String(v)),
+  setItem: (k, v) => { setCount++; store.set(k, String(v)) },
   removeItem: k => store.delete(k),
   // collectLocalProgress 要遍历整个 localStorage，所以打桩也得有 key/length
   key: i => [...store.keys()][i] ?? null,
@@ -238,6 +239,122 @@ console.log('\n[progress.js — 收集与回写]')
   t('截断保留的是最新的那批', 'reading:bk319' in capped && !('reading:bk0' in capped))
 }
 
+console.log('\n[mergeAndApply — 批量落盘（一次写，不是每条一次）]')
+{
+  store.clear()
+  await storage.clearVocabulary()
+  storage.clearTombstones(Object.keys(storage.loadTombstones()))
+
+  const remote = {}
+  for (let i = 0; i < 8; i++) {
+    remote['w' + i] = { word: 'w' + i, addedAt: T1, updatedAt: T1, snapshot: { definitions: ['d' + i] } }
+  }
+  remote.ws = { word: 'ws', addedAt: T1, updatedAt: T1, snapshot: { definitions: ['d'], surfaces: ['wss'] } }
+
+  setCount = 0
+  const vocab = { words: { value: {} }, markDirty() {} }
+  await mergeAndApply(vocab, remote, {})
+  t('远程写全部落盘', Object.keys((await storage.loadVocabulary()).words).length === 9)
+  t('响应式状态同步拿到全部', Object.keys(vocab.words.value).length === 9)
+  t('9 条只写了一次 localStorage（逐条 persist 就是 O(N²)）', setCount === 1, 'got ' + setCount)
+  t('surfaces 没在净化时被剪掉（否则收藏态高亮只剩词头）',
+    vocab.words.value.ws?.snapshot?.surfaces?.join() === 'wss')
+  t('surfaces 非数组 → 空数组', sanitizeEntry({ word: 'go', snapshot: { surfaces: 'went' } }).snapshot.surfaces.length === 0)
+
+  const tombsBefore = JSON.stringify(storage.loadTombstones())
+  setCount = 0
+  const plan = await mergeAndApply(vocab, {}, { w0: T2, w1: T2 })
+  t('远程墓碑批量删除生效', plan.remove.length === 2 && !(await storage.loadVocabulary()).words.w0)
+  t('应用远程墓碑不记本地台账', JSON.stringify(storage.loadTombstones()) === tombsBefore)
+  t('批量删除也只写一次', setCount === 1, 'got ' + setCount)
+}
+
+console.log('\n[budget.js — keepalive 64 KiB 预算]')
+{
+  const { KEEPALIVE_BODY_LIMIT, utf8Bytes, budgetKeepaliveParts } = await import('./src/sync/budget.js')
+  const code = 'ABCD2345'
+  const bytesOf = (b) => utf8Bytes(JSON.stringify({ code, words: b.words, tombstones: b.tombstones }))
+    + utf8Bytes(JSON.stringify({ code, entries: b.progress }))
+
+  const small = budgetKeepaliveParts({
+    code,
+    words: { go: { word: 'go', updatedAt: T1, snapshot: { definitions: ['x'] } } },
+    tombstones: { gone: T2 },
+    progress: { 'reading:b1': { payload: { chapterId: 'ch-001', updatedAt: T2 }, updatedAt: T2 } }
+  })
+  t('小载荷原样通过',
+    Object.keys(small.words).length === 1 && small.tombstones.gone === T2
+    && !!small.progress['reading:b1'] && small.droppedWords.length === 0)
+
+  const words = {}
+  for (let i = 0; i < 400; i++) {
+    words['w' + i] = { word: 'w' + i, updatedAt: new Date(Date.parse(T0) + i * 1000).toISOString(), snapshot: { definitions: ['x'.repeat(400)] } }
+  }
+  const big = budgetKeepaliveParts({ code, words, tombstones: { t1: T1, t2: T2 }, progress: {} })
+  const bigTotal = bytesOf(big)
+  t('超预算时总字节数不超上限', bigTotal <= KEEPALIVE_BODY_LIMIT, bigTotal + ' bytes')
+  t('确实裁掉了词', big.droppedWords.length > 0, 'dropped ' + big.droppedWords.length)
+  t('裁掉 + 保留 = 全部', big.droppedWords.length + Object.keys(big.words).length === 400)
+  t('保留的是最新那批（倒序截断）', 'w399' in big.words && !('w0' in big.words))
+
+  const progress = {}
+  for (let i = 0; i < 800; i++) {
+    const ts = new Date(Date.parse(T0) + i * 1000).toISOString()
+    progress['reading:b' + i] = { payload: { chapterId: 'ch-001', paragraphIndex: 0, pad: 'y'.repeat(100), updatedAt: ts }, updatedAt: ts }
+  }
+  const mixed = budgetKeepaliveParts({ code, words: { go: words.w0 }, tombstones: { t1: T1 }, progress })
+  const mixedTotal = bytesOf(mixed)
+  t('进度重的场景也不超上限', mixedTotal <= KEEPALIVE_BODY_LIMIT, mixedTotal + ' bytes')
+  t('自愈的进度被裁（下次重推）', Object.keys(mixed.progress).length < 800)
+  t('被裁后仍保留最新的进度', 'reading:b799' in mixed.progress && !('reading:b0' in mixed.progress))
+  t('词与墓碑在预算内完整保留', 'go' in mixed.words && mixed.tombstones.t1 === T1)
+
+  const tiny = budgetKeepaliveParts({ code, words: { a: words.w0, b: words.w1 }, tombstones: {}, progress: {} }, 120)
+  t('预算连信封都装不下时全部裁掉，不抛错',
+    tiny.droppedWords.length === 2 && Object.keys(tiny.words).length === 0 && bytesOf(tiny) <= 120)
+}
+
+console.log('\n[progressMigrate — 旧音频续播位置（URL 键 + 裸秒数）]')
+{
+  const { migrateAudioPositions, MIGRATED_AT } = await import('./src/sync/progressMigrate.js')
+  store.clear()
+  localStorage.setItem('reader-audio-pos:/books/the-giver/audio/ch-04.mp3', '590.049')
+  localStorage.setItem('reader-audio-pos:/my-reader/books/the-giver/audio/ch-05.mp3', '12')
+  localStorage.setItem('reader-audio-pos:/books/b/audio/bad.mp3', 'NaN')
+  localStorage.setItem('reader-audio-pos:https://old.example/x.mp3', '99')
+  localStorage.setItem(audioStorageKey('artemis-fowl', 'ch-01'), JSON.stringify({ seconds: 7, updatedAt: T3 }))
+  localStorage.setItem(readingStorageKey('the-giver'), JSON.stringify({ chapterId: 'ch-04', paragraphIndex: 3, updatedAt: T3 }))
+
+  const r = migrateAudioPositions()
+  t('两条旧键都迁移了', r.migrated === 2, JSON.stringify(r))
+  t('三条旧键被清掉', r.removed === 3, JSON.stringify(r))
+  t('新键与值形状正确',
+    JSON.parse(localStorage.getItem(audioStorageKey('the-giver', 'ch-04'))).seconds === 590.049)
+  t('子路径前缀的旧键也认得出',
+    JSON.parse(localStorage.getItem(audioStorageKey('the-giver', 'ch-05'))).seconds === 12)
+  t('迁移值带最旧时间戳（不许压过别的设备的更新）',
+    JSON.parse(localStorage.getItem(audioStorageKey('the-giver', 'ch-04'))).updatedAt === MIGRATED_AT)
+  t('坏值只删不迁',
+    localStorage.getItem('reader-audio-pos:/books/b/audio/bad.mp3') === null
+    && !localStorage.getItem(audioStorageKey('b', 'bad')))
+  t('认不出形状的旧键不动',
+    localStorage.getItem('reader-audio-pos:https://old.example/x.mp3') === '99')
+  t('已是新键的不被动',
+    JSON.parse(localStorage.getItem(audioStorageKey('artemis-fowl', 'ch-01'))).seconds === 7)
+  t('阅读进度键不被动', localStorage.getItem(readingStorageKey('the-giver')) !== null)
+  t('迁移后的值能被推送采集到（有 updatedAt 才参与 LWW）',
+    collectLocalProgress()['audio:the-giver/ch-04']?.payload?.seconds === 590.049)
+  t('幂等：再跑一次什么都迁移不了', migrateAudioPositions().migrated === 0)
+
+  store.clear()
+  localStorage.setItem('reader-audio-pos:/books/b/audio/c.mp3', '5')
+  localStorage.setItem(audioStorageKey('b', 'c'), JSON.stringify({ seconds: 99, updatedAt: T3 }))
+  const r2 = migrateAudioPositions()
+  t('已有新键 → 不覆盖，旧键照样清掉',
+    r2.migrated === 0 && r2.skipped === 1
+    && JSON.parse(localStorage.getItem(audioStorageKey('b', 'c'))).seconds === 99
+    && localStorage.getItem('reader-audio-pos:/books/b/audio/c.mp3') === null)
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
-process.exit(fail ? 1 : 0)
 process.exit(fail ? 1 : 0)
