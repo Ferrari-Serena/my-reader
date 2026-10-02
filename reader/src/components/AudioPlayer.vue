@@ -23,12 +23,16 @@
 
 <script setup>
 import { ref, watch, onUnmounted, computed } from 'vue'
+import { audioStorageKey } from '../sync/progress.js'
+import { nowIso } from '../sync/clock.js'
 
 const CHUNK_MAX = 160
 
 const props = defineProps({
   chapterText: { type: String, default: '' },
   audioUrl: { type: String, default: '' },
+  bookId: { type: String, default: '' },
+  chapterId: { type: String, default: '' },
   bookTitle: { type: String, default: '' },
   chapterTitle: { type: String, default: '' }
 })
@@ -59,16 +63,11 @@ const statusLabel = computed(() => {
 })
 
 // ---- chapter change → stop ----
-// 用 audioUrl 的 watch 拿旧值：切章瞬间 props 已更新，
-// 在 stopAll 里存进度会把旧章的位置记到新章的 key 上
+// 切章瞬间 props 已经变成新章了，所以不能在 stopAll 里读 props 取 key
+// （那会把旧章的位置写进新章的键）。改为信任 playingIds —— 那是元素里实际装着的那一章。
+// 换书时 chapterId 可能不变（不同书都有 ch-001），所以 bookId 也必须在依赖里。
 
-watch(() => props.audioUrl, (_, oldUrl) => {
-  const el = audioEl.value
-  if (el && el.src && !el.ended && el.currentTime > 0 && oldUrl) {
-    savePosition(oldUrl, el.currentTime)
-  }
-  stopAll()
-})
+watch([() => props.bookId, () => props.chapterId], () => stopAll())
 
 // ---- click handler ----
 
@@ -106,13 +105,15 @@ function startStaticAudio(seekTo = null) {
 
   state.value = 'loading'
   source.value = 'Chapter audio'
+  // 记下元素里装的到底是哪一章 —— 之后 props 会先于 stopAll 变掉
+  playingIds = { bookId: props.bookId, chapterId: props.chapterId }
 
   el.src = props.audioUrl
   el.play().then(() => {
     if (mySid !== sessionId) return // stale
     clearLoadTimer()
     // 优先按点击的段落定位，否则恢复上次进度（快到结尾时不恢复，避免一点开就结束）
-    const target = seekTo !== null ? seekTo : savedPosition(props.audioUrl)
+    const target = seekTo !== null ? seekTo : savedPosition()
     if (target > 0 && target < (el.duration || Infinity) - 3) {
       el.currentTime = target
     }
@@ -140,23 +141,64 @@ function startStaticAudio(seekTo = null) {
 }
 
 // ---- playback position memory + paragraph seek ----
+//
+// 键由 sync/progress.js 统一给出，不再用完整 audioUrl：
+// URL 里嵌着域名（这个 app 已经换过一次域名），域名一变旧键全成孤儿，
+// 而同步逻辑还得反过来硬编码域名去认它们。
+// 值是 {seconds, updatedAt} 而不是光秃的秒数——纯数字没法参与跨设备的新旧比较。
 
-const POS_PREFIX = 'reader-audio-pos:'
 let lastSavedAt = 0
 
-function savePosition(url, seconds) {
-  try { localStorage.setItem(POS_PREFIX + url, String(seconds)) } catch { /* quota/private mode */ }
+/** 正在播的那一章（用于停止时把位置写回正确的键，而不是当前 props 的键） */
+let playingIds = null
+
+// 懒加载：进度保存很频繁，不该把同步栈塞进音频组件的静态依赖里
+let _syncApi = undefined
+
+function notifySync() {
+  const poke = (api) => {
+    if (document.visibilityState === 'hidden') api.flushNow()
+    else api.pushSoon()
+  }
+  if (_syncApi === undefined) {
+    import('../composables/useSync.js')
+      .then(m => { _syncApi = m.useSync; return _syncApi() })
+      .then(poke)
+      .catch(() => { _syncApi = undefined })
+  } else if (_syncApi) {
+    poke(_syncApi())
+  }
 }
 
-function savedPosition(url) {
+/**
+ * @param {boolean} notify 是否顺带安排一次同步推送。
+ *   定时保存（每 3 秒的 timeupdate）传 false——那会把整份进度载荷反复推上去；
+ *   暂停 / 切章 / 听完这些「动作结束」的时刻才值得推一次。
+ */
+function saveAt(bookId, chapterId, seconds, notify) {
+  if (!bookId || !chapterId) return
   try {
-    const v = parseFloat(localStorage.getItem(POS_PREFIX + url))
-    return Number.isFinite(v) ? v : 0
-  } catch { return 0 }
+    localStorage.setItem(audioStorageKey(bookId, chapterId),
+      JSON.stringify({ seconds, updatedAt: nowIso() }))
+    if (notify) notifySync()
+  } catch { /* quota/private mode */ }
 }
 
-function clearPosition(url) {
-  try { localStorage.removeItem(POS_PREFIX + url) } catch { /* ignore */ }
+function savePosition(seconds, notify = false) {
+  saveAt(props.bookId, props.chapterId, seconds, notify)
+}
+
+function savedPosition() {
+  if (!props.bookId || !props.chapterId) return 0
+  try {
+    const raw = localStorage.getItem(audioStorageKey(props.bookId, props.chapterId))
+    if (!raw) return 0
+    const v = JSON.parse(raw)
+    // 旧格式是裸秒数（JSON.parse 出来是 number）→ 当 0 处理。
+    // 值格式变更，旧的本地续播位置作废；影响仅限于「从哪儿接着听」。
+    const s = (v && typeof v === 'object') ? Number(v.seconds) : NaN
+    return Number.isFinite(s) ? s : 0
+  } catch { return 0 }
 }
 
 // ---- Media Session API（锁屏音频控制）----
@@ -253,7 +295,7 @@ function onTimeUpdate() {
   const now = Date.now()
   if (now - lastSavedAt > 3000) {
     lastSavedAt = now
-    savePosition(props.audioUrl, el.currentTime)
+    savePosition(el.currentTime) // 不推送：3 秒一次的位置不值得每次都跑一趟网络
   }
 }
 
@@ -263,7 +305,7 @@ function playFrom(seconds) {
   const el = audioEl.value
   if (el && el.src && state.value === 'playing') {
     el.currentTime = seconds
-    savePosition(props.audioUrl, seconds)
+    savePosition(seconds, true)
     return
   }
   startStaticAudio(seconds)
@@ -276,7 +318,9 @@ defineExpose({ playFrom, stop: stopAll })
 // stopAll() 里 removeAttribute('src') 后即使个别浏览器触发 error，state 已是 idle，直接忽略。
 
 function onAudioEnded() {
-  clearPosition(props.audioUrl) // 读完整章，下次从头开始
+  // 写成 0 而不是删掉键：删键只是本机行为，同步层看不到「已经听完」这件事，
+  // 另一台设备会一直保留它那边的非零位置。写 0 才是一次可比较的「回到开头」。
+  savePosition(0, true)
   // 保持 paused 状态而非 none → 锁屏 play 按钮仍可用，用户可重播本章（Q5 fix）
   if (hasMediaSession) navigator.mediaSession.playbackState = 'paused'
   if (state.value === 'playing') stopAll()
@@ -417,13 +461,14 @@ function stopAll() {
   sessionId++
   clearLoadTimer()
   stopBrowserTTS()
-  // 手动停止时顺手存一次进度。切章场景由 audioUrl watcher 用旧 key 保存，
-  // 此处规范化比对 URL 确认 el 里放的还是当前章，防止把旧章位置写进新章的 key
+  // 手动停止 / 切章 / 换书时存一次进度。键取自 playingIds 而不是 props：
+  // 切章是 props 先更新、随后才走到这里，读 props 会把旧章位置记到新章头上。
+  // 这里也是「动作结束」的时刻，所以顺带安排一次同步推送。
   const el = audioEl.value
-  if (el && el.src && !el.ended && el.currentTime > 0 && state.value === 'playing'
-      && props.audioUrl && new URL(props.audioUrl, location.href).href === el.src) {
-    savePosition(props.audioUrl, el.currentTime)
+  if (el && el.src && !el.ended && el.currentTime > 0 && state.value === 'playing' && playingIds) {
+    saveAt(playingIds.bookId, playingIds.chapterId, el.currentTime, true)
   }
+  playingIds = null
   state.value = 'idle'
   if (el) {
     el.pause()

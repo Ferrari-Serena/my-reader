@@ -38,9 +38,15 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useSync } from './composables/useSync'
 
 const router = useRouter()
 const route = useRoute()
+
+// 启动即触发一次自动拉取（未配对时是空操作）。
+// 以前只有 VocabularyView mount 时才拉，等于「不打开生词本页就永不同步」——
+// 阅读进度和生词都得等用户想起来点那个 tab 才会跨设备更新。
+useSync()
 
 const showHeader = computed(() => true)
 const showTabbar = computed(() => {

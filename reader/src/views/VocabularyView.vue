@@ -29,8 +29,9 @@
               <p class="sync-hint" v-if="sync.lastSync.value">
                 Last sync: {{ sync.lastSync.value.toLocaleTimeString() }}
               </p>
-              <button class="action-btn primary" @click="sync.pull(); showSyncPanel = false" :disabled="sync.pulling.value">
-                {{ sync.pulling.value ? 'Syncing...' : 'Sync Now' }}
+              <!-- 拉 + 推都做：只 pull 的话，本机这次的改动要等下一次变异才会上去 -->
+              <button class="action-btn primary" @click="sync.syncNow(); showSyncPanel = false" :disabled="sync.pulling.value || sync.pushing.value">
+                {{ (sync.pulling.value || sync.pushing.value) ? 'Syncing...' : 'Sync Now' }}
               </button>
               <button class="action-btn" @click="sync.unpair()">Unpair</button>
             </div>
