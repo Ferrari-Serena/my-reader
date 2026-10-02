@@ -9,6 +9,7 @@
 import { createCard, rate, isDue, buildQueue, nextDueAt } from './src/fsrs.js'
 import { checkSpelling, levenshtein } from './src/utils/spelling.js'
 import { generateQuestions, generatePhraseQuestions } from './src/quizGen.js'
+import { buildDictAlias, resolveDictKey, addEntryForms } from './src/utils/dictIndex.js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -150,6 +151,39 @@ t('词组题干扰项为同动词', pqs.every(q => {
     `出题 ${all.length}/期望 ${expected}；选项不足: ${notEnough.slice(0, 3).map(q => q.word + '=' + q.options.length).join(', ')}`)
 }
 
+
+// ═══ 4. 词典表面形索引 ═══
+console.log('\n[dictIndex.js]')
+const jekyll = JSON.parse(readFileSync(join(__dirname, 'public/books/dr-jekyll-and-mr-hyde/dictionary.json'), 'utf8'))
+const jw = jekyll.words || {}
+const alias = buildDictAlias(jw)
+
+t('别名表非空', alias.size > 0)
+
+// 词典里每个词条的每个 surface，都必须解析回它自己（没有悬空指针）
+{
+  const dangling = []
+  for (const [key, e] of Object.entries(jw)) {
+    for (const s of (e.surfaces || [])) {
+      if (resolveDictKey(s, jw, alias) !== key) dangling.push(`${s}→${key}`)
+    }
+  }
+  t(`surfaces 无悬空（${Object.keys(jw).length} 个词条自洽）`, dangling.length === 0, dangling.slice(0, 5).join(' | '))
+}
+
+// 屈折形必须离线命中（这批词在改口径前全部落空、只能联网查）
+{
+  const probes = ['affections', 'agonies', 'appalled', 'appalling', 'appetites', 'apprehensions', 'arteries', 'aspirations']
+  const miss = probes.filter(w => !resolveDictKey(w, jw, alias))
+  t(`屈折形离线命中（${probes.length} 个探针）`, miss.length === 0, '落空: ' + miss.join(', '))
+}
+
+// 收藏高亮：词头 + surfaces 都要进查找集合
+{
+  const set = new Set()
+  addEntryForms(set, { snapshot: { lemma: 'abandon', surfaces: ['abandon', 'abandoned', 'abandoning'] } })
+  t('addEntryForms 收词头与全部表面形', set.has('abandon') && set.has('abandoned') && set.has('abandoning'))
+}
 
 // 小词池降级
 const tiny = entries.slice(0, 5)

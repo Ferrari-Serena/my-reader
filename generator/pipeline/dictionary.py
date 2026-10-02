@@ -42,7 +42,8 @@ def lookup_dictionary(word_list: dict, chapters_data: dict, api_key: str = '') -
                 'definitions': e['definitions'][:6],
                 'audioUrl': '',
                 'level': sat_ap_words.get(lemma, None),
-                'chapters': info.get('chapters', [])
+                'chapters': info.get('chapters', []),
+                'surfaces': info.get('surfaces', [])
             }
             dictionary[lemma] = entry
         else:
@@ -54,7 +55,8 @@ def lookup_dictionary(word_list: dict, chapters_data: dict, api_key: str = '') -
                 'definitions': [],
                 'audioUrl': '',
                 'level': sat_ap_words.get(lemma, None),
-                'chapters': info.get('chapters', [])
+                'chapters': info.get('chapters', []),
+                'surfaces': info.get('surfaces', [])
             }
             if api_available:
                 try:
