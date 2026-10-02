@@ -19,8 +19,10 @@ wrangler 的 r2 子命令没有批量模式：一本书是「章数 × 2」个�
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +34,8 @@ BOOKS_DIR = os.path.join(REPO_ROOT, 'reader', 'public', 'books')
 PROXY = 'http://127.0.0.1:7897'
 # 线上探测用（--verify）
 AUDIO_BASE = 'https://www.ferrari11.com/api/audio'
+# Cloudflare 会挡掉 Python-urllib 的默认 UA（403 Forbidden），必须显式带一个
+UA = 'my-reader-upload-check/1.0'
 
 CONTENT_TYPES = {'.mp3': 'audio/mpeg', '.json': 'application/json'}
 
@@ -43,6 +47,18 @@ def _bucket_name() -> str:
     if not match:
         sys.exit('wrangler.toml 里找不到 r2 bucket_name')
     return match.group(1)
+
+
+def _npx() -> str:
+    """解析 npx 的完整路径。
+
+    Windows 上 npx 实际是 npx.CMD，subprocess 不走 shell 时不会做 PATHEXT
+    解析，直接传 'npx' 会 FileNotFoundError（WinError 2）。
+    """
+    path = shutil.which('npx')
+    if not path:
+        sys.exit('❌ 找不到 npx，请确认 Node.js 已安装并在 PATH 中')
+    return path
 
 
 def _audio_files(book_id: str) -> list:
@@ -68,7 +84,7 @@ def _put(bucket: str, book_id: str, name: str) -> bool:
     path = os.path.join(BOOKS_DIR, book_id, 'audio', name)
     key = f'{book_id}/{name}'
     cmd = [
-        'npx', '--no-install', 'wrangler', 'r2', 'object', 'put', f'{bucket}/{key}',
+        _npx(), '--no-install', 'wrangler', 'r2', 'object', 'put', f'{bucket}/{key}',
         f'--file={path}',
         f'--content-type={CONTENT_TYPES[os.path.splitext(name)[1].lower()]}',
         '--remote',  # wrangler 4.x 默认操作本地模拟存储，必须显式指定远端
@@ -87,15 +103,32 @@ def _put(bucket: str, book_id: str, name: str) -> bool:
     return False
 
 
-def _verify(book_id: str, name: str) -> bool:
-    """HEAD 线上 URL，确认 Worker 真的能取到。"""
+def _verify(book_id: str, name: str) -> tuple:
+    """HEAD 线上 URL，确认 Worker 能取到，且 R2 上的字节数与本地一致。
+
+    用 HEAD 而非 GET：一本书几十 MB，探活不该把音频整个拉下来。
+    这依赖 Worker 的 /api/audio 分支接住 HEAD —— 它原先只放 GET 过，
+    HEAD 会掉到兜底 404，一次成功的上传看起来会像全部失败。
+    返回 (是否通过, 失败原因)；原因必须带出来，否则 403/超时/404 会长得一模一样。
+    """
+    path = os.path.join(BOOKS_DIR, book_id, 'audio', name)
     url = f'{AUDIO_BASE}/{book_id}/{name}'
-    request = urllib.request.Request(url, method='HEAD')
+    # 不带 UA 会被 Cloudflare 判成爬虫挡掉（403），和对象不存在（404）是两回事
+    request = urllib.request.Request(url, method='HEAD',
+                                     headers={'User-Agent': UA})
     try:
         with urllib.request.urlopen(request, timeout=30) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
+            length = resp.headers.get('Content-Length')
+            if length is None:
+                return True, ''
+            local = os.path.getsize(path)
+            if int(length) == local:
+                return True, ''
+            return False, f'字节数不符（线上 {length} / 本地 {local}）'
+    except urllib.error.HTTPError as e:
+        return False, f'HTTP {e.code}'
+    except Exception as e:
+        return False, type(e).__name__
 
 
 def _books_with_audio() -> list:
@@ -155,10 +188,10 @@ def main():
         print('\n线上探测:')
         bad = 0
         for book_id, name in verified:
-            ok = _verify(book_id, name)
+            ok, why = _verify(book_id, name)
             if not ok:
                 bad += 1
-                print(f'  404 {book_id}/{name}')
+                print(f'  失败 {book_id}/{name} — {why}')
         print(f'  {len(verified) - bad}/{len(verified)} 可访问')
 
     if failed:
