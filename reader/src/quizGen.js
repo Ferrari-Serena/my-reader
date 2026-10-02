@@ -57,7 +57,11 @@ function pickDistractors(targetEntry, allEntries, n = 3) {
   return shuffle(pool).slice(0, n)
 }
 
-/** 在 chapters JSON 中搜索包含 word 的句子（返回最短的） */
+/**
+ * 在 chapters JSON 中搜索包含 word 的句子（返回最短的）。
+ * 命中时把**实际命中的那个词形**一起带出来：句子里常常是屈折形（abandoning），
+ * 而词表键是原形（abandon）。挖空必须按命中的词形挖，按原形挖一个字符都替换不掉。
+ */
 function findSentence(word, chapters) {
   const candidates = []
   const lower = word.toLowerCase()
@@ -75,12 +79,14 @@ function findSentence(word, chapters) {
       for (const s of sentences) {
         const trimmed = s.trim()
         if (!trimmed) continue
-        const words = trimmed.split(/\s+/)
-        const hasWord = words.some(w =>
-          forms.some(f => w.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase() === f)
-        )
-        if (hasWord && trimmed.length >= 15 && trimmed.length <= 250) {
-          candidates.push({ sentence: trimmed, chapterId: ch.id, paragraphId: para.id })
+        // 取句子里**最先**命中的那个词形，与后面 String.replace 只替换第一处的口径一致
+        let hit = ''
+        for (const w of trimmed.split(/\s+/)) {
+          const token = w.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()
+          if (token && forms.includes(token)) { hit = token; break }
+        }
+        if (hit && trimmed.length >= 15 && trimmed.length <= 250) {
+          candidates.push({ sentence: trimmed, form: hit, chapterId: ch.id, paragraphId: para.id })
         }
       }
     }
@@ -88,14 +94,15 @@ function findSentence(word, chapters) {
   return candidates.sort((a, b) => a.sentence.length - b.sentence.length)[0] || null
 }
 
-/** 用 word 替换含 target 的句子，返回题干 + 正确答案 */
-function buildClozeStem(sentence, target) {
-  const regex = new RegExp(`\\b${target}\\b`, 'i')
-  return {
-    stem: sentence.replace(regex, '_______'),
-    // 保留原词首字母大写信息以便渲染
-    correctWord: target,
-  }
+/**
+ * 用**命中的词形**替换句子里的那一处，返回题干 + 是否真的挖到了空。
+ * placed 是给调用方的硬保证：挖不出空就不该出这道题（宁可降级为 wordChoice），
+ * 否则学生看到的是一句完整的话，答案还以屈折形印在里面。
+ */
+function buildClozeStem(sentence, form) {
+  const regex = new RegExp(`\\b${form}\\b`, 'i')
+  const stem = sentence.replace(regex, '_______')
+  return { stem, placed: stem !== sentence }
 }
 
 // ─── 题型生成器 ──────────────────────────────────
@@ -104,7 +111,11 @@ function genSentenceCloze(entry, allEntries, chapters) {
   const found = findSentence(entry.word, chapters)
   if (!found) return null // 降级为 wordChoice
 
-  const { stem, correctWord } = buildClozeStem(found.sentence, entry.word)
+  // 按命中的词形挖空（句子里可能是 abandoning，而词表键是 abandon）
+  const { stem, placed } = buildClozeStem(found.sentence, found.form)
+  if (!placed) return null // 挖不出空：宁可不这道题
+  // 同一句里可能既出现屈折形又出现原形，挖掉一处后答案仍留在题干里 → 也不能出
+  if (new RegExp(`\\b${entry.word}\\b`, 'i').test(stem)) return null
   const dists = pickDistractors(entry, allEntries, 3)
   if (dists.length < 3) return null
 
@@ -117,7 +128,7 @@ function genSentenceCloze(entry, allEntries, chapters) {
     stem,
     options: options.map(o => o.word),
     answerIndex,
-    explanation: `${correctWord}: ${(entry.snapshot?.definitions || [])[0] || ''}`,
+    explanation: `${entry.word}: ${(entry.snapshot?.definitions || [])[0] || ''}`,
     word: entry.word,
     context: `from "${found.sentence.slice(0, 60)}..." (${distractorWords})`,
   }
@@ -271,11 +282,14 @@ export function generateQuestions(candidates, allEntries, chapters = [], maxCoun
  * 从短语词典生成词组测验。
  */
 export function generatePhraseQuestions(phrases, maxCount = 20) {
-  const pool = shuffle(phrases).slice(0, maxCount * 3) // 多取些以留降级空间
+  // 先筛再取样：3294 条词组里只有 400 条带 verb（干扰项要靠同动词才造得出来）。
+  // 先抽 30 条再筛的话，抽不中可用词组的概率约 1.75% → 直接给出 0 题；
+  // 而且池子里混着大量出不了题的，永远凑不满 maxCount（实测每次都只有 3~4 题）。
+  const usable = phrases.filter(p => p.verb && p.defs?.length)
+  const pool = shuffle(usable).slice(0, maxCount * 3)
   const questions = []
   for (const p of pool) {
     if (questions.length >= maxCount) break
-    if (!p.verb || !p.defs?.length) continue
     const q = genPhraseCloze(p, phrases, 3)
     if (q) questions.push(q)
   }
