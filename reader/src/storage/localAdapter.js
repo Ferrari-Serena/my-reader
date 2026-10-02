@@ -118,6 +118,50 @@ export async function removeWord(word, opts = {}) {
   return persist()
 }
 
+/**
+ * 批量写入：语义与逐条 addWord 完全一致（净化 + 复活台账），只在最后落盘一次。
+ * mergeAndApply 一次合并可能写进上千条，而逐条 addWord 每条都 persist()——
+ * 每次 persist 都把**整张词表** JSON.stringify 一遍，加起来就是 O(N²)。
+ * 返回 {word: 净化后条目}：调用方直接拿这份更新响应式状态，不必再逐条
+ * loadVocabulary() 回读（doc 就在内存里，那几行纯粹是白跑）。
+ */
+export async function addWords(entries) {
+  await loadVocabulary()
+  const applied = {}
+  const tombs = readTombstones()
+  let tombChanged = false
+  for (const raw of entries || []) {
+    const clean = sanitizeEntry(raw)
+    if (!clean) continue
+    const r = retireTombstone(tombs, clean.word, clean.updatedAt)
+    clean.updatedAt = r.updatedAt
+    tombChanged = tombChanged || r.changed
+    doc.words[clean.word] = clean
+    applied[clean.word] = clean
+  }
+  if (tombChanged) writeTombstones(tombs)
+  if (Object.keys(applied).length) persist()
+  return applied
+}
+
+/**
+ * 批量删除：语义与逐条 removeWord 一致（词不在词表里也照记台账），同样只在最后落盘一次。
+ * 应用**远程**墓碑时传 { record: false }——理由见 removeWord 的注释。
+ */
+export async function removeWords(words, opts = {}) {
+  await loadVocabulary()
+  const list = (words || []).map(w => (w + '').toLowerCase())
+  if (!list.length) return false
+  const tombs = opts.record === false ? null : readTombstones()
+  const ts = new Date().toISOString()
+  for (const key of list) {
+    delete doc.words[key]
+    if (tombs) tombs[key] = ts
+  }
+  if (tombs) writeTombstones(tombs)
+  return persist()
+}
+
 export async function updateWord(word, patch) {
   await loadVocabulary()
   const key = word.toLowerCase()

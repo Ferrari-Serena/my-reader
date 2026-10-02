@@ -19,11 +19,13 @@ import { useVocabulary } from './useVocabulary.js'
 import { planMerge } from '../sync/merge.js'
 import { syncClock } from '../sync/clock.js'
 import { collectLocalProgress, applyRemoteProgress } from '../sync/progress.js'
+import { budgetKeepaliveParts } from '../sync/budget.js'
 
 const SYNC_BASE = 'https://www.ferrari11.com/api/sync'
 const SYNC_CODE_KEY = 'reader-sync-code'
 const TIMEOUT = 8000
 const PUSH_DEBOUNCE_MS = 1500 // 尾随防抖：答题连点不再是一次一推
+const KEEPALIVE_RETRY_MS = 1500 // keepalive 载荷被裁后的补发间隔
 
 const state = reactive({
   code: '',        // 当前同步码（从 localStorage 恢复）
@@ -78,19 +80,17 @@ export async function mergeAndApply(vocab, remoteWords, remoteTombstones) {
   // 第四个参数是本地未推出去的删除台账：远程存活写不得覆盖一条更新的本地删除
   const plan = planMerge(vocab.words.value, remoteWords, remoteTombstones, st.loadTombstones())
 
-  for (const { word, entry } of plan.apply) {
-    await st.addWord(entry) // 内部 sanitizeEntry 并落盘
-    // 响应式状态里也要放**净化后**的那份，否则内存与磁盘口径分叉
-    const doc = await st.loadVocabulary()
-    if (doc.words[word]) vocab.words.value[word] = doc.words[word]
-  }
+  // 批量落盘：一次 persist 而不是每条一次（逐条会把整张词表反复 JSON.stringify，合起来是 O(N²)）。
+  // 响应式状态放的是**净化后**的那份，否则内存与磁盘口径分叉。
+  const applied = await st.addWords(plan.apply.map(p => p.entry))
+  for (const [word, entry] of Object.entries(applied)) vocab.words.value[word] = entry
 
-  for (const word of plan.remove) {
+  if (plan.remove.length) {
     // record:false —— 这个删除服务端已经有了，本地不必再记台账（记了反而会被拒收）
-    await st.removeWord(word, { record: false })
-    delete vocab.words.value[word]
+    await st.removeWords(plan.remove, { record: false })
+    for (const word of plan.remove) delete vocab.words.value[word]
+    st.clearTombstones(plan.remove)
   }
-  if (plan.remove.length) st.clearTombstones(plan.remove)
 
   // 本地这次收藏晚于远程的删除 → 用户删过又加回来了，回推复活
   if (plan.repush.length) {
@@ -159,20 +159,39 @@ async function pushNow(options = {}) {
       if (!(w in words) && !vocab.words.value[w]) tombstones[w] = ts
     }
 
-    const hasWords = Object.keys(words).length || Object.keys(tombstones).length
+    // keepalive 的请求体总量上限 64 KiB（超了浏览器**整条丢弃**，一条都推不出去）。
+    // 页面卸载时的那次推送正好走 keepalive，所以先按优先级裁到预算内再发（见 sync/budget.js）。
+    const progress = collectLocalProgress()
+    let pushWords = words
+    let pushTombs = tombstones
+    let pushProgress = progress
+    if (options.keepalive) {
+      const b = budgetKeepaliveParts({ code: state.code, words, tombstones, progress })
+      pushWords = b.words
+      pushTombs = b.tombstones
+      pushProgress = b.progress
+      // 被裁掉的脏词还回脏集合——不还就再也不会被推了（脏集合只活在内存里）；
+      // 另外安排一次普通推送补发，页面只是切到后台（visibilitychange）时它会真的执行。
+      if (b.droppedWords.length) {
+        vocab.markDirty(...b.droppedWords)
+        pushSoon(KEEPALIVE_RETRY_MS)
+      }
+    }
+
+    const hasWords = Object.keys(pushWords).length || Object.keys(pushTombs).length
 
     if (hasWords) {
       const res = await apiFetch('/push', {
         method: 'POST',
         keepalive: !!options.keepalive,
-        body: JSON.stringify({ code: state.code, words, tombstones })
+        body: JSON.stringify({ code: state.code, words: pushWords, tombstones: pushTombs })
       })
       wordsPushed = true
       state.lastSync = new Date()
       state.paired = true
       state.rejected = res?.rejected || 0
       // 推送成功才清台账——失败时要留着，下次继续推
-      if (Object.keys(tombstones).length) st.clearTombstones(Object.keys(tombstones))
+      if (Object.keys(pushTombs).length) st.clearTombstones(Object.keys(pushTombs))
       // 时间戳仍是旧的，说明服务端有更新的版本：本地这些词已被拒收，
       // 必须立刻拉一次把远程版本合并进来，否则本地会一直以为自己写成功了
       if (state.rejected > 0) await pullOnce()
@@ -182,12 +201,11 @@ async function pushNow(options = {}) {
 
     // 进度单独一个端点。它的拒收不触发重新拉取——进度是次要数据，
     // 为它多跑一轮拉取不划算，下次推送自然会带上更新的位置。
-    const progress = collectLocalProgress()
-    if (Object.keys(progress).length) {
+    if (Object.keys(pushProgress).length) {
       await apiFetch('/progress', {
         method: 'POST',
         keepalive: !!options.keepalive,
-        body: JSON.stringify({ code: state.code, entries: progress })
+        body: JSON.stringify({ code: state.code, entries: pushProgress })
       })
       state.lastSync = new Date()
     }
