@@ -92,6 +92,26 @@ console.log(`  (题型分布: cloze=${clozeQs.length}, wordChoice=${qs.filter(q=
 t('句子填空题干含空格线', clozeQs.every(q => q.stem.includes('_______')))
 t('句子填空题干不含答案词', clozeQs.every(q => !new RegExp(`\\b${q.word}\\b`, 'i').test(q.stem)))
 
+// 上面两条是对**随机抽样**的 every 断言，抽样没抽到就发现不了问题。下面是**确定性回归**：
+// 逐词强制只出 sentenceCloze（maxCount=1 → 类型分配里 sentenceCloze 占 1 题），
+// 一次都不许出现「没有填空线」或「题干里印着答案」。
+// 老实现按原形挖空，屈折形命中的句子（abandon → "Many poor countries are abandoning autocracy."）
+// 挖不出空，题干变成一句完整的话、答案原样露着 —— 就是靠这条兜住的。
+{
+  const bad = []
+  let produced = 0
+  for (const e of entries.slice(0, 60)) {
+    for (const q of generateQuestions([e], entries, satChapters.chapters, 1)) {
+      if (q.type !== 'sentenceCloze') continue
+      produced++
+      if (!q.stem.includes('_______')) bad.push(`${q.word}: 无填空线`)
+      else if (new RegExp(`\\b${q.word}\\b`, 'i').test(q.stem)) bad.push(`${q.word}: 题干含答案`)
+    }
+  }
+  t(`确定性回归：逐词强出的 ${produced} 道 sentenceCloze 全部有空格线且不含答案`,
+    produced > 0 && bad.length === 0, bad.slice(0, 5).join(' | '))
+}
+
 // 词组题
 const phrasesData = JSON.parse(readFileSync(join(__dirname, 'public/data/phrases.json'), 'utf8'))
 const phraseList = Object.entries(phrasesData).map(([phrase, e]) => ({ phrase, ...e }))
@@ -101,6 +121,17 @@ t('词组题干扰项为同动词', pqs.every(q => {
   const answerVerb = q.options[q.answerIndex].split(' ')[0]
   return q.options.every(o => o.split(' ')[0] === answerVerb)
 }))
+
+// 词组题：先筛再取样之后，不再出现「0 题」或「凑不满」
+{
+  let zero = 0
+  for (let i = 0; i < 30; i++) {
+    if (generatePhraseQuestions(phraseList, 10).length === 0) zero++
+  }
+  t('词组题 30 次抽样没有一次为空', zero === 0)
+  t('词组题能凑满请求数', generatePhraseQuestions(phraseList, 10).length === 10)
+}
+
 
 // 小词池降级
 const tiny = entries.slice(0, 5)
