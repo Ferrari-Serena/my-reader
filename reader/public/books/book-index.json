@@ -34,6 +34,13 @@
       "author": "WPS_1614925560",
       "coverUrl": null,
       "dataUrl": "books/500/"
+    },
+    {
+      "id": "dr-jekyll-and-mr-hyde",
+      "title": "The Strange Case of Dr Jekyll and Mr Hyde",
+      "author": "Robert Louis Stevenson",
+      "coverUrl": null,
+      "dataUrl": "books/dr-jekyll-and-mr-hyde/"
     }
   ]
 }
