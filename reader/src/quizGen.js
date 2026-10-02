@@ -283,9 +283,23 @@ export function generateQuestions(candidates, allEntries, chapters = [], maxCoun
  */
 export function generatePhraseQuestions(phrases, maxCount = 20) {
   // 先筛再取样：3294 条词组里只有 400 条带 verb（干扰项要靠同动词才造得出来）。
-  // 先抽 30 条再筛的话，抽不中可用词组的概率约 1.75% → 直接给出 0 题；
+  // 先抽 30 条再筛的话，抽不中可用词组的概率是 2.02%（无放回精确值）→ 直接给出 0 题；
   // 而且池子里混着大量出不了题的，永远凑不满 maxCount（实测每次都只有 3~4 题）。
-  const usable = phrases.filter(p => p.verb && p.defs?.length)
+  // 再筛一道「同动词兄弟够不够 3 个」：176 个动词里 107 个只有一条词组，出出来的题
+  // 只有 1~3 个选项（1 个选项 = 点一下就必对，等于没题）。干扰项设计上只能取同动词，
+  // 所以兄弟不足的宁可不出：凑得满 4 个选项的有 190 条，足够撑起任意一次测验
+  //（QuizView 最大请求 30 题 → 池子 90 条，仍有余量）。
+  const byVerb = new Map()
+  for (const p of phrases) {
+    if (!p.verb || !p.defs?.length) continue
+    const group = byVerb.get(p.verb)
+    if (group) group.push(p)
+    else byVerb.set(p.verb, [p])
+  }
+  const usable = []
+  for (const group of byVerb.values()) {
+    if (group.length >= 4) usable.push(...group)
+  }
   const pool = shuffle(usable).slice(0, maxCount * 3)
   const questions = []
   for (const p of pool) {

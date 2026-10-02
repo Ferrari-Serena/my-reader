@@ -16,9 +16,9 @@ import { dirname, join } from 'path'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 let pass = 0, fail = 0
-function t(name, cond) {
+function t(name, cond, detail = '') {
   if (cond) { pass++; console.log(`  ok ${name}`) }
-  else { fail++; console.log(`  FAIL ${name}`) }
+  else { fail++; console.log(`  FAIL ${name}${detail ? '  ← ' + detail : ''}`) }
 }
 
 // ═══ 1. FSRS ═══
@@ -130,6 +130,24 @@ t('词组题干扰项为同动词', pqs.every(q => {
   }
   t('词组题 30 次抽样没有一次为空', zero === 0)
   t('词组题能凑满请求数', generatePhraseQuestions(phraseList, 10).length === 10)
+}
+
+// 词组题：选项必须凑满 4 个。
+// 干扰项只能取「同动词的其它词组」，而 176 个动词里 107 个只有一条词组 ——
+// 那些题会退化成 1~3 个选项（1 个选项 = 点一下就必对）。旧断言在同动词组为空时
+// 恒真（every over 空集 = true），拦不住；这里改成确定性口径：
+// 能出题的词组 = 同动词组 >= 4 条，逐条都必须给满 4 个选项。
+{
+  const byVerb = {}
+  for (const p of phraseList) {
+    if (p.verb && p.defs?.length) (byVerb[p.verb] ||= []).push(p)
+  }
+  const expected = Object.values(byVerb).filter(g => g.length >= 4).reduce((a, g) => a + g.length, 0)
+  const all = generatePhraseQuestions(phraseList, phraseList.length)
+  const notEnough = all.filter(q => q.options.length !== 4)
+  t(`词组题可出的 ${all.length} 条全部是 4 选项（数据里足额词组 ${expected} 条）`,
+    all.length === expected && notEnough.length === 0,
+    `出题 ${all.length}/期望 ${expected}；选项不足: ${notEnough.slice(0, 3).map(q => q.word + '=' + q.options.length).join(', ')}`)
 }
 
 
