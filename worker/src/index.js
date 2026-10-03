@@ -5,6 +5,7 @@
  *
  * GET /api/dict/<word>  → { lemma, phonetic, partOfSpeech, definitions[], audioUrl }
  *                         未收录时 → 404 { notFound: true, suggestions[] }
+ *                         被限流时 → 429 { error, scope } + Retry-After 头
  * GET /api/audio/<bookId>/<file>  → R2 对象本体（支持 Range → 206 / 416）
  * HEAD /api/audio/<bookId>/<file> → 同上但不回 body（上传校验脚本探活用）
  * GET /health           → { status: 'ok' }
@@ -14,29 +15,26 @@
 
 import { handleSync } from './sync.js'
 import { parseRange } from './range.js'
+import { corsFor } from './cors.js'
+import { takeToken, clientIp } from './ratelimit.js'
 
 const MW_API_BASE = 'https://www.dictionaryapi.com/api/v3/references/collegiate/json/'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  // Range 是给脚本发起的 range 请求用的；媒体元素自己的请求不走预检
-  'Access-Control-Allow-Headers': 'Content-Type, Range'
-}
-
-function json(data, status = 200, extra = {}) {
+function json(cors, data, status = 200, extra = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...extra }
+    headers: { 'Content-Type': 'application/json', ...cors, ...extra }
   })
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+    // 0.0 止血：CORS 不再用通配，改为按请求回显自家 Origin（见 cors.js）
+    const cors = corsFor(request, env)
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders })
+      return new Response(null, { status: 204, headers: cors })
     }
 
     // 同步端点分发（匹配 /api/sync/*）
@@ -44,7 +42,7 @@ export default {
     if (syncRes !== null) return syncRes
 
     if (url.pathname === '/health') {
-      return json({ status: 'ok' })
+      return json(cors, { status: 'ok' })
     }
 
     // R2 音频代理：/api/audio/<bookId>/<file>
@@ -57,7 +55,7 @@ export default {
         'Cache-Control': 'public, max-age=31536000, immutable',
         // 不声明这个，浏览器根本不会尝试 seek，只会整份下完
         'Accept-Ranges': 'bytes',
-        ...corsHeaders,
+        ...cors,
       }
       const rangeHeader = request.headers.get('Range')
 
@@ -65,7 +63,7 @@ export default {
       // 而且这里若不接住 HEAD，请求会掉到兜底的 404，校验脚本会误报「全部失败」。
       if (request.method === 'HEAD') {
         const meta = await env.AUDIO.head(key)
-        if (!meta) return new Response(null, { status: 404, headers: corsHeaders })
+        if (!meta) return new Response(null, { status: 404, headers: cors })
         const r = parseRange(rangeHeader, meta.size)
         if (r === 'unsatisfiable') {
           return new Response(null, {
@@ -89,7 +87,7 @@ export default {
       // 有 Range 时必须先 head 拿总长：后缀式（bytes=-N）和越界判定都得知道文件多大
       if (rangeHeader) {
         const meta = await env.AUDIO.head(key)
-        if (!meta) return new Response('Not found', { status: 404, headers: corsHeaders })
+        if (!meta) return new Response('Not found', { status: 404, headers: cors })
         const r = parseRange(rangeHeader, meta.size)
         if (r === 'unsatisfiable') {
           return new Response(null, {
@@ -99,7 +97,7 @@ export default {
         }
         if (r) {
           const obj = await env.AUDIO.get(key, { range: { offset: r.offset, length: r.length } })
-          if (!obj || !obj.body) return new Response('Not found', { status: 404, headers: corsHeaders })
+          if (!obj || !obj.body) return new Response('Not found', { status: 404, headers: cors })
           return new Response(obj.body, {
             status: 206,
             headers: {
@@ -113,7 +111,7 @@ export default {
       }
 
       const obj = await env.AUDIO.get(key)
-      if (!obj) return new Response('Not found', { status: 404, headers: corsHeaders })
+      if (!obj) return new Response('Not found', { status: 404, headers: cors })
       return new Response(obj.body, { headers })
     }
 
@@ -132,14 +130,24 @@ export default {
           .first()
         if (cached) {
           const payload = JSON.parse(cached.payload)
-          return json(payload, payload.notFound ? 404 : 200, { 'X-Cache': 'hit' })
+          return json(cors, payload, payload.notFound ? 404 : 200, { 'X-Cache': 'hit' })
         }
 
-        // 2. 查 M-W API（trim 防御 secret 值里混入的换行/空白）
+        // 2. 限流闸：只有走到这里（缓存未命中、真要去调 M-W）才计数；
+        //    D1 缓存命中不烧 M-W 额度，也不受此限（见 ratelimit.js）
+        const rl = await takeToken(env, { ip: clientIp(request) })
+        if (!rl.allowed) {
+          return json(cors, {
+            error: rl.scope === 'quota' ? 'daily lookup quota exhausted' : 'too many lookups',
+            scope: rl.scope,
+          }, 429, { 'Retry-After': String(rl.retryAfter), 'Cache-Control': 'no-store' })
+        }
+
+        // 3. 查 M-W API（trim 防御 secret 值里混入的换行/空白）
         const apiKey = (env.MW_API_KEY || '').trim()
         const resp = await fetch(`${MW_API_BASE}${encodeURIComponent(word)}?key=${apiKey}`)
         if (!resp.ok) {
-          return json({ error: `M-W API ${resp.status}` }, 502)
+          return json(cors, { error: `M-W API ${resp.status}` }, 502)
         }
         const text = await resp.text()
         let data
@@ -148,11 +156,11 @@ export default {
         } catch {
           // M-W 的鉴权错误是纯文本（"Invalid API key" 等），不是 JSON
           console.error('M-W non-JSON response:', text.slice(0, 100))
-          return json({ error: 'M-W API error' }, 502)
+          return json(cors, { error: 'M-W API error' }, 502)
         }
         const payload = parseMW(word, data)
 
-        // 3. 写缓存（未收录也缓存，节省 M-W 免费额度；写失败不影响返回）
+        // 4. 写缓存（未收录也缓存，节省 M-W 免费额度；写失败不影响返回）
         try {
           await env.DB
             .prepare('INSERT OR REPLACE INTO dict_cache (word, payload, fetched_at) VALUES (?, ?, ?)')
@@ -162,14 +170,14 @@ export default {
           console.error('D1 write failed:', e.message)
         }
 
-        return json(payload, payload.notFound ? 404 : 200, { 'X-Cache': 'miss' })
+        return json(cors, payload, payload.notFound ? 404 : 200, { 'X-Cache': 'miss' })
       } catch (err) {
         console.error('dict error:', err.message, err.stack)
-        return json({ error: 'lookup failed' }, 500)
+        return json(cors, { error: 'lookup failed' }, 500)
       }
     }
 
-    return new Response('Not found', { status: 404, headers: corsHeaders })
+    return new Response('Not found', { status: 404, headers: cors })
   }
 }
 

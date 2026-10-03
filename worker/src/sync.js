@@ -23,6 +23,8 @@
  *   墓碑不单独按 30 天 GC——那会让离线超过 30 天的设备回来复活已删除的词。
  */
 
+import { corsFor } from './cors.js'
+
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // 去掉了容易混淆的 0/O/1/I
 const CODE_LEN = 8
 
@@ -61,15 +63,10 @@ function randCode() {
   return Array.from(buf, n => CODE_CHARS[n % CODE_CHARS.length]).join('')
 }
 
-function json(data, status = 200) {
+function jsonResponse(cors, data, status = 200, extra = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    }
+    headers: { 'Content-Type': 'application/json', ...cors, ...extra }
   })
 }
 
@@ -171,10 +168,13 @@ async function runBatch(env, stmts) {
  */
 export async function handleSync(request, env) {
   const url = new URL(request.url)
+  // 0.0 止血：按请求回显自家 Origin；json 影子化为本地函数，下面的调用点一行不用改
+  const cors = corsFor(request, env)
+  const json = (data, status = 200, extra = {}) => jsonResponse(cors, data, status, extra)
 
   // OPTIONS preflight
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: json('').headers })
+    return new Response(null, { status: 204, headers: cors })
   }
 
   // POST /api/sync/create
