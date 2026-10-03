@@ -46,6 +46,11 @@
           >
             <span class="toc-num">{{ i + 1 }}</span>
             <span class="toc-title">{{ ch.title }}</span>
+            <span
+              v-if="missingAudio[ch.id]"
+              class="toc-noaudio"
+              :title="noAudioTooltip(missingAudio[ch.id])"
+            >🔇 {{ noAudioLabel(missingAudio[ch.id]) }}</span>
             <span class="toc-check" v-if="i === currentIndex">●</span>
           </button>
         </div>
@@ -56,13 +61,16 @@
 
 <script setup>
 import { ref } from 'vue'
+import { noAudioLabel, noAudioTooltip } from '../utils/audioIndex.js'
 
 const props = defineProps({
   currentIndex: { type: Number, default: 0 },
   total: { type: Number, default: 0 },
   chapterTitle: { type: String, default: '' },
   bookTitle: { type: String, default: '' },
-  tocItems: { type: Array, default: () => [] }
+  tocItems: { type: Array, default: () => [] },
+  // 章 id → 无音频原因（生成端 audio-index.json）；空对象 = 不标
+  missingAudio: { type: Object, default: () => ({}) }
 })
 
 const emit = defineEmits(['prev', 'next', 'jump'])
@@ -212,5 +220,15 @@ function selectChapter(index) {
 .toc-check {
   color: var(--accent-color, #1a73e8);
   font-size: 10px;
+}
+
+.toc-noaudio {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary, #6e6e73);
+  background: var(--bg-secondary, #f5f5f7);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 </style>

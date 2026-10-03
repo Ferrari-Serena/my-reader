@@ -1,0 +1,32 @@
+{
+  "book": "the-giver",
+  "withAudio": [
+    "ch-03",
+    "ch-04",
+    "ch-05",
+    "ch-06",
+    "ch-07",
+    "ch-08",
+    "ch-09",
+    "ch-10",
+    "ch-11",
+    "ch-12",
+    "ch-13",
+    "ch-14",
+    "ch-15",
+    "ch-16",
+    "ch-17",
+    "ch-18",
+    "ch-19",
+    "ch-20",
+    "ch-21",
+    "ch-22",
+    "ch-23",
+    "ch-24",
+    "ch-25"
+  ],
+  "missing": {
+    "ch-01": "front_matter",
+    "ch-02": "front_matter"
+  }
+}

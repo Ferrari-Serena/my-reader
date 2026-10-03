@@ -7,11 +7,11 @@
 
     <div class="audio-info">
       <span class="audio-label">{{ statusLabel }}</span>
-      <span class="audio-source">{{ source }}</span>
+      <span class="audio-source">{{ sourceLabel }}</span>
     </div>
 
     <button
-      v-if="state === 'error'"
+      v-if="state === 'error' || !hasAudio"
       class="fallback-btn"
       @click="useBrowserTTS"
     >
@@ -25,12 +25,17 @@
 import { ref, watch, onUnmounted, computed } from 'vue'
 import { audioStorageKey } from '../sync/progress.js'
 import { nowIso } from '../sync/clock.js'
+import { noAudioTooltip } from '../utils/audioIndex.js'
 
 const CHUNK_MAX = 160
 
 const props = defineProps({
   chapterText: { type: String, default: '' },
   audioUrl: { type: String, default: '' },
+  // 该章有没有章节音频（生成端 audio-index.json 判定）；false = 直接走浏览器朗读
+  hasAudio: { type: Boolean, default: true },
+  // 无音频的原因：'front_matter' | 'unrecorded'（仅用于提示文案）
+  noAudioReason: { type: String, default: '' },
   bookId: { type: String, default: '' },
   chapterId: { type: String, default: '' },
   bookTitle: { type: String, default: '' },
@@ -54,12 +59,22 @@ let pollTimer = null
 let chunkDone = false
 
 const statusLabel = computed(() => {
+  // 无音频章：静态 MP3 压根不存在，直接亮「No chapter audio」+ 兜底按钮
+  if (!props.hasAudio && state.value !== 'playing' && state.value !== 'loading') {
+    return 'No chapter audio'
+  }
   switch (state.value) {
     case 'loading': return 'Loading...'
     case 'playing': return 'Playing...'
     case 'error': return 'Chapter audio unavailable'
     default: return 'Read aloud'
   }
+})
+
+// 副标题：无音频且空闲时显示原因，否则显示当前音源
+const sourceLabel = computed(() => {
+  if (!props.hasAudio && state.value === 'idle') return noAudioTooltip(props.noAudioReason)
+  return source.value
 })
 
 // ---- chapter change → stop ----
@@ -76,7 +91,7 @@ function togglePlay() {
     stopAll()
     return
   }
-  if (props.audioUrl) {
+  if (props.hasAudio && props.audioUrl) {
     startStaticAudio()
   } else {
     stopAll()

@@ -1,0 +1,18 @@
+{
+  "book": "dr-jekyll-and-mr-hyde",
+  "withAudio": [
+    "ch-01",
+    "ch-02",
+    "ch-03",
+    "ch-04",
+    "ch-05",
+    "ch-06",
+    "ch-07",
+    "ch-08",
+    "ch-09",
+    "ch-10"
+  ],
+  "missing": {
+    "ch-00": "front_matter"
+  }
+}

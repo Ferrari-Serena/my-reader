@@ -19,10 +19,13 @@ Kokoro TTS 章节音频生成器（CLI）
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import time
+
+# 前置页（版权页 / 目录页）判定口径与 audio-index.json 同源，见 frontmatter.py
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from frontmatter import DEFAULT_MIN_WORDS, chapter_word_count, is_front_matter
 
 # ---- 离线环境变量必须在 import kokoro / huggingface 之前设置 ----
 os.environ.setdefault('HF_HOME', r'D:\PythonEnv\hf-cache')
@@ -45,15 +48,6 @@ FFMPEG = os.path.join(
 # 仓库根目录 = 本文件的上两级（generator/pipeline/tts.py）
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 BOOKS_DIR = os.path.join(REPO_ROOT, 'reader', 'public', 'books')
-
-# 版权页/目录页这类前置页的标题开头词，配合词数阈值判断该不该朗读
-_FRONT_MATTER_RE = re.compile(
-    r'^\s*(contents|table of contents|dedication|epigraph|praise|credits?|copyright|'
-    r'title page|half title|frontispiece|colophon|about the author|about the publisher|'
-    r'books by|also by|acknowledge?ments?|index|'
-    r'前言|目录|版权|扉页|出版)',
-    re.IGNORECASE,
-)
 
 
 def load_chapters(book_id: str) -> dict:
@@ -132,7 +126,7 @@ def main():
     ap.add_argument('--chapters', nargs='*', default=None, help='只生成这些章节 ID')
     ap.add_argument('--skip', nargs='*', default=[],
                     help='额外跳过的章节 ID')
-    ap.add_argument('--min-words', type=int, default=150,
+    ap.add_argument('--min-words', type=int, default=DEFAULT_MIN_WORDS,
                     help='词数低于此值的章节按版权页/目录页跳过（默认 150；0 = 全都生成）')
     ap.add_argument('--bitrate', nargs='+', default=['48k'],
                     help='MP3 码率（默认 48k；传多个值时一次合成、多档转码，文件名自动加 _<码率> 后缀）')
@@ -171,8 +165,8 @@ def main():
         # artemis-fowl 的 ch-02 是 CHAPTER 1）。要「短」且「标题像前置页」同时
         # 成立才跳，这样 Divergent 里 "Chapter Fifty-Two"（60 词）这种真·短章不会被误伤。
         if args.chapters is None and args.min_words:
-            words = sum(len(p.get('text', '').split()) for p in ch.get('paragraphs', []))
-            if words < args.min_words and _FRONT_MATTER_RE.match(ch.get('title', '')):
+            if is_front_matter(ch, args.min_words):
+                words = chapter_word_count(ch)
                 print(f'⏭️  跳过 {ch["id"]}（{ch["title"]}，仅 {words} 词）')
                 continue
         timings_path = os.path.join(audio_dir, f'{ch["id"]}{args.suffix}.timings.json')

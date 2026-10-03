@@ -35,6 +35,10 @@ REPO_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..'))
 WORKER_DIR = os.path.join(REPO_ROOT, 'worker')
 BOOKS_DIR = os.path.join(REPO_ROOT, 'reader', 'public', 'books')
 
+# 生成端与前端共用的音频清单（传完顺手刷新，见 pipeline/audio_index.py）
+sys.path.insert(0, BASE_DIR)
+from pipeline.audio_index import summary, write_index
+
 # wrangler 走 Cloudflare API，需要科学上网
 PROXY = 'http://127.0.0.1:7897'
 # 线上探测用（--verify）
@@ -233,6 +237,17 @@ def main():
                 bad += 1
                 print(f'  失败 {book_id}/{name} — {why}')
         print(f'  {len(verified) - bad}/{len(verified)} 可访问')
+
+    # 收尾：刷新 audio-index.json（前端据此标「无音频章」＋ 明确提示）。
+    # 只在上传零失败时刷新 —— 有失败就说明清单会和 R2 对不上，宁可不写。
+    if not failed:
+        print('\n刷新 audio-index.json:')
+        for book_id in books:
+            if not os.path.exists(os.path.join(BOOKS_DIR, book_id, 'chapters.json')):
+                print(f'  跳过 {book_id}（无 chapters.json，算不出清单）')
+                continue
+            _, index = write_index(book_id)
+            print(f'  {summary(book_id, index)}')
 
     if failed:
         sys.exit(1)
