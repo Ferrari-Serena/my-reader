@@ -367,7 +367,8 @@ console.log('\n[0.1 — 脏词集合持久化（关页重开不丢欠推）]')
 
   store.delete(DIRTY_KEY)
   const v = useVocabulary()
-  v.takeDirty() // 清干净起步（含可能残留的持久化副本）
+  const leftover = v.pendingDirty()
+  if (leftover.length) v.clearDirty(leftover) // 清干净起步（内存 + 盘）
 
   v.markDirty('Go', 'went')
   t('markDirty 立即落盘（小写化）', JSON.stringify(readDirty()) === JSON.stringify(['go', 'went']))
@@ -380,9 +381,20 @@ console.log('\n[0.1 — 脏词集合持久化（关页重开不丢欠推）]')
   const fresh = (await import('./src/composables/useVocabulary.js?reloaded=1')).useVocabulary()
   t('重开后脏词仍在（从 localStorage 恢复）', fresh.pendingDirty().sort().join() === 'go,went')
 
-  t('takeDirty 取走全部', fresh.takeDirty().sort().join() === 'go,went')
-  t('取走后清掉持久化副本', readDirty() === null)
-  t('再取一次为空（不会重复推）', fresh.takeDirty().length === 0)
+  // 回归（0.1 真机验收抓到）：清账必须发生在**推送成功之后**。取待推集合这一动作本身
+  // 绝不能清盘 —— 否则关页打断推送时（keepalive 请求刚发出、catch 永不执行）欠推记录
+  // 连盘一起消失，下次冷启动无词可补推。旧实现 takeDirty() 就是「先清盘」的写法。
+  t('pendingDirty 只读：读不改盘',
+    fresh.pendingDirty().sort().join() === 'go,went' && readDirty().length === 2)
+  const freshX = (await import('./src/composables/useVocabulary.js?reloaded=1b')).useVocabulary()
+  freshX.pendingDirty() // 旧实现在这一步就把盘清了；新实现读多少次都不改盘
+  const afterPeek = (await import('./src/composables/useVocabulary.js?reloaded=1c')).useVocabulary()
+  t('（回归）取待推集合后重开，欠推记录仍在盘上', afterPeek.pendingDirty().sort().join() === 'go,went')
+
+  t('clearDirty 只划掉指定词并落盘',
+    fresh.clearDirty(['go']) && JSON.stringify(readDirty()) === JSON.stringify(['went']))
+  t('clearDirty 清空后删键（不留 [] 垃圾）', fresh.clearDirty(['went']) && readDirty() === null)
+  t('清空后再读为空（不会重复推）', fresh.pendingDirty().length === 0)
 
   // 恢复时不能按「词表里有没有」过滤：空壳词、已删词的墓碑都交给 pushNow 自己判
   fresh.markDirty('ghost')
@@ -391,8 +403,10 @@ console.log('\n[0.1 — 脏词集合持久化（关页重开不丢欠推）]')
   fresh2.markAllDirty()
   t('markAllDirty 也落盘且与内存一致',
     JSON.stringify(readDirty()) === JSON.stringify(fresh2.pendingDirty()))
-  fresh2.takeDirty()
+  fresh2.clearDirty(fresh2.pendingDirty())
   t('收尾：持久化副本已清空', readDirty() === null)
+  const v2 = useVocabulary()
+  v2.clearDirty(v2.pendingDirty()) // 最早那个模块实例的内存也清掉，别干扰后面的冷启动用例
 }
 
 console.log('\n[0.1 — 冷启动补推（拉成功后，有欠推脏词才发 /push）]')
@@ -433,9 +447,21 @@ console.log('\n[0.1 — 冷启动补推（拉成功后，有欠推脏词才发 /
   t('有欠推脏词 → 冷启动补推 /push', !!pushA)
   t('推的正是那个欠推词', !!pushA && !!pushA.body && 'apple' in pushA.body.words)
 
+  // 回归（0.1 真机验收抓到）：推送失败/被关页打断时，欠推记录必须留在盘上。
+  // 旧实现「先 takeDirty 清盘、失败再 markDirty 还回来」在关页那条路径上不成立。
+  globalThis.fetch = async () => { throw new Error('simulated offline / page death') }
+  const vs = useVocabulary()
+  store.delete('reader-vocab-dirty')
+  vs.markDirty('apple')
+  await (await import('./src/composables/useSync.js?sim=C')).useSync().push()
+  const kept = store.get('reader-vocab-dirty')
+  t('（回归）推送失败后欠推记录仍留在盘上',
+    kept !== undefined && JSON.parse(kept).includes('apple'))
+
   globalThis.fetch = realFetch
   store.delete('reader-sync-code')
-  useVocabulary().takeDirty()
+  const vc = useVocabulary()
+  vc.clearDirty(vc.pendingDirty())
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
