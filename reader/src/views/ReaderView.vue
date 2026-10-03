@@ -20,6 +20,7 @@
         :chapter-title="currentChapter.title"
         :book-title="bookTitle"
         :toc-items="chapters"
+        :missing-audio="tocNoAudio"
         @prev="prevChapter"
         @next="nextChapter"
         @jump="jumpToChapter"
@@ -104,6 +105,7 @@
         :chapter-title="currentChapter.title"
         :book-title="bookTitle"
         :toc-items="chapters"
+        :missing-audio="tocNoAudio"
         @prev="prevChapter"
         @next="nextChapter"
         @jump="jumpToChapter"
@@ -113,6 +115,8 @@
         ref="audioPlayerRef"
         :chapter-text="currentChapterText"
         :audio-url="currentAudioUrl"
+        :has-audio="currentChapterHasAudio"
+        :no-audio-reason="chapterNoAudioReason"
         :book-id="bookId"
         :chapter-id="currentChapter?.id || ''"
         :book-title="bookTitle"
@@ -146,6 +150,7 @@ import WordPopup from '../components/WordPopup.vue'
 import { useVocabulary } from '../composables/useVocabulary'
 import { usePhrases } from '../composables/usePhrases'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
+import { chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { useSync } from '../composables/useSync'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
 
@@ -165,6 +170,7 @@ const chapters = ref([])
 const currentChapter = ref(null)
 const currentChapterIndex = ref(0)
 const dictionary = ref({})
+const audioIndex = ref(null) // audio-index.json；null = 清单未知（按「有音频」兜底）
 
 // Word popup state
 const selectedWord = ref(null)
@@ -215,6 +221,14 @@ const currentAudioUrl = computed(() => {
   if (!currentChapter.value) return ''
   return `${AUDIO_BASE}/${bookId.value}/${currentChapter.value.id}.mp3`
 })
+
+// ---- 缺音频降级（0.2b · 口径 i）----
+// 清单里没该章 = 有音频；清单整个缺失 = 不妄断，按「有音频」处理（退回旧行为）。
+const chapterNoAudioReason = computed(() =>
+  noAudioReason(audioIndex.value, currentChapter.value?.id))
+const currentChapterHasAudio = computed(() =>
+  chapterHasAudio(audioIndex.value, currentChapter.value?.id))
+const tocNoAudio = computed(() => tocMissingAudio(audioIndex.value))
 
 // ---- 段落定位播放（时间表 + 高亮跟随）----
 
@@ -609,9 +623,10 @@ async function loadBook() {
 
   try {
     const baseUrl = `${import.meta.env.BASE_URL}books/${bookId.value}`
-    const [chaptersRes, dictRes] = await Promise.all([
+    const [chaptersRes, dictRes, audioIndexRes] = await Promise.all([
       fetch(`${baseUrl}/chapters.json`),
-      fetch(`${baseUrl}/dictionary.json`)
+      fetch(`${baseUrl}/dictionary.json`),
+      fetch(`${baseUrl}/audio-index.json`).catch(() => null)
     ])
 
     if (!chaptersRes.ok) throw new Error(`Failed to load book: ${chaptersRes.status}`)
@@ -619,6 +634,11 @@ async function loadBook() {
     const chaptersData = await chaptersRes.json()
     bookTitle.value = chaptersData.title
     chapters.value = chaptersData.chapters
+
+    // 音频清单（可选）：取不到就按「有音频」兜底，不影响阅读
+    audioIndex.value = audioIndexRes && audioIndexRes.ok
+      ? await audioIndexRes.json().catch(() => null)
+      : null
 
     if (dictRes.ok) {
       const dictData = await dictRes.json()

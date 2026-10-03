@@ -59,5 +59,19 @@ t('proto pollution', !Object.prototype.evil)
 await v.remove('go')
 t('remove reactivity', !v.has('go') && !v.savedSet.value.has('go'))
 
+// 8. 缺音频降级口径（audio-index.json → 章表徽标 / 播放器提示）
+const { chapterHasAudio, noAudioReason, tocMissingAudio, noAudioLabel, noAudioTooltip } =
+  await import('./src/utils/audioIndex.js')
+const mixed = { withAudio: ['ch-03'], missing: { 'ch-01': 'front_matter', 'ch-04': 'unrecorded' } }
+t('清单里没有的章 → 有音频', chapterHasAudio(mixed, 'ch-03'))
+t('前置页 → 无音频', !chapterHasAudio(mixed, 'ch-01') && noAudioReason(mixed, 'ch-01') === 'front_matter')
+t('未录制 → 无音频', noAudioReason(mixed, 'ch-04') === 'unrecorded')
+t('清单缺失 → 不妄断（按有音频）', chapterHasAudio(null, 'ch-01') && noAudioReason(null, 'ch-01') === null)
+t('无章节 id → 有音频', chapterHasAudio(mixed, ''))
+t('章表：混合书标缺章', Object.keys(tocMissingAudio(mixed)).length === 2)
+t('章表：纯文本书不逐行标', Object.keys(tocMissingAudio({ withAudio: [], missing: { 'ch-01': 'unrecorded' } })).length === 0)
+t('章表：无清单不标', Object.keys(tocMissingAudio(null)).length === 0)
+t('标签与提示语有兜底', noAudioLabel('front_matter') === 'Front matter' && noAudioTooltip('unknown').length > 0)
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
