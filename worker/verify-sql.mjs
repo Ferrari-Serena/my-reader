@@ -11,6 +11,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { SQL_ALIVE_UPSERT, SQL_TOMB_UPSERT } from './src/sync.js'
+import * as rlMod from './src/ratelimit.js'
 
 let pass = 0, fail = 0
 function t(name, cond) {
@@ -25,6 +26,8 @@ db.exec(`CREATE TABLE sync_data (
   code TEXT NOT NULL, word TEXT NOT NULL, payload TEXT NOT NULL,
   updated_at TEXT NOT NULL, PRIMARY KEY (code, word))`)
 db.exec(readFileSync(new URL('./migrations/0001_sync_tombstones_progress.sql', import.meta.url), 'utf8'))
+// 0002 限流表（幂等，见 migrations/0002_rate_limit.sql）
+db.exec(readFileSync(new URL('./migrations/0002_rate_limit.sql', import.meta.url), 'utf8'))
 
 const CODE = 'TESTCODE'
 const alive = db.prepare(SQL_ALIVE_UPSERT)
@@ -71,6 +74,71 @@ console.log('\n[多设备交错 — 本轮要修的那个真实场景]')
 put(alive, CODE, 'banana', '{"v":"A-new"}', '2026-02-01T10:00:00.000Z')
 put(alive, CODE, 'banana', '{"v":"B-stale"}', '2026-02-01T09:00:00.000Z')
 t('陈旧快照被拒收，A 的编辑不再丢失', JSON.parse(read.get(CODE, 'banana').payload).v === 'A-new')
+
+console.log('\n[0002 迁移 + takeToken 集成（0.0 止血 · 第二半）]')
+{
+  t('0002 建出 rate_limit_events',
+    db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name='rate_limit_events'").get().n === 1)
+  t('0002 建出 (ip, ts) 复合索引',
+    db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index' AND name='idx_rate_limit_events_ip_ts'").get().n === 1)
+  t('0002 幂等：重复执行不报错', (() => {
+    try { db.exec(readFileSync(new URL('./migrations/0002_rate_limit.sql', import.meta.url), 'utf8')); return true }
+    catch { return false }
+  })())
+
+  // 把 node:sqlite 适配成 D1 的 prepare().bind().first()/.run() 形状，好让 takeToken 原样跑
+  const d1 = {
+    prepare(sql) {
+      let args = []
+      const st = {
+        bind(...a) { args = a; return st },
+        async first() { const r = db.prepare(sql).get(...args); return r === undefined ? null : r },
+        async run() { const info = db.prepare(sql).run(...args); return { meta: { changes: info.changes } } },
+      }
+      return st
+    },
+  }
+
+  const NOW = Date.UTC(2026, 9, 3, 12, 0, 0)
+  const env = { DB: d1, RATE_LIMIT_PER_MIN: '3', MW_DAILY_LIMIT: '8' }
+  const rows = () => db.prepare('SELECT COUNT(*) AS n FROM rate_limit_events').get().n
+  const take = (ip, now) => rlMod.takeToken(env, { ip, now })
+
+  t('第 1 次放行', (await take('a', NOW)).allowed === true)
+  t('第 2 次放行', (await take('a', NOW + 1000)).allowed === true)
+  t('第 3 次放行', (await take('a', NOW + 2000)).allowed === true)
+  t('窗口内已记 3 条', rows() === 3)
+
+  const r4 = await take('a', NOW + 3000)
+  t('第 4 次被每 IP 窗口拦下', r4.allowed === false && r4.scope === 'ip')
+  t('IP 拦截 Retry-After = 60s', r4.retryAfter === 60)
+  t('被拦不记账（仍 3 条）', rows() === 3)
+
+  t('窗口滑过同一 IP 又可查', (await take('a', NOW + 61_000)).allowed === true)
+  t('别的 IP 不受该 IP 影响', (await take('b', NOW + 4000)).allowed === true)
+  t('继续累计', (await take('b', NOW + 5000)).allowed === true)
+  t('再换 IP', (await take('c', NOW + 6000)).allowed === true)
+  t('第 8 条（第 5 个 IP）仍放行', (await take('d', NOW + 7000)).allowed === true)
+  t('此刻全局 8 条已满', rows() === 8)
+
+  const rQ = await take('e', NOW + 8000)
+  t('新 IP 撞上全局日配额 -> quota', rQ.allowed === false && rQ.scope === 'quota')
+  t('配额拦截 Retry-After = 距次日 UTC 0 点',
+    rQ.retryAfter === Math.ceil((Date.UTC(2026, 9, 4) - (NOW + 8000)) / 1000))
+  t('配额拦截也不记账（仍 8 条）', rows() === 8)
+
+  t('新 UTC 日：配额重置 + 顺手清旧行',
+    (await take('f', Date.UTC(2026, 9, 4, 0, 0, 1))).allowed === true)
+  t('旧日行已被清空（只剩新日 1 条）', rows() === 1)
+
+  t('阈值非法 -> 回默认，不误拦',
+    (await rlMod.takeToken({ DB: d1, RATE_LIMIT_PER_MIN: 'abc', MW_DAILY_LIMIT: '0' },
+      { ip: 'g', now: NOW })).allowed === true)
+
+  t('D1 读失败 -> fail-open 放行',
+    (await rlMod.takeToken({ DB: { prepare() { throw new Error('boom') } } },
+      { ip: 'h', now: NOW })).allowed === true)
+}
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

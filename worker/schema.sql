@@ -34,3 +34,13 @@ CREATE TABLE IF NOT EXISTS sync_progress (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (code, key)
 );
+
+-- 限流计数（0.0 止血）：只记「真去调 M-W」的请求，用于每 IP 滑动窗口 + 全局日配额。
+-- 表与索引的增量迁移见 migrations/0002_rate_limit.sql，逻辑见 src/ratelimit.js。
+CREATE TABLE IF NOT EXISTS rate_limit_events (
+  ip TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_events_ip_ts ON rate_limit_events (ip, ts);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_events_ts ON rate_limit_events (ts);
