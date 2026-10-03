@@ -190,7 +190,5 @@ const tiny = entries.slice(0, 5)
 const tinyQs = generateQuestions(tiny, tiny, [], 20)
 t('小词池不崩溃且缩减', Array.isArray(tinyQs) && tinyQs.length <= 5)
 
-t('【CI 闸自检 · 故意注入，本提交立即回滚】这条必须失败', false)
-
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
