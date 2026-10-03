@@ -12,3 +12,6 @@ uploads/
 Thumbs.db
 # 音频经 R2 分发，不进 git
 reader/public/books/*/audio/
+
+# D1 备份/演练日志（含用户数据，绝不进仓库）
+.backups/
