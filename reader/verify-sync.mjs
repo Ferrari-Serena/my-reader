@@ -27,6 +27,7 @@ const { readingStorageKey, audioStorageKey, collectLocalProgress, applyRemotePro
 const { sanitizeEntry } = await import('./src/storage/schema.js')
 const storage = await import('./src/storage/localAdapter.js')
 const { mergeAndApply } = await import('./src/composables/useSync.js')
+const { useVocabulary } = await import('./src/composables/useVocabulary.js')
 
 let pass = 0, fail = 0
 function t(name, cond) {
@@ -354,6 +355,87 @@ console.log('\n[progressMigrate — 旧音频续播位置（URL 键 + 裸秒数�
     r2.migrated === 0 && r2.skipped === 1
     && JSON.parse(localStorage.getItem(audioStorageKey('b', 'c'))).seconds === 99
     && localStorage.getItem('reader-audio-pos:/books/b/audio/c.mp3') === null)
+}
+
+console.log('\n[0.1 — 脏词集合持久化（关页重开不丢欠推）]')
+{
+  const DIRTY_KEY = 'reader-vocab-dirty'
+  const readDirty = () => {
+    const r = store.get(DIRTY_KEY)
+    return r === undefined ? null : JSON.parse(r)
+  }
+
+  store.delete(DIRTY_KEY)
+  const v = useVocabulary()
+  v.takeDirty() // 清干净起步（含可能残留的持久化副本）
+
+  v.markDirty('Go', 'went')
+  t('markDirty 立即落盘（小写化）', JSON.stringify(readDirty()) === JSON.stringify(['go', 'went']))
+
+  const before = setCount
+  v.markDirty('GO')
+  t('重复标脏不再写盘', setCount === before && readDirty().length === 2)
+
+  // 模拟「关页重开」：新模块实例的内存脏集合是空的，只能靠 localStorage 恢复
+  const fresh = (await import('./src/composables/useVocabulary.js?reloaded=1')).useVocabulary()
+  t('重开后脏词仍在（从 localStorage 恢复）', fresh.pendingDirty().sort().join() === 'go,went')
+
+  t('takeDirty 取走全部', fresh.takeDirty().sort().join() === 'go,went')
+  t('取走后清掉持久化副本', readDirty() === null)
+  t('再取一次为空（不会重复推）', fresh.takeDirty().length === 0)
+
+  // 恢复时不能按「词表里有没有」过滤：空壳词、已删词的墓碑都交给 pushNow 自己判
+  fresh.markDirty('ghost')
+  const fresh2 = (await import('./src/composables/useVocabulary.js?reloaded=2')).useVocabulary()
+  t('恢复不按词表过滤（交给 pushNow 判）', fresh2.pendingDirty().includes('ghost'))
+  fresh2.markAllDirty()
+  t('markAllDirty 也落盘且与内存一致',
+    JSON.stringify(readDirty()) === JSON.stringify(fresh2.pendingDirty()))
+  fresh2.takeDirty()
+  t('收尾：持久化副本已清空', readDirty() === null)
+}
+
+console.log('\n[0.1 — 冷启动补推（拉成功后，有欠推脏词才发 /push）]')
+{
+  const calls = []
+  const realFetch = globalThis.fetch
+  const jsonRes = (obj) => ({ ok: true, status: 200, json: async () => obj })
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url)
+    calls.push({ url: u, body: opts.body ? JSON.parse(opts.body) : null })
+    if (u.includes('/pull')) {
+      return jsonRes({
+        words: { apple: { word: 'apple', updatedAt: T1, snapshot: { definitions: ['apple-fruit'] } } },
+        tombstones: {}, progress: {}
+      })
+    }
+    if (u.includes('/push')) return jsonRes({ rejected: 0 })
+    return jsonRes({})
+  }
+  const tick = (ms) => new Promise(r => setTimeout(r, ms))
+  const waitPush = async () => {
+    for (let i = 0; i < 30 && !calls.some(c => c.url.includes('/push')); i++) await tick(10)
+  }
+
+  // 对照：没有欠推脏词 → 只拉不推
+  store.set('reader-sync-code', 'SIMCODE1')
+  ;(await import('./src/composables/useSync.js?sim=B')).useSync()
+  await tick(30)
+  t('对照：无欠推脏词 → 拉了一次但不补推',
+    calls.filter(c => c.url.includes('/pull')).length >= 1 && calls.every(c => !c.url.includes('/push')))
+
+  // 正例：有欠推脏词 → 冷启动补推一次
+  calls.length = 0
+  useVocabulary().markDirty('apple')
+  ;(await import('./src/composables/useSync.js?sim=A')).useSync()
+  await waitPush()
+  const pushA = calls.find(c => c.url.includes('/push'))
+  t('有欠推脏词 → 冷启动补推 /push', !!pushA)
+  t('推的正是那个欠推词', !!pushA && !!pushA.body && 'apple' in pushA.body.words)
+
+  globalThis.fetch = realFetch
+  store.delete('reader-sync-code')
+  useVocabulary().takeDirty()
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

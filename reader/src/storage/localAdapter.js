@@ -60,6 +60,37 @@ export function clearTombstones(words) {
   if (changed) writeTombstones(map)
 }
 
+// ── 待推送脏词集合（0.1） ──────────────────────────────────
+// 与删除台账同理：脏集合以前只活在内存里，页面一关就没了。于是「改了但没推出去」的
+// 改动会随关页一起消失 —— 下次启动 takeDirty() 是空的，只有再次修改那个词才会重新
+// 标脏，这次编辑就**永远不上云**。离线改词、keepalive 载荷被裁、关页打断 in-flight
+// 推送，都会踩到这个坑（见 sync/budget.js 里那段的说明）。
+
+const DIRTY_KEY = 'reader-vocab-dirty'
+
+/** 恢复上次没推出去的脏词（小写、去重已在写入侧保证） */
+export function loadDirtyWords() {
+  try {
+    const raw = localStorage.getItem(DIRTY_KEY)
+    const arr = raw ? JSON.parse(raw) : null
+    return Array.isArray(arr) ? arr.filter(w => typeof w === 'string' && w) : []
+  } catch {
+    return []
+  }
+}
+
+/** 覆盖写脏集合；空集合顺手删掉 key，不留 `[]` 垃圾 */
+export function saveDirtyWords(words) {
+  try {
+    const arr = [...new Set((words || []).map(w => (w + '').toLowerCase()).filter(Boolean))]
+    if (arr.length) localStorage.setItem(DIRTY_KEY, JSON.stringify(arr))
+    else localStorage.removeItem(DIRTY_KEY)
+    return true
+  } catch {
+    return false // 配额满 / 私有模式：退回「只活在内存里」的旧行为，不影响主流程
+  }
+}
+
 export async function loadVocabulary() {
   if (doc) return doc
   try {

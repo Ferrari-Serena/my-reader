@@ -15,5 +15,7 @@ export {
   importVocabulary,
   loadTombstones,
   clearTombstones,
+  loadDirtyWords,
+  saveDirtyWords,
   sync
 } from './localAdapter.js'
