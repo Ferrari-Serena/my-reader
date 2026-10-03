@@ -141,9 +141,12 @@ async function pushNow(options = {}) {
 
   const vocab = useVocabulary()
   await vocab.init()
-  const dirtyKeys = vocab.takeDirty()
+  // 只读不取走：清账要等推送成功（clearDirty），否则关页打断推送时欠推记录会连盘一起丢
+  const dirtyKeys = vocab.pendingDirty()
   const st = await storage()
-  let wordsPushed = false
+  // 本次成功推出去的脏词；失败/未完成时保持 null，脏集合原样留在盘上，下次继续推
+  let doneKeys = null
+  let droppedSet = null
 
   try {
     const words = {}
@@ -170,10 +173,11 @@ async function pushNow(options = {}) {
       pushWords = b.words
       pushTombs = b.tombstones
       pushProgress = b.progress
-      // 被裁掉的脏词还回脏集合——不还就再也不会被推了（脏集合只活在内存里）；
-      // 另外安排一次普通推送补发，页面只是切到后台（visibilitychange）时它会真的执行。
+      // 被裁掉的词仍在脏集合里（pendingDirty 不删盘），落账时要排除，否则一次裁剪就把
+      // 「没发出去」的词当成已推清掉，编辑照样丢。另外安排一次普通推送补发，
+      // 页面只是切到后台（visibilitychange）时它会真的执行。
       if (b.droppedWords.length) {
-        vocab.markDirty(...b.droppedWords)
+        droppedSet = new Set(b.droppedWords)
         pushSoon(KEEPALIVE_RETRY_MS)
       }
     }
@@ -186,16 +190,19 @@ async function pushNow(options = {}) {
         keepalive: !!options.keepalive,
         body: JSON.stringify({ code: state.code, words: pushWords, tombstones: pushTombs })
       })
-      wordsPushed = true
       state.lastSync = new Date()
       state.paired = true
       state.rejected = res?.rejected || 0
+      // 推送成功才清账——失败时脏集合原样留在盘上，下次继续推；被 keepalive 裁掉的排除在外
+      doneKeys = dirtyKeys.filter(k => !(droppedSet && droppedSet.has(k)))
       // 推送成功才清台账——失败时要留着，下次继续推
       if (Object.keys(pushTombs).length) st.clearTombstones(Object.keys(pushTombs))
       // 时间戳仍是旧的，说明服务端有更新的版本：本地这些词已被拒收，
       // 必须立刻拉一次把远程版本合并进来，否则本地会一直以为自己写成功了
       if (state.rejected > 0) await pullOnce()
     } else {
+      // 没有任何可推内容（空壳词/已删词）：这些脏词不再挂账，否则每次冷启动都空推一轮
+      doneKeys = dirtyKeys
       state.rejected = 0
     }
 
@@ -210,10 +217,10 @@ async function pushNow(options = {}) {
       state.lastSync = new Date()
     }
   } catch (e) {
-    // 推送失败：脏标记还回去，下次重推。
-    // 词表已经推成功、只是进度那一步失败时不还——那会把时间戳平等的词再推一遍，
-    // 服务端一律拒收，把 rejected 计数污染成假信号（它本该只表示「本地版本旧了」）。
-    if (!wordsPushed && dirtyKeys.length) vocab.markDirty(...dirtyKeys)
+    // 推送失败：脏集合原样留在内存与盘上（pendingDirty 从不删盘），下次重推，无需「还」。
+    // 词表已推成功、只是进度那一步失败时 doneKeys 已设好，finally 正常落账即可——
+    // 把时间戳平等的词再推一遍会被服务端一律拒收，把 rejected 计数污染成假信号
+    // （它本该只表示「本地版本旧了」）。
     if (e.status === 404) {
       state.error = '同步码已失效，请重新配对'
       state.paired = false
@@ -221,6 +228,9 @@ async function pushNow(options = {}) {
   } finally {
     _inFlight = false
     state.pushing = false
+    // 只有拿到「推送成功」这一事实才落账；页面在推送途中被销毁时这里根本不会执行，
+    // 脏词因此留在盘上，留给下次冷启动补推（这正是 0.1 要修的场景）
+    if (doneKeys) vocab.clearDirty(doneKeys)
     if (_flushAgain) {
       _flushAgain = false
       const keepalive = _flushKeepalive

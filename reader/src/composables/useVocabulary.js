@@ -19,11 +19,14 @@ const MAX_IMPORT_BYTES = 5 * 1024 * 1024
 /**
  * 待推送的脏词集合。同步只推这些词，而不是每次变异都推全量词表——
  * 原来每答一道测验题就推一次全部词条，词表上千时那是上千条 upsert。
- * 由 useSync 在推送成功时取走；推送失败会还回来。
  *
  * 0.1：集合同时持久化一份到 localStorage。只活在内存里的话，「改了但没推出去」的
- * 改动会随关页一起消失（下次启动 takeDirty() 是空的，只有再改一次那个词才会重新标脏），
+ * 改动会随关页一起消失（下次启动脏集合是空的，只有再改一次那个词才会重新标脏），
  * 这次编辑就永远不上云。恢复后由 useSync 在冷启动时补推一次。
+ *
+ * 清账时机（0.1 真机验收第二轮抓到）：脏集合**只读不取走**，推送成功后才用 clearDirty 落账。
+ * 原来的「先取走清盘、失败再还回来」在 pagehide/关页那条路径上不成立——keepalive 请求刚
+ * 发出去页面就被销毁，catch 里的「还回来」永远不会执行，欠推记录就此从盘上消失。
  */
 let _dirty = new Set()
 let _dirtyLoaded = false
@@ -52,16 +55,22 @@ function markDirty(...keys) {
   if (added) persistDirty()
 }
 
-/** 取走并清空脏集合（useSync 调用） */
-function takeDirty() {
+/**
+ * 推送成功后落账：把这些词从脏集合划掉并落盘。
+ * 只划掉本次**真推出去**的那些（keepalive 裁剪掉的由调用方排除），关页打断的不会被划掉。
+ */
+function clearDirty(keys) {
   ensureDirtyLoaded()
-  const out = [..._dirty]
-  _dirty = new Set()
-  persistDirty()
-  return out
+  let changed = false
+  for (const k of keys || []) {
+    if (typeof k !== 'string' || !k) continue
+    if (_dirty.delete(k.toLowerCase())) changed = true
+  }
+  if (changed) persistDirty()
+  return changed
 }
 
-/** 只读看一眼还有哪些词欠推（useSync 冷启动据此决定要不要补推一次） */
+/** 只读看一眼还有哪些词欠推（冷启动据此决定要不要补推、pushNow 据此取待推集合；都不删盘） */
 function pendingDirty() {
   ensureDirtyLoaded()
   return [..._dirty]
@@ -292,7 +301,7 @@ export function useVocabulary() {
     importJSON,
     // 同步层用来做「只推脏词」：useSync 取走脏集合，推送失败再还回来
     markDirty,
-    takeDirty,
+    clearDirty,
     markAllDirty,
     pendingDirty
   }
