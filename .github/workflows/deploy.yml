@@ -15,7 +15,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 五套测试全部通过才允许部署（合计 247 条）。都是纯逻辑测试，不依赖浏览器 / 网络 / 线上环境。
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      # reader 的三套测试会 import src/*（间接依赖 vue），所以必须先装依赖
+      - name: Install dependencies
+        run: npm ci
+        working-directory: reader
+
+      - name: Reader tests (verify-core / verify-sync / smoke)
+        run: npm test
+        working-directory: reader
+
+      # worker 的两套测试只用 node 内置模块（node:sqlite 等），零依赖，不必 npm ci
+      - name: Worker tests (verify-worker / verify-sql)
+        run: npm test
+        working-directory: worker
+
   build-and-deploy:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

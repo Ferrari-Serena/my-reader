@@ -16,6 +16,21 @@
 - **The Giver**（25章，含 23 章 Kokoro 音频 ~95MB）
 - **SAT Practice**（4,437 词，5,988 真实例句）
 
+## 测试
+
+五套纯逻辑测试（合计 247 条），CI 在部署前跑；本地也可单跑：
+
+```bash
+cd reader && npm test   # verify-core / verify-sync / smoke-test
+cd worker && npm test   # verify-worker / verify-sql
+```
+
+- `reader/verify-core.mjs` — 词典 / 分词 / 词组 / 存储核心
+- `reader/verify-sync.mjs` — 同步合并、keepalive 预算裁剪、进度迁移、脏词持久化
+- `reader/smoke-test.mjs` — 生词本读写冒烟
+- `worker/verify-worker.mjs` — Worker 路由 / 缓存 / CORS / 限流纯函数
+- `worker/verify-sql.mjs` — 用 `node:sqlite` 真跑 D1 SQL（同步 / 限流）
+
 ## 部署
 
 GitHub Pages (`www.ferrari11.com`) + Cloudflare Worker（词典 + 同步 API）+ D1 数据库
