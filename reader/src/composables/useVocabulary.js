@@ -20,25 +20,58 @@ const MAX_IMPORT_BYTES = 5 * 1024 * 1024
  * 待推送的脏词集合。同步只推这些词，而不是每次变异都推全量词表——
  * 原来每答一道测验题就推一次全部词条，词表上千时那是上千条 upsert。
  * 由 useSync 在推送成功时取走；推送失败会还回来。
+ *
+ * 0.1：集合同时持久化一份到 localStorage。只活在内存里的话，「改了但没推出去」的
+ * 改动会随关页一起消失（下次启动 takeDirty() 是空的，只有再改一次那个词才会重新标脏），
+ * 这次编辑就永远不上云。恢复后由 useSync 在冷启动时补推一次。
  */
 let _dirty = new Set()
+let _dirtyLoaded = false
+
+/** 首次访问时把上次没推出去的脏词捞回来（惰性，避免模块加载期就碰 localStorage） */
+function ensureDirtyLoaded() {
+  if (_dirtyLoaded) return
+  _dirtyLoaded = true
+  for (const w of storage.loadDirtyWords()) _dirty.add(w)
+}
+
+/** 把内存里的脏集合覆盖写回 localStorage */
+function persistDirty() {
+  storage.saveDirtyWords([..._dirty])
+}
 
 function markDirty(...keys) {
+  ensureDirtyLoaded()
+  let added = false
   for (const k of keys) {
-    if (typeof k === 'string' && k) _dirty.add(k.toLowerCase())
+    if (typeof k !== 'string' || !k) continue
+    const key = k.toLowerCase()
+    if (!_dirty.has(key)) { _dirty.add(key); added = true }
   }
+  // 只在真有新增时落盘：答题连点会反复标同一个词，没必要每次都写一遍
+  if (added) persistDirty()
 }
 
 /** 取走并清空脏集合（useSync 调用） */
 function takeDirty() {
+  ensureDirtyLoaded()
   const out = [..._dirty]
   _dirty = new Set()
+  persistDirty()
   return out
+}
+
+/** 只读看一眼还有哪些词欠推（useSync 冷启动据此决定要不要补推一次） */
+function pendingDirty() {
+  ensureDirtyLoaded()
+  return [..._dirty]
 }
 
 /** 把当前所有词标脏（新建同步码时用：本机数据对远程来说全是新的） */
 function markAllDirty() {
+  ensureDirtyLoaded()
   for (const k of Object.keys(state.words)) _dirty.add(k)
+  persistDirty()
 }
 
 async function init() {
@@ -49,6 +82,8 @@ async function init() {
   // savedSet/count 等依赖 Object.keys 迭代的 computed 全部收不到通知
   state.words = { ...doc.words }
   state.loaded = true
+  // 0.1：把上次没推出去的脏词捞回来（否则页面重开后它们永远不会被推）
+  ensureDirtyLoaded()
 }
 
 function entryKey(word, dictEntry) {
@@ -258,6 +293,7 @@ export function useVocabulary() {
     // 同步层用来做「只推脏词」：useSync 取走脏集合，推送失败再还回来
     markDirty,
     takeDirty,
-    markAllDirty
+    markAllDirty,
+    pendingDirty
   }
 }

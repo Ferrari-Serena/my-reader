@@ -331,7 +331,14 @@ function unpair() {
 function autoPullOnce() {
   if (_autoPulled || !state.code) return
   _autoPulled = true
-  pullOnce().then(ok => { if (!ok) _autoPulled = false })
+  pullOnce().then(ok => {
+    if (!ok) { _autoPulled = false; return }
+    // 0.1：拉完再补推一次「上次没推出去的脏词」（集合已持久化在 localStorage）。
+    // 不补推的话，页面重开后没有任何变异 → 不会触发 pushSoon → 那次编辑永远上不去。
+    // 离线冷启动时这里不会执行（pullOnce 失败），脏词留在盘上等下一次推送自愈。
+    const vocab = useVocabulary()
+    if (vocab.pendingDirty().length) pushSoon(0)
+  })
 }
 
 // 页面隐藏/卸载时立刻把待推送的内容发出去（带 keepalive）
