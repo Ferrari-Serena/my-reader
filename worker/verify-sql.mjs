@@ -27,7 +27,8 @@ db.exec(`CREATE TABLE sync_data (
   updated_at TEXT NOT NULL, PRIMARY KEY (code, word))`)
 db.exec(readFileSync(new URL('./migrations/0001_sync_tombstones_progress.sql', import.meta.url), 'utf8'))
 // 0002 限流表（幂等，见 migrations/0002_rate_limit.sql）
-db.exec(readFileSync(new URL('./migrations/0002_rate_limit.sql', import.meta.url), 'utf8'))// 0003 账号 / 会话 / 失败计数 / 恢复码（幂等，见 migrations/0003_users_sessions.sql）
+db.exec(readFileSync(new URL('./migrations/0002_rate_limit.sql', import.meta.url), 'utf8'))
+// 0003 账号 / 会话 / 失败计数 / 邮件令牌（幂等，见 migrations/0003_users_sessions.sql）
 db.exec(readFileSync(new URL('./migrations/0003_users_sessions.sql', import.meta.url), 'utf8'))
 
 const CODE = 'TESTCODE'
