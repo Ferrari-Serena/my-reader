@@ -1,7 +1,7 @@
 """
 把章节音频上传到 Cloudflare R2。
 
-音频经 Worker 代理分发（https://www.ferrari11.com/api/audio/<bookId>/<file>），
+音频经 Worker 代理分发（https://my-reader.ferrari11.com/api/audio/<bookId>/<file>），
 不进 git —— 所以 TTS 跑完之后必须走这一步，线上才有声音。
 
 wrangler 的 r2 子命令没有批量模式：一本书是「章数 × 2」个对象
@@ -42,7 +42,7 @@ from pipeline.audio_index import summary, write_index
 # wrangler 走 Cloudflare API，需要科学上网
 PROXY = 'http://127.0.0.1:7897'
 # 线上探测用（--verify）
-AUDIO_BASE = 'https://www.ferrari11.com/api/audio'
+AUDIO_BASE = 'https://my-reader.ferrari11.com/api/audio'
 # Cloudflare 会挡掉 Python-urllib 的默认 UA（403 Forbidden），必须显式带一个
 UA = 'my-reader-upload-check/1.0'
 
