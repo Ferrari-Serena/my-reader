@@ -21,7 +21,7 @@ import { syncClock } from '../sync/clock.js'
 import { collectLocalProgress, applyRemoteProgress } from '../sync/progress.js'
 import { budgetKeepaliveParts } from '../sync/budget.js'
 
-const SYNC_BASE = 'https://www.ferrari11.com/api/sync'
+const SYNC_BASE = '/api/sync'
 const SYNC_CODE_KEY = 'reader-sync-code'
 const TIMEOUT = 8000
 const PUSH_DEBOUNCE_MS = 1500 // 尾随防抖：答题连点不再是一次一推

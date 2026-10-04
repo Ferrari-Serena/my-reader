@@ -157,8 +157,8 @@ import { savePosition, loadPosition } from '../composables/useReadingPosition'
 const route = useRoute()
 const router = useRouter()
 
-// M-W 词典代理 Worker（主域名路径路由 /api/*，国内不污染）
-const DICT_WORKER = 'https://www.ferrari11.com'
+// M-W 词典代理 Worker（同源相对路径 /api/*，国内不污染）
+const DICT_WORKER = ''
 
 const bookId = computed(() => route.params.bookId)
 const chapterId = computed(() => route.params.chapterId)
@@ -216,7 +216,7 @@ const currentChapterText = computed(() => {
 })
 
 // R2 音频经 Worker 代理：/api/audio/<bookId>/<chapterId>.mp3
-const AUDIO_BASE = 'https://www.ferrari11.com/api/audio'
+const AUDIO_BASE = '/api/audio'
 const currentAudioUrl = computed(() => {
   if (!currentChapter.value) return ''
   return `${AUDIO_BASE}/${bookId.value}/${currentChapter.value.id}.mp3`
