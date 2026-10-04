@@ -60,7 +60,7 @@ const showTabbar = computed(() => {
 const showBack = computed(() => {
   return route.name === 'Reader'
 })
-const backLabel = computed(() => 'Books')
+const backLabel = computed(() => 'Home')
 
 const currentTitle = computed(() => {
   const titles = {

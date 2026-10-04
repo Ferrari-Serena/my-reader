@@ -1,24 +1,42 @@
 <template>
   <div class="audio-player" v-if="chapterText">
-    <button class="play-btn" @click="togglePlay">
-      <span v-if="state === 'loading'" class="spinner-sm"></span>
-      <span v-else>{{ state === 'playing' ? '⏸' : '▶' }}</span>
-    </button>
+    <div class="audio-row">
+      <button class="play-btn" @click="togglePlay">
+        <span v-if="state === 'loading'" class="spinner-sm"></span>
+        <span v-else>{{ state === 'playing' ? '⏸' : '▶' }}</span>
+      </button>
 
-    <div class="audio-info">
-      <span class="audio-label">{{ statusLabel }}</span>
-      <span class="audio-source">{{ sourceLabel }}</span>
+      <div class="audio-info">
+        <span class="audio-label">{{ statusLabel }}</span>
+        <span class="audio-source">{{ sourceLabel }}</span>
+      </div>
+
+      <button
+        v-if="state === 'error' || !hasAudio"
+        class="fallback-btn"
+        @click="useBrowserTTS"
+      >
+        Use Browser TTS
+      </button>
     </div>
 
-    <button
-      v-if="state === 'error' || !hasAudio"
-      class="fallback-btn"
-      @click="useBrowserTTS"
-    >
-      Use Browser TTS
-    </button>
+    <div class="seek-row" v-if="showSeek">
+      <span class="seek-time">{{ fmtTime(seekDisplay) }}</span>
+      <input
+        class="seek-bar"
+        type="range"
+        min="0"
+        :max="duration"
+        step="0.1"
+        :value="seekDisplay"
+        aria-label="Seek"
+        @input="onSeekInput"
+        @change="onSeekCommit"
+      />
+      <span class="seek-time">{{ fmtTime(duration) }}</span>
+    </div>
   </div>
-  <audio ref="audioEl" @ended="onAudioEnded" @error="onAudioError" @timeupdate="onTimeUpdate" style="display:none"></audio>
+  <audio ref="audioEl" @ended="onAudioEnded" @error="onAudioError" @loadedmetadata="syncDuration" @durationchange="syncDuration" @timeupdate="onTimeUpdate" style="display:none"></audio>
 </template>
 
 <script setup>
@@ -76,6 +94,54 @@ const sourceLabel = computed(() => {
   if (!props.hasAudio && state.value === 'idle') return noAudioTooltip(props.noAudioReason)
   return source.value
 })
+
+// ---- 可拖动进度条 ----
+// 只在「正在放/正在取 MP3 且时长已知」时出现：浏览器朗读没有时长（speechSynthesis
+// 不给可靠进度），硬画一条只会骗人；无 src（已停/未播）时 el.duration 归零，条也消失。
+// 拖动期间不能把 el.currentTime 跟着 input 事件写进去：那会在 iOS 上被解成反复 seek
+// （播放卡顿、且每次都触发 savePosition）。改为拖动中只动显示值，松手（change）才落一次。
+const currentTime = ref(0)
+const duration = ref(0)
+const dragValue = ref(0)
+let dragging = false // 故意不用 ref：只在 seekDisplay 里读
+
+const showSeek = computed(() =>
+  !!props.audioUrl && duration.value > 0 &&
+  (state.value === 'playing' || state.value === 'loading'))
+
+const seekDisplay = computed(() =>
+  dragging ? dragValue.value : Math.min(currentTime.value, duration.value || 0))
+
+function fmtTime(s) {
+  if (!Number.isFinite(s) || s <= 0) return '0:00'
+  const total = Math.floor(s)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+function syncDuration() {
+  const el = audioEl.value
+  if (!el) return
+  duration.value = Number.isFinite(el.duration) ? el.duration : 0
+  if (!dragging && Number.isFinite(el.currentTime)) currentTime.value = el.currentTime
+}
+
+function onSeekInput(e) {
+  dragging = true
+  dragValue.value = Number(e.target.value)
+}
+
+function onSeekCommit(e) {
+  const v = Number(e.target.value)
+  const el = audioEl.value
+  dragging = false
+  dragValue.value = v // dragging 不是响应式，靠这次赋值触发 seekDisplay 重算
+  if (!el || !el.src || !Number.isFinite(el.duration)) return
+  el.currentTime = Math.max(0, Math.min(v, el.duration))
+  currentTime.value = el.currentTime
+  emit('time', el.currentTime)      // 段落高亮跟着跳到新位置
+  savePosition(el.currentTime, true) // 拖到哪就是「动作结束」，顺带推一次同步
+  updatePositionState(true)
+}
 
 // ---- chapter change → stop ----
 // 切章瞬间 props 已经变成新章了，所以不能在 stopAll 里读 props 取 key
@@ -264,12 +330,12 @@ function setupMediaSession() {
   }
 }
 
-function updatePositionState() {
+function updatePositionState(force = false) {
   if (!hasPositionState) return // iOS no-op（Q4 fix）
   const el = audioEl.value
   if (!el || !Number.isFinite(el.duration)) return
   const now = Date.now()
-  if (now - posStateThrottle < 1000) return // 每秒最多一次
+  if (!force && now - posStateThrottle < 1000) return // 每秒最多一次
   posStateThrottle = now
   navigator.mediaSession.setPositionState({
     duration: el.duration,
@@ -305,6 +371,8 @@ watch([() => props.bookTitle, () => props.chapterTitle], () => {
 function onTimeUpdate() {
   const el = audioEl.value
   if (!el || state.value !== 'playing') return
+  if (!dragging) currentTime.value = el.currentTime
+  if (!duration.value && Number.isFinite(el.duration)) duration.value = el.duration
   emit('time', el.currentTime)
   updatePositionState()
   const now = Date.now()
@@ -485,6 +553,9 @@ function stopAll() {
   }
   playingIds = null
   state.value = 'idle'
+  currentTime.value = 0
+  duration.value = 0
+  dragging = false
   if (el) {
     el.pause()
     el.removeAttribute('src')
@@ -503,8 +574,7 @@ onUnmounted(() => {
 <style scoped>
 .audio-player {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
   padding: 10px 16px;
   padding-bottom: max(10px, env(safe-area-inset-bottom));
   background: var(--bg-primary, #fff);
@@ -570,6 +640,53 @@ onUnmounted(() => {
 .audio-source {
   font-size: 11px;
   color: var(--text-secondary, #6e6e73);
+}
+
+.audio-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.seek-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.seek-time {
+  font-size: 11px;
+  color: var(--text-secondary, #6e6e73);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.seek-bar {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border-color, #d2d2d7);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.seek-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-color, #1a73e8);
+  border: none;
+}
+
+.seek-bar::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-color, #1a73e8);
 }
 
 .fallback-btn {

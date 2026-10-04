@@ -763,7 +763,7 @@ onBeforeUnmount(() => {
 .reader-view {
   max-width: 760px;
   margin: 0 auto;
-  padding: 0 16px 64px;
+  padding: 0 16px 88px;
 }
 
 .loading-state,
@@ -871,7 +871,7 @@ onBeforeUnmount(() => {
 /* Mobile */
 @media (max-width: 480px) {
   .reader-view {
-    padding: 0 12px 48px;
+    padding: 0 12px 72px;
   }
   .paragraph {
     font-size: 16px;
@@ -885,7 +885,7 @@ onBeforeUnmount(() => {
 /* Tablet */
 @media (min-width: 768px) {
   .reader-view {
-    padding: 0 24px 64px;
+    padding: 0 24px 88px;
     max-width: 720px;
   }
 }
@@ -893,7 +893,7 @@ onBeforeUnmount(() => {
 /* Desktop */
 @media (min-width: 1024px) {
   .reader-view {
-    padding: 0 32px 64px;
+    padding: 0 32px 88px;
     max-width: 760px;
   }
 }
