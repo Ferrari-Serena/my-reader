@@ -166,12 +166,13 @@ console.log('\n[authapi — 端到端：注册 / 登录 / 我是谁 / 登出]')
   const env = { DB: d1(db) }
   const ORIGIN = 'https://my-reader.ferrari11.com'
   const SITE = 'https://my-reader.ferrari11.com'
-  const req = (path, { method = 'GET', body, cookie, origin = ORIGIN } = {}) => new Request(SITE + path, {
+  const req = (path, { method = 'GET', body, cookie, origin = ORIGIN, csrf } = {}) => new Request(SITE + path, {
     method,
     headers: {
       ...(origin ? { Origin: origin } : {}),
       ...(cookie ? { Cookie: cookie } : {}),
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(csrf === undefined ? {} : { 'X-CSRF-Token': csrf }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
@@ -210,6 +211,7 @@ console.log('\n[authapi — 端到端：注册 / 登录 / 我是谁 / 登出]')
   t('登录成功 -> 200', okRes.status === 200 && (await bodyOf(okRes)).user.id === userId)
   t('cookie 属性：httpOnly + Secure + SameSite=Lax + Path=/ + Max-Age', /HttpOnly/.test(setCookie) && /Secure/.test(setCookie) && /SameSite=Lax/.test(setCookie) && /Path=\//.test(setCookie) && /Max-Age=2592000/.test(setCookie))
   t('cookie 不带 Domain（同源，host-only 更紧）', !/Domain=/i.test(setCookie))
+  t('登录响应带 csrf（CSRF 第二层要前端拿得到这张通行证）', /^[0-9a-f]{64}$/.test(String((await bodyOf(await handleAuth(post('/api/auth/login', { email: 'ferrari@qq.com', password: 'correct horse 1' }), env))).csrf)))
   t('成功登录清掉该邮箱的失败行', db.prepare("SELECT COUNT(*) AS n FROM login_attempts WHERE scope='email' AND key='ferrari@qq.com'").get().n === 0)
 
   const token = readCookie(setCookie, 'mr_session')
@@ -225,10 +227,22 @@ console.log('\n[authapi — 端到端：注册 / 登录 / 我是谁 / 登出]')
   t('me（无 cookie）-> 401', (await handleAuth(req('/api/auth/me'), env)).status === 401)
   t('me（乱编的令牌）-> 401', (await handleAuth(req('/api/auth/me', { cookie: 'mr_session=made-up' }), env)).status === 401)
 
-  const lo = await handleAuth(post('/api/auth/logout', {}, { cookie }), env)
-  t('登出 -> 200 且清 cookie（Max-Age=0）', lo.status === 200 && /Max-Age=0/.test(lo.headers.get('Set-Cookie') || ''))
+  // ── CSRF 第二层（spec 2.5）：带有效会话的登出必须带 X-CSRF-Token ──────────────
+  const csrf = mj.csrf
+  t('me 带回了 csrf（与登录那次同值，派生式所以稳定）', /^[0-9a-f]{64}$/.test(String(csrf)))
+  t('登出（不带 CSRF 头）-> 403 bad-csrf，且会话**没被删**', await (async () => {
+    const r = await handleAuth(post('/api/auth/logout', {}, { cookie }), env)
+    return r.status === 403 && (await bodyOf(r)).error === 'bad-csrf'
+      && db.prepare(SQL_SESSION_BY_HASH).get(await tokenHash(token)) != null
+  })())
+  t('登出（带错 CSRF）-> 403', (await handleAuth(post('/api/auth/logout', {}, { cookie, csrf: 'x'.repeat(64) }), env)).status === 403)
+  t('登出（拿别的会话的 CSRF）-> 403（跨会话不通用）', (await handleAuth(post('/api/auth/logout', {}, { cookie, csrf: 'y'.repeat(64) }), env)).status === 403)
+
+  const lo = await handleAuth(post('/api/auth/logout', {}, { cookie, csrf }), env)
+  t('登出（带对 CSRF）-> 200 且清 cookie（Max-Age=0）', lo.status === 200 && /Max-Age=0/.test(lo.headers.get('Set-Cookie') || ''))
   t('登出后服务端会话真删了', db.prepare(SQL_SESSION_BY_HASH).get(await tokenHash(token)) == null)
   t('登出后再 me -> 401（会话已失效）', (await handleAuth(req('/api/auth/me', { cookie }), env)).status === 401)
+  t('会话已死的 cookie 再登出 -> 200（死 cookie 不该把用户卡住）', (await handleAuth(post('/api/auth/logout', {}, { cookie }), env)).status === 200)
 }
 
 console.log('\n[authapi — 端到端：验证信链接]')
@@ -316,6 +330,111 @@ console.log('\n[authapi — 端到端：登录限流]')
   for (let i = 0; i < 30; i++) await env.DB.prepare(SQL_INSERT_ATTEMPT).bind('ip', 'unknown', NOW).run()
   const ipLocked = await handleAuth(post('/api/auth/login', { email: 'brand-new@qq.com', password: 'correct horse 1' }), env)
   t('IP 桶到线 -> 连没见过的邮箱也 429', ipLocked.status === 429)
+}
+
+console.log('\n[authapi — 端到端：重置密码]')
+{
+  const db = newDb()
+  const env = { DB: d1(db) }
+  const ORIGIN = 'https://my-reader.ferrari11.com'
+  const SITE = 'https://my-reader.ferrari11.com'
+  const req = (path, { method = 'GET', body, cookie, origin = ORIGIN } = {}) => new Request(SITE + path, {
+    method,
+    headers: {
+      ...(origin ? { Origin: origin } : {}),
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const post = (path, body, opts = {}) => req(path, { method: 'POST', body, ...opts })
+  const form = (body) => new Request(SITE + '/api/auth/reset-confirm', {
+    method: 'POST',
+    headers: { Origin: ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  })
+
+  await handleAuth(post('/api/auth/register', { email: 'p@qq.com', password: 'old password 1' }), env)
+  const uid = db.prepare(SQL_USER_BY_EMAIL).get('p@qq.com').id
+  const pendingReset = () => db.prepare("SELECT COUNT(*) AS n FROM auth_tokens WHERE user_id = ? AND kind = 'reset' AND used_at IS NULL").get(uid).n
+
+  // 防枚举：注册过 / 没注册过 都回同一个 200
+  const rExisting = await handleAuth(post('/api/auth/reset-request', { email: 'p@qq.com' }), env)
+  const rGhost = await handleAuth(post('/api/auth/reset-request', { email: 'never-seen@qq.com' }), env)
+  t('reset-request：注册过 / 没注册过 都是 200 且响应体一样',
+    rExisting.status === 200 && rGhost.status === 200 && JSON.stringify(await rExisting.json()) === JSON.stringify(await rGhost.json()))
+  t('给存在的账号下了 1 条重置令牌', pendingReset() === 1)
+  t('给不存在的邮箱一条都不下', db.prepare("SELECT COUNT(*) AS n FROM auth_tokens WHERE kind='reset'").get().n === 1)
+
+  await handleAuth(post('/api/auth/reset-request', { email: 'p@qq.com' }), env)
+  t('重复申请 -> 仍是 1 条（旧链接作废，不叠加）', pendingReset() === 1)
+  t('邮箱不合法 -> 400', (await handleAuth(post('/api/auth/reset-request', { email: 'nope' }), env)).status === 400)
+
+  // 令牌原文只在邮件里 —— 测试里直接塞一条已知原文（哈希算法与线上同源）
+  const raw = 'Rr7-_'.repeat(9).slice(0, 43)
+  const NOW = Date.now()
+  await env.DB.prepare(SQL_INSERT_TOKEN).bind(await tokenHash(raw), uid, 'reset', NOW, NOW + 3600000).run()
+
+  const pageText = await (await handleAuth(req('/api/auth/reset?token=' + raw), env)).text()
+  t('重置页 -> HTML 表单（不是「点开即改密」）', /<form/.test(pageText) && /name="password"/.test(pageText))
+  t('表单把令牌带回来（提交时不用重翻邮件）', pageText.includes('value="' + raw + '"'))
+  t('令牌无效 -> 「链接无效」且不给表单', await (async () => {
+    const txt = await (await handleAuth(req('/api/auth/reset?token=made-up'), env)).text()
+    return txt.includes('无效') && !/<form/.test(txt)
+  })())
+  t('没带 token -> 「链接不完整」', (await (await handleAuth(req('/api/auth/reset'), env)).text()).includes('不完整'))
+
+  const rawExp = 'X'.repeat(43)
+  await env.DB.prepare(SQL_INSERT_TOKEN).bind(await tokenHash(rawExp), uid, 'reset', NOW - 100000, NOW - 1).run()
+  t('过期令牌 -> 「已过期」', (await (await handleAuth(req('/api/auth/reset?token=' + rawExp), env)).text()).includes('过期'))
+  t('验证令牌不能当重置令牌用（kind 隔离）', await (async () => {
+    const rawV = 'Vv7-_'.repeat(9).slice(0, 43)
+    await env.DB.prepare(SQL_INSERT_TOKEN).bind(await tokenHash(rawV), uid, 'verify', NOW, NOW + 3600000).run()
+    return (await (await handleAuth(req('/api/auth/reset?token=' + rawV), env)).text()).includes('无效')
+  })())
+
+  // 表单校验：出错要带令牌重画表单，而且**不能**把令牌烧掉
+  const before = pendingReset()
+  t('两次输入不一致 -> 提示重填且带表单', await (async () => {
+    const txt = await (await handleAuth(form('token=' + raw + '&password=newpassword9&confirm=nope1234567'), env)).text()
+    return txt.includes('不一致') && /<form/.test(txt)
+  })())
+  t('密码太短 -> 提示重填', (await (await handleAuth(form('token=' + raw + '&password=short&confirm=short'), env)).text()).includes('至少 8 位'))
+  t('被表单校验挡下时令牌没被烧掉（还能再填一次）', pendingReset() === before)
+
+  // 先登录一台，用来验证「改密会踢掉所有会话」
+  const l1 = await handleAuth(post('/api/auth/login', { email: 'p@qq.com', password: 'old password 1' }), env)
+  const oldCookie = 'mr_session=' + readCookie(l1.headers.get('Set-Cookie'), 'mr_session')
+  t('改密前：旧密码能登', l1.status === 200)
+
+  const okForm = await handleAuth(form('token=' + raw + '&password=new+password+9&confirm=new+password+9'), env)
+  t('表单提交成功 -> HTML 成功页', okForm.status === 200 && (await okForm.text()).includes('已重置'))
+  t('令牌被烧掉（一次性）', db.prepare(SQL_TOKEN_BY_HASH).get(await tokenHash(raw)).used_at !== null)
+  t('同一令牌再提交 -> 「已经用过了」', (await (await handleAuth(form('token=' + raw + '&password=newpassword9&confirm=newpassword9'), env)).text()).includes('已经用过'))
+  t('其余未用的重置链接一并作废', pendingReset() === 0)
+  t('旧密码 -> 401', (await handleAuth(post('/api/auth/login', { email: 'p@qq.com', password: 'old password 1' }), env)).status === 401)
+  t('新密码 -> 200', (await handleAuth(post('/api/auth/login', { email: 'p@qq.com', password: 'new password 9' }), env)).status === 200)
+  t('改密踢掉所有设备：老会话的 me -> 401', (await handleAuth(req('/api/auth/me', { cookie: oldCookie }), env)).status === 401)
+
+  // JSON 入口（前端 SPA 走这条）
+  const raw2 = 'Jj7-_'.repeat(9).slice(0, 43)
+  await env.DB.prepare(SQL_INSERT_TOKEN).bind(await tokenHash(raw2), uid, 'reset', NOW, NOW + 3600000).run()
+  const jRes = await handleAuth(post('/api/auth/reset-confirm', { token: raw2, password: 'json password 9' }), env)
+  t('JSON 提交 -> 200 { ok: true }', jRes.status === 200 && (await jRes.json()).ok === true)
+  t('JSON 提交后新密码可用', (await handleAuth(post('/api/auth/login', { email: 'p@qq.com', password: 'json password 9' }), env)).status === 200)
+  t('JSON 错令牌 -> 400 invalid-token', (await handleAuth(post('/api/auth/reset-confirm', { token: 'nope', password: 'json password 9' }), env)).status === 400)
+  t('JSON 弱密码 -> 400 weak-password', await (async () => {
+    const raw3 = 'Ww7-_'.repeat(9).slice(0, 43)
+    await env.DB.prepare(SQL_INSERT_TOKEN).bind(await tokenHash(raw3), uid, 'reset', NOW, NOW + 3600000).run()
+    const r = await handleAuth(post('/api/auth/reset-confirm', { token: raw3, password: 'short' }), env)
+    return r.status === 400 && (await r.json()).error === 'weak-password'
+  })())
+  t('JSON 两次输入不一致 -> 400 password-mismatch', await (async () => {
+    const raw4 = 'Mm7-_'.repeat(9).slice(0, 43)
+    await env.DB.prepare(SQL_INSERT_TOKEN).bind(await tokenHash(raw4), uid, 'reset', NOW, NOW + 3600000).run()
+    const r = await handleAuth(post('/api/auth/reset-confirm', { token: raw4, password: 'json password 9', confirm: 'other password 9' }), env)
+    return r.status === 400 && (await r.json()).error === 'password-mismatch'
+  })())
 }
 
 console.log('\n[authapi — 接线：index.js 真的会把它接上]')

@@ -105,6 +105,33 @@ export function sessionCookie(token, maxAgeSec) {
 export function clearSessionCookie() {
   return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`
 }
+
+/**
+ * CSRF 第二层（spec 2.5）—— **会话派生**的令牌：不落库、不加 cookie、不加表列。
+ *
+ * 为什么需要：同源 + SameSite=Lax 挡得住「外站」POST（Origin 校验那一层），
+ *   挡不住**同站子域** —— 有人拿 `evil.ferrari11.com` 打我们：同为 ferrari11.com，
+ *   浏览器照带 cookie（Lax 只限跨站），Origin 又在我们的白名单里。
+ * 为什么派生式就够：令牌 = sha256('mr-csrf:' + 会话令牌)，而会话令牌只活在 httpOnly
+ *   cookie 里 —— 子域脚本读不到那个 cookie，也读不到我们 API 的响应体（没开
+ *   Allow-Credentials），所以拿不到这个值；它发的请求缺这个头，我们直接拒。
+ * 为什么不用「双 cookie 双提交」：同站子域能给父域写同名 cookie（cookie tossing），
+ *   而派生式不依赖任何可被第三方覆写的存储。
+ */
+const CSRF_PREFIX = 'mr-csrf:'
+
+/** 由会话令牌派生 CSRF 令牌（sha256 十六进制，64 字符）。没有会话令牌 -> 空串 */
+export async function csrfToken(sessionToken) {
+  if (typeof sessionToken !== 'string' || !sessionToken) return ''
+  return tokenHash(CSRF_PREFIX + sessionToken)
+}
+
+/** 常量时间比对；缺值 / 非字符串 / 空会话令牌一律 false */
+export async function csrfMatches(sessionToken, provided) {
+  const want = await csrfToken(sessionToken)
+  if (!want) return false
+  return timingSafeEqual(want, typeof provided === 'string' ? provided.trim() : '')
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // 密码：PBKDF2-HMAC-SHA256（平台硬上限 10 万圈，依据见文件头）
 // ─────────────────────────────────────────────────────────────────────────────

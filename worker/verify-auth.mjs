@@ -222,5 +222,21 @@ console.log('\n[auth.js — checkPasswordPolicy]')
   t('非字符串 -> not-a-string', A.checkPasswordPolicy(null) === 'not-a-string' && A.checkPasswordPolicy(12345678) === 'not-a-string')
   t('口径常量：最小 8 / 最大 200', A.PASSWORD_MIN === 8 && A.PASSWORD_MAX === 200)
 }
+console.log('\n[auth.js — CSRF 第二层（会话派生令牌）]')
+{
+  const s = 'SESSION-TOKEN-abc123'
+  const a = await A.csrfToken(s)
+  t('同一会话令牌 -> 同一 CSRF 令牌（派生式，不用落库）', a === await A.csrfToken(s))
+  t('不同会话令牌 -> 不同 CSRF 令牌', a !== await A.csrfToken('another-session'))
+  t('是 64 位十六进制（sha256）', /^[0-9a-f]{64}$/.test(a))
+  t('没有会话令牌 -> 空串', (await A.csrfToken('')) === '' && (await A.csrfToken(null)) === '' && (await A.csrfToken(undefined)) === '')
+  t('匹配 -> true', (await A.csrfMatches(s, a)) === true)
+  t('两端的空白被容忍（HTTP 头里容易带出来）', (await A.csrfMatches(s, '  ' + a + ' ')) === true)
+  t('改一个字符 -> false', (await A.csrfMatches(s, a.slice(0, -1) + (a.endsWith('0') ? '1' : '0'))) === false)
+  t('缺值 / 非字符串 -> false', (await A.csrfMatches(s, undefined)) === false && (await A.csrfMatches(s, 42)) === false && (await A.csrfMatches(s, null)) === false)
+  t('空会话令牌 -> false（派生不出值，不能当成匹配）', (await A.csrfMatches('', a)) === false && (await A.csrfMatches(null, null)) === false)
+  t('跨会话不通用：拿 A 的令牌套 B 的会话 -> false', (await A.csrfMatches('another-session', a)) === false)
+  t('令牌里不含会话令牌本身（不是简单拼接）', a.indexOf(s) === -1)
+}
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

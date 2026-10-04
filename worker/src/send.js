@@ -97,3 +97,42 @@ export function verifyEmailContent({ link, site, validHours = 24 }) {
 
   return { subject, text, html }
 }
+
+/**
+ * 重置密码邮件正文。与验证信同形，两处不同：
+ *   - 链接指向 `/api/auth/reset`（**一个自带表单的页面**），不是「点开即改密」——
+ *     改密码必须先由用户自己输一遍新密码才算数
+ *   - 有效期 1 小时（比验证信短：这条链接能改密码，暴露窗口越小越好）
+ * ⚠️ 与验证信同理：link 只由「本站固定地址 + 我们自己生成的 base64url 令牌」拼成，
+ *   不含用户输入 → 直接插进 HTML 没有转义问题。
+ */
+export function resetEmailContent({ link, site, validHours = 1 }) {
+  const subject = 'my-reader · 重置密码'
+  const text = [
+    '你好，',
+    '',
+    '点开下面这条链接，就能给 my-reader 设一个新密码：',
+    link,
+    '',
+    `链接 ${validHours} 小时内有效，只能用一次。`,
+    '改完密码后，所有设备上的登录都会被清掉，需要用新密码重新登录。',
+    '如果这不是你本人操作，忽略这封邮件即可，你的密码不会被改动。',
+    '',
+    `my-reader · ${site}`,
+  ].join('\n')
+
+  const html = `<!doctype html>
+<html lang="zh-CN"><body style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.7;color:#222;max-width:560px">
+  <p>你好，</p>
+  <p>点下面这个按钮，就能给 my-reader 设一个新密码：</p>
+  <p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#1a73e8;color:#ffffff;border-radius:6px;text-decoration:none">设置新密码</a></p>
+  <p>链接 <strong>${validHours} 小时</strong>内有效，只能用一次。<br>
+     按钮点不开，就把下面这条地址粘到浏览器里：<br>
+     <span style="color:#555555;word-break:break-all">${link}</span></p>
+  <p>改完密码后，所有设备上的登录都会被清掉，需要用新密码重新登录。</p>
+  <p style="color:#777777">如果这不是你本人操作，忽略这封邮件即可，你的密码不会被改动。</p>
+  <p style="color:#777777">my-reader · ${site}</p>
+</body></html>`
+
+  return { subject, text, html }
+}

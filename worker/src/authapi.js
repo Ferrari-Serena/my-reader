@@ -4,9 +4,12 @@
  *   POST /api/auth/register        { email, password }  → 201 建号 + 发验证信
  *   POST /api/auth/verify-request  { email }            → 200（一律 200，防枚举）+ 重发验证信
  *   GET  /api/auth/verify?token=…                       → HTML 结果页（一次性令牌）
- *   POST /api/auth/login           { email, password }  → 200 + Set-Cookie（会话）
+ *   POST /api/auth/login           { email, password }  → 200 + Set-Cookie（会话）+ csrf
  *   POST /api/auth/logout                               → 200 + 清 cookie（本地数据一律保留）
- *   GET  /api/auth/me                                   → 200 当前账号（顺带续期）/ 401
+ *   GET  /api/auth/me                                   → 200 当前账号（顺带续期）+ csrf / 401
+ *   POST /api/auth/reset-request   { email }            → 200（一律 200，防枚举）+ 发重置信
+ *   GET  /api/auth/reset?token=…                        → HTML 表单页（填新密码）
+ *   POST /api/auth/reset-confirm   token + password     → 改密 + 踢掉所有会话
  *
  * 设计要点（口径来源：方案 §2.x / §3.1、migrations/0003、auth.js 文件头）
  *   - 密码与令牌的**原语**全在 auth.js（纯逻辑，99 条断言）；本文件只做「取数据 → 调原语 → 落库」
@@ -15,19 +18,22 @@
  *   - 防枚举：邮箱不存在也烧一次 dummyVerify 再回同一个 401，快慢不泄信息
  *   - 限流：失败计数落 login_attempts（scope = 'ip' | 'email' | 'register-ip'）；
  *     失败姿态 fail-open（表读/写报错按「没失败过」放行并打日志），与 ratelimit.js 一致
- *   - CSRF 第一层 = Origin 校验（见 originBlocked）；spec 2.5 要的 token 是第二层，留到 B-5（要前端配合）
+ *   - CSRF 两层都在这：第一层 = Origin 校验（见 originBlocked）；第二层 = **会话派生令牌**
+ *     （见 guardCsrf / auth.js 的 csrfToken）。带有效会话的写操作（现在只有 logout）必须带
+ *     `X-CSRF-Token`，值与 /api/auth/me 回的 csrf 一致 —— 挡的是同站子域（Origin 白名单里的自家子域）
+ *   - 重置密码：令牌 kind='reset'（1 小时、一次性）；改完踢掉该账号**所有**会话
  *
- * 不在本文件范围：claim（游客认领，D 块）、reset（重置密码，B-2）、delete（注销，F 块）、前端页（G 块）。
+ * 不在本文件范围：claim（游客认领，D 块）、delete（注销，F 块）、前端页（G 块）。
  */
 
 import { corsFor, isAllowedOrigin } from './cors.js'
 import { clientIp } from './ratelimit.js'
-import { sendMail, siteUrl, verifyEmailContent } from './send.js'
+import { sendMail, siteUrl, verifyEmailContent, resetEmailContent } from './send.js'
 import {
-  SESSION_COOKIE, SESSION_ROLLING_MS, SESSION_ABSOLUTE_MS, VERIFY_TOKEN_MS,
+  SESSION_COOKIE, SESSION_ROLLING_MS, SESSION_ABSOLUTE_MS, VERIFY_TOKEN_MS, RESET_TOKEN_MS,
   normalizeEmail, newToken, tokenHash, sessionState, rollSession,
   sessionCookie, clearSessionCookie, hashPassword, verifyPassword, dummyVerify,
-  checkPasswordPolicy, needsRehash,
+  checkPasswordPolicy, needsRehash, csrfToken, csrfMatches,
 } from './auth.js'
 
 /** 登录失败滑窗与阈值（同一 (scope,key) 桶内计数） */
@@ -41,6 +47,9 @@ export const REGISTER_MAX_PER_IP = 10
 
 /** 失败行的保留时长；只在「该桶恰好清零」这个时机顺手清（与 ratelimit.js 的清法同思路） */
 const ATTEMPT_KEEP_MS = 24 * 60 * 60 * 1000
+
+/** CSRF 第二层的请求头名（前端登出等敏感写操作要带） */
+export const CSRF_HEADER = 'X-CSRF-Token'
 
 /** 注册时拿不到「刚插进去那行」的报错就按邮箱占用处理 */
 const UNIQUE_VIOLATION = 'UNIQUE'
@@ -78,6 +87,9 @@ export const SQL_DELETE_SESSION = `DELETE FROM sessions WHERE token_hash = ?`
 /** 登录时顺手清该用户已死的会话：滚动窗口过了，或越过绝对上限 */
 export const SQL_PURGE_USER_SESSIONS = `DELETE FROM sessions
    WHERE user_id = ? AND (expires_at <= ? OR created_at <= ?)`
+
+/** 改密后踢光该账号所有会话（凭据变了，旧会话不该继续有效） */
+export const SQL_DELETE_USER_SESSIONS = `DELETE FROM sessions WHERE user_id = ?`
 
 export const SQL_INSERT_TOKEN = `INSERT INTO auth_tokens
    (token_hash, user_id, kind, created_at, expires_at, used_at) VALUES (?, ?, ?, ?, ?, NULL)`
@@ -368,13 +380,17 @@ async function handleLogin(request, env, cors) {
   }
 
   const token = await createSession(env, user.id, nowMs)
-  return json(cors, { ok: true, user: publicUser(user) }, 200, {
+  return json(cors, { ok: true, user: publicUser(user), csrf: await csrfToken(token) }, 200, {
     'Set-Cookie': sessionCookie(token, Math.floor(SESSION_ROLLING_MS / 1000)),
   })
 }
 
 async function handleLogout(request, env, cors) {
   const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)
+  // CSRF 第二层：只有**真带着有效会话**的登出才要令牌。死 cookie 没什么可被伪造的，
+  // 一律放行清掉 —— 别让浏览器里的残留把用户卡在「退不出去」。
+  const csrfRes = await guardCsrf(request, env, cors, token)
+  if (csrfRes) return csrfRes
   if (token) {
     try {
       await env.DB.prepare(SQL_DELETE_SESSION).bind(await tokenHash(token)).run()
@@ -417,9 +433,213 @@ async function handleMe(request, env, cors) {
   }
 
   const maxAge = Math.max(0, Math.floor((rolled.expires_at - nowMs) / 1000))
-  return json(cors, { ok: true, user: publicUser(user) }, 200, {
+  return json(cors, { ok: true, user: publicUser(user), csrf: await csrfToken(token) }, 200, {
     'Set-Cookie': sessionCookie(token, maxAge),
   })
+}
+
+// ── 重置密码（B-2 剩余）+ CSRF 第二层（spec 2.5）──────────────────────────────
+
+/**
+ * CSRF 第二层闸门。返回 null = 放行；返回 Response = 直接拒。
+ *
+ * 只在「请求真带着一个**有效**会话」时才要求令牌 —— 没有会话就没有能被伪造的动作
+ * （登出空会话仍然一律成功）。**令牌不落库**：它是会话令牌的 sha256 派生值
+ * （见 auth.js 的 csrfToken），所以子域脚本既读不到 cookie 也读不到 /me 的响应体。
+ */
+async function guardCsrf(request, env, cors, sessionToken) {
+  if (!sessionToken) return null
+  let row = null
+  try {
+    row = await env.DB.prepare(SQL_SESSION_BY_HASH).bind(await tokenHash(sessionToken)).first()
+  } catch (e) {
+    // 读失败按「会话已死」处理：宁可少挡一次，也不把登出打停（与限流表的 fail-open 同向）
+    console.error('csrf session read failed (fail-open):', e.message)
+    return null
+  }
+  if (sessionState(row, Date.now()) !== 'ok') return null
+  const provided = request.headers.get(CSRF_HEADER)
+  if (await csrfMatches(sessionToken, provided)) return null
+  return json(cors, { error: 'bad-csrf' }, 403)
+}
+
+/**
+ * 读 application/x-www-form-urlencoded 体（重置页的表单就是这一种）。
+ * 不引依赖、不做 RFC 全解析：够用就好，坏编码的键值对直接跳过。
+ */
+export async function parseFormBody(request) {
+  const txt = await request.text()
+  const out = {}
+  for (const pair of txt.split('&')) {
+    if (!pair) continue
+    const i = pair.indexOf('=')
+    const k = i < 0 ? pair : pair.slice(0, i)
+    const v = i < 0 ? '' : pair.slice(i + 1)
+    try {
+      out[decodeURIComponent(k.replace(/\+/g, ' '))] = decodeURIComponent(v.replace(/\+/g, ' '))
+    } catch { /* 坏编码：跳过这一对 */ }
+  }
+  return out
+}
+
+/** 生成重置令牌并发信。作废旧未用重置令牌在前。返回 { ok, error }；发信失败不抛。 */
+async function issueResetToken(env, userId, email, nowMs) {
+  await env.DB.prepare(SQL_VOID_TOKENS).bind(userId, 'reset').run()
+  const token = newToken(32)
+  await env.DB.prepare(SQL_INSERT_TOKEN)
+    .bind(await tokenHash(token), userId, 'reset', nowMs, nowMs + RESET_TOKEN_MS)
+    .run()
+
+  const site = siteUrl(env)
+  // 与验证信不同：这里指向一个**带表单的页面**，不是「点开即改密」
+  const link = `${site}/api/auth/reset?token=${encodeURIComponent(token)}`
+  const { subject, text, html } = resetEmailContent({ link, site, validHours: RESET_TOKEN_MS / 3600000 })
+  const res = await sendMail(env, { to: email, subject, text, html })
+  return res.ok ? { ok: true } : { ok: false, error: res.detail || `resend ${res.status}` }
+}
+
+/** 令牌体检：能用回 null，否则回失败页的 { title, body }（口径与 verify 页一致） */
+async function resetTokenVerdict(env, token) {
+  const fail = (title, body) => ({ title, body })
+  const row = await env.DB.prepare(SQL_TOKEN_BY_HASH).bind(await tokenHash(token)).first()
+  if (!row || row.kind !== 'reset') {
+    return fail('链接无效', '<h2>链接无效</h2><p>这条链接无效或已被替换。请回到 my-reader 重新申请一次。</p>')
+  }
+  if (row.used_at) {
+    return fail('链接已用过', '<h2>链接已经用过了</h2><p>重置链接只能用一次。请回到 my-reader 重新申请一次。</p>')
+  }
+  if (Date.now() > row.expires_at) {
+    return fail('链接已过期', '<h2>链接已过期</h2><p>重置链接 1 小时内有效。请回到 my-reader 重新申请一次。</p>')
+  }
+  return null
+}
+
+/** 新密码表单。令牌是 base64url，仍按白名单洗一遍再插 HTML（不给自己留注入的口子）。 */
+function resetFormHtml(token) {
+  const safe = String(token).replace(/[^A-Za-z0-9_-]/g, '')
+  const box = 'width:100%;padding:10px;font-size:16px;box-sizing:border-box'
+  return `<h2>设置新密码</h2>
+  <form method="POST" action="/api/auth/reset-confirm">
+    <input type="hidden" name="token" value="${safe}">
+    <p><input name="password" type="password" required minlength="8" maxlength="200"
+              placeholder="新密码（至少 8 位）" autocomplete="new-password" style="${box}"></p>
+    <p><input name="confirm" type="password" required minlength="8" maxlength="200"
+              placeholder="再输一遍" autocomplete="new-password" style="${box}"></p>
+    <p><button type="submit" style="padding:10px 18px;background:#1a73e8;color:#fff;border:none;border-radius:6px;font-size:16px">改密码</button></p>
+  </form>
+  <p style="color:#777777">改完密码后，所有设备上的登录都会被清掉，需要用新密码重新登录。</p>`
+}
+
+async function handleResetRequest(request, env, cors) {
+  let body
+  try { body = await request.json() } catch { return json(cors, { error: 'invalid-json' }, 400) }
+
+  const email = normalizeEmail(body && body.email)
+  if (!email) return json(cors, { error: 'invalid-email' }, 400)
+
+  const nowMs = Date.now()
+  const ip = clientIp(request)
+  const ipN = await attemptCount(env, 'reset-ip', ip, nowMs - REGISTER_WINDOW_MS)
+  if (ipN >= REGISTER_MAX_PER_IP) {
+    // 直接按窗口长度给整值（别用 retryAfterSec(nowMs, nowMs) 那种写法 —— 那会算出 1 秒）
+    const retryAfter = Math.ceil(REGISTER_WINDOW_MS / 1000)
+    return json(cors, { error: 'too-many-attempts', retryAfter }, 429, { 'Retry-After': String(retryAfter) })
+  }
+  await noteAttempt(env, 'reset-ip', ip, nowMs, ipN === 0)
+
+  const user = await env.DB.prepare(SQL_USER_BY_EMAIL).bind(email).first()
+  // 一律 200 —— 与 verify-request 同一个理由：这个端点不能变成「邮箱注册过没有」的探测器。
+  // 注销冷静期内的账号不发信（那号正在删；F 块再定「冷静期内登录算不算撤销注销」）。
+  if (user && !user.deleted_at) {
+    const sent = await issueResetToken(env, user.id, user.email, nowMs)
+    if (!sent.ok) console.error('reset-request send failed:', sent.error)
+  }
+  return json(cors, { ok: true })
+}
+
+/**
+ * 重置页 = **Worker 自带的 HTML 表单**，不依赖前端 SPA。
+ * 理由：改密码是低频动作，邮件链接可能在任何浏览器/设备上点开；把表单放在这里
+ * 「点开就能填」，不要求那个浏览器已经加载过我们的前端 bundle。
+ */
+async function handleResetPage(request, env, cors) {
+  const token = new URL(request.url).searchParams.get('token') || ''
+  if (!token) {
+    return htmlPage(cors, '链接不完整',
+      '<h2>链接不完整</h2><p>这封邮件里的链接似乎被截断了。请回到 my-reader 重新申请一次。</p>')
+  }
+  const verdict = await resetTokenVerdict(env, token)
+  if (verdict) return htmlPage(cors, verdict.title, verdict.body)
+  return htmlPage(cors, '重置密码', resetFormHtml(token))
+}
+
+async function handleResetConfirm(request, env, cors) {
+  const wantsJson = (request.headers.get('Content-Type') || '').toLowerCase().includes('application/json')
+
+  let token = '', password = '', confirm = null
+  if (wantsJson) {
+    let body
+    try { body = await request.json() } catch { return json(cors, { error: 'invalid-json' }, 400) }
+    token = typeof (body && body.token) === 'string' ? body.token : ''
+    password = typeof (body && body.password) === 'string' ? body.password : ''
+    confirm = body && typeof body.confirm === 'string' ? body.confirm : null
+  } else {
+    let form = {}
+    try { form = await parseFormBody(request) } catch { form = {} }
+    token = typeof form.token === 'string' ? form.token : ''
+    password = typeof form.password === 'string' ? form.password : ''
+    confirm = typeof form.confirm === 'string' ? form.confirm : null
+  }
+
+  // 表单出错就**带着令牌重画一次表单**，别让用户为了一个错别字重翻邮件
+  const refill = (msg) => htmlPage(cors, '重置密码',
+    `<p style="color:#c00">${msg}</p>` + resetFormHtml(token))
+  const badToken = (verdict) => wantsJson
+    ? json(cors, { error: 'invalid-token' }, 400)
+    : htmlPage(cors, verdict.title, verdict.body)
+
+  if (!token) {
+    return wantsJson ? json(cors, { error: 'invalid-token' }, 400)
+      : htmlPage(cors, '链接不完整', '<h2>链接不完整</h2><p>请回到 my-reader 重新申请一次。</p>')
+  }
+  if (confirm !== null && confirm !== password) {
+    return wantsJson ? json(cors, { error: 'password-mismatch' }, 400) : refill('两次输入的新密码不一致，请重填。')
+  }
+  const policy = checkPasswordPolicy(password)
+  if (policy) {
+    return wantsJson ? json(cors, { error: 'weak-password', reason: policy }, 400)
+      : refill('新密码至少 8 位，请重填。')
+  }
+
+  const verdict = await resetTokenVerdict(env, token)
+  if (verdict) return badToken(verdict)
+
+  const nowMs = Date.now()
+  // 一次性：先核销再改密 —— 两个标签页同时提交时只有 changes=1 的那个往下走
+  const used = await env.DB.prepare(SQL_USE_TOKEN)
+    .bind(nowMs, await tokenHash(token)).run()
+  if (!((used && used.meta && used.meta.changes) || 0)) {
+    return badToken({ title: '链接已用过', body: '<h2>链接已经用过了</h2><p>请回到 my-reader 重新申请一次。</p>' })
+  }
+
+  const row = await env.DB.prepare(SQL_TOKEN_BY_HASH).bind(await tokenHash(token)).first()
+  await env.DB.prepare(SQL_UPDATE_PASSWORD_HASH)
+    .bind(await hashPassword(password), nowMs, row.user_id).run()
+
+  // 改密 = 踢掉该账号所有设备的登录（凭据变了，旧会话不该活着）；其余未用重置链接一并作废
+  try {
+    await env.DB.prepare(SQL_DELETE_USER_SESSIONS).bind(row.user_id).run()
+    await env.DB.prepare(SQL_VOID_TOKENS).bind(row.user_id, 'reset').run()
+  } catch (e) {
+    console.error('reset cleanup failed (非致命):', e.message)
+  }
+
+  if (wantsJson) return json(cors, { ok: true }, 200)
+  const site = siteUrl(env)
+  return htmlPage(cors, '密码已重置',
+    `<h2>密码已重置 ✅</h2>
+     <p>所有设备上的登录都已清掉，请用新密码重新登录。</p>
+     <p><a href="${site}/">打开 my-reader</a></p>`)
 }
 
 /**
@@ -440,8 +660,11 @@ export async function handleAuth(request, env) {
     if (isWrite && url.pathname === '/api/auth/verify-request') return await handleVerifyRequest(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/login') return await handleLogin(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/logout') return await handleLogout(request, env, cors)
+    if (isWrite && url.pathname === '/api/auth/reset-request') return await handleResetRequest(request, env, cors)
+    if (isWrite && url.pathname === '/api/auth/reset-confirm') return await handleResetConfirm(request, env, cors)
     if (request.method === 'GET' && url.pathname === '/api/auth/verify') return await handleVerify(request, env, cors)
     if (request.method === 'GET' && url.pathname === '/api/auth/me') return await handleMe(request, env, cors)
+    if (request.method === 'GET' && url.pathname === '/api/auth/reset') return await handleResetPage(request, env, cors)
     return json(cors, { error: 'not-found' }, 404)
   } catch (e) {
     console.error('auth error:', e && e.message, e && e.stack)
