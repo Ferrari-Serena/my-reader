@@ -124,6 +124,7 @@
         @time="onAudioTime"
         @next-track="nextChapter"
         @prev-track="prevChapter"
+        @ended="onChapterAudioEnded"
       />
     </template>
 
@@ -150,7 +151,7 @@ import WordPopup from '../components/WordPopup.vue'
 import { useVocabulary } from '../composables/useVocabulary'
 import { usePhrases } from '../composables/usePhrases'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
-import { chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
+import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { useSync } from '../composables/useSync'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
 
@@ -233,6 +234,7 @@ const tocNoAudio = computed(() => tocMissingAudio(audioIndex.value))
 // ---- 段落定位播放（时间表 + 高亮跟随）----
 
 const audioPlayerRef = ref(null)
+const pendingAutoPlay = ref(false) // 断章续播：切完章后要自动开播
 const audioTimings = ref(null) // { duration, paragraphs: { 段落id: 起始秒 } }
 const audioTime = ref(-1)      // AudioPlayer 回报的当前播放秒数；-1 = 未在播
 const timingsCache = {}
@@ -709,6 +711,27 @@ function nextChapter() {
   }
   setChapter(currentChapterIndex.value + 1)
 }
+
+/**
+ * 本章音频放完了（断章续播）。要不要接下一章由纯函数判：
+ * 最后一章、或下一章没有音频 → 停住不跳（与「手动点无音频章不自动跳」同一口径）。
+ */
+function onChapterAudioEnded() {
+  const target = autoContinueTarget(audioIndex.value, chapters.value, currentChapterIndex.value)
+  if (target < 0) return
+  pendingAutoPlay.value = true
+  setChapter(target)
+}
+
+// 续播不能紧接在 setChapter 后面直接调 —— 那一刻 AudioPlayer 手上的 props
+// 还是旧章，会把旧章的 audioUrl 又播一遍。等这一轮刷新走完（新 props 到位、
+// 它自己的切章 watcher 也已 stopAll 清干净），再让它从 0 秒开播。
+watch(currentChapterIndex, async () => {
+  if (!pendingAutoPlay.value) return
+  pendingAutoPlay.value = false
+  await nextTick()
+  audioPlayerRef.value?.playFrom(0)
+})
 
 function jumpToChapter(index) {
   setChapter(index)

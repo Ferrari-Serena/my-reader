@@ -49,3 +49,23 @@ export function noAudioLabel(reason) {
 export function noAudioTooltip(reason) {
   return NO_AUDIO_TOOLTIP[reason] || 'No chapter audio available'
 }
+
+/**
+ * 「一章播完该不该自动接着播下一章」的判定（断章续播）。纯函数，组件与自检共用同一份口径。
+ *
+ * 返回**该续播的章下标**；不该续播 → -1（由调用方停住）。
+ * 三条口径，与「手动点无音频章不自动跳」同一方向 —— 宁停不跳：
+ *   - 已是最后一章 → -1
+ *   - 下一章没有音频 → -1（不静默越过，免得用户以为书已经读完）
+ *   - 章表为空 / 下标不是合法整数 → -1
+ */
+export function autoContinueTarget(index, chapters, currentIndex) {
+  if (!Array.isArray(chapters)) return -1
+  if (!Number.isInteger(currentIndex) || currentIndex < 0) return -1
+  const next = currentIndex + 1
+  if (next >= chapters.length) return -1
+  const nextChapter = chapters[next]
+  if (!nextChapter || !nextChapter.id) return -1
+  if (!chapterHasAudio(index, nextChapter.id)) return -1
+  return next
+}

@@ -185,10 +185,6 @@ export async function noteAttempt(env, scope, key, nowMs, purgeOld = false) {
   }
 }
 
-function retryAfterSec(fromMs, nowMs) {
-  return Math.max(1, Math.ceil((fromMs - nowMs) / 1000))
-}
-
 /** 对外可见的用户形态：**不含** password_hash / deleted_at */
 function publicUser(row) {
   return { id: row.id, email: row.email, emailVerified: !!row.email_verified_at }
@@ -239,7 +235,9 @@ async function handleRegister(request, env, cors) {
 
   const ipN = await attemptCount(env, 'register-ip', ip, nowMs - REGISTER_WINDOW_MS)
   if (ipN >= REGISTER_MAX_PER_IP) {
-    const retryAfter = retryAfterSec(nowMs - REGISTER_WINDOW_MS + REGISTER_WINDOW_MS, nowMs)
+    // 按窗口长度给整值。原写法把窗口起止两端都写成 nowMs（自加自减），结果恒等于 1 秒
+    // —— 429 会告诉用户「约 1 分钟」而实际要等 60 分钟，越试越锁。
+    const retryAfter = Math.ceil(REGISTER_WINDOW_MS / 1000)
     return json(cors, { error: 'too-many-attempts', retryAfter }, 429, { 'Retry-After': String(retryAfter) })
   }
   await noteAttempt(env, 'register-ip', ip, nowMs, ipN === 0)
@@ -273,7 +271,9 @@ async function handleVerifyRequest(request, env, cors) {
   const ip = clientIp(request)
   const ipN = await attemptCount(env, 'verify-ip', ip, nowMs - REGISTER_WINDOW_MS)
   if (ipN >= REGISTER_MAX_PER_IP) {
-    const retryAfter = retryAfterSec(nowMs - REGISTER_WINDOW_MS + REGISTER_WINDOW_MS, nowMs)
+    // 按窗口长度给整值。原写法把窗口起止两端都写成 nowMs（自加自减），结果恒等于 1 秒
+    // —— 429 会告诉用户「约 1 分钟」而实际要等 60 分钟，越试越锁。
+    const retryAfter = Math.ceil(REGISTER_WINDOW_MS / 1000)
     return json(cors, { error: 'too-many-attempts', retryAfter }, 429, { 'Retry-After': String(retryAfter) })
   }
   await noteAttempt(env, 'verify-ip', ip, nowMs, ipN === 0)
@@ -541,7 +541,7 @@ async function handleResetRequest(request, env, cors) {
   const ip = clientIp(request)
   const ipN = await attemptCount(env, 'reset-ip', ip, nowMs - REGISTER_WINDOW_MS)
   if (ipN >= REGISTER_MAX_PER_IP) {
-    // 直接按窗口长度给整值（别用 retryAfterSec(nowMs, nowMs) 那种写法 —— 那会算出 1 秒）
+    // 直接按窗口长度给整值 —— 别用「拿窗口长度自加自减」那类算式，那会算出 1 秒
     const retryAfter = Math.ceil(REGISTER_WINDOW_MS / 1000)
     return json(cors, { error: 'too-many-attempts', retryAfter }, 429, { 'Retry-After': String(retryAfter) })
   }

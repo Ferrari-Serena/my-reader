@@ -63,7 +63,7 @@ await v.remove('go')
 t('remove reactivity', !v.has('go') && !v.savedSet.value.has('go'))
 
 // 8. 缺音频降级口径（audio-index.json → 章表徽标 / 播放器提示）
-const { chapterHasAudio, noAudioReason, tocMissingAudio, noAudioLabel, noAudioTooltip } =
+const { chapterHasAudio, noAudioReason, tocMissingAudio, noAudioLabel, noAudioTooltip, autoContinueTarget } =
   await import('./src/utils/audioIndex.js')
 const mixed = { withAudio: ['ch-03'], missing: { 'ch-01': 'front_matter', 'ch-04': 'unrecorded' } }
 t('清单里没有的章 → 有音频', chapterHasAudio(mixed, 'ch-03'))
@@ -75,6 +75,17 @@ t('章表：混合书标缺章', Object.keys(tocMissingAudio(mixed)).length === 
 t('章表：纯文本书不逐行标', Object.keys(tocMissingAudio({ withAudio: [], missing: { 'ch-01': 'unrecorded' } })).length === 0)
 t('章表：无清单不标', Object.keys(tocMissingAudio(null)).length === 0)
 t('标签与提示语有兜底', noAudioLabel('front_matter') === 'Front matter' && noAudioTooltip('unknown').length > 0)
+
+// 8b. 断章续播：一章放完该不该自动接下一章（纯判据，不碰 vue / audio）
+const chs = [{ id: 'ch-01' }, { id: 'ch-02' }, { id: 'ch-03' }, { id: 'ch-04' }]
+t('中间章、下一章有音频 -> 接着播下一章', autoContinueTarget(mixed, chs, 0) === 1)
+t('中间章再接一步 -> 还是接着播', autoContinueTarget(mixed, chs, 1) === 2)
+t('最后一章 -> -1（停住，不绕回开头）', autoContinueTarget(mixed, chs, 3) === -1)
+t('下一章没音频 -> -1（宁停不跳，不静默越过）', autoContinueTarget(mixed, chs, 2) === -1)
+t('清单缺失不妄断：照样接下一章', autoContinueTarget(null, chs, 0) === 1)
+t('章表为空 / 不是数组 -> -1', autoContinueTarget(mixed, [], 0) === -1 && autoContinueTarget(mixed, null, 0) === -1)
+t('下标不合法（负 / 非整数 / 越界）-> -1', autoContinueTarget(mixed, chs, -1) === -1 && autoContinueTarget(mixed, chs, 1.5) === -1 && autoContinueTarget(mixed, chs, 99) === -1)
+t('下一章没有 id -> -1（不把空章当章）', autoContinueTarget(mixed, [{ id: 'ch-01' }, { id: '' }], 0) === -1)
 
 // 9. 0.6 最小导出：备份包（生词 + 墓碑 + 脏词 + 进度）导出 → 清空 → 回导还原，以及拒收与污染防护
 console.log('\n[0.6 备份包 — 导出 / 回导]')

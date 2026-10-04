@@ -60,7 +60,7 @@ const props = defineProps({
   chapterTitle: { type: String, default: '' }
 })
 
-const emit = defineEmits(['time', 'next-track', 'prev-track'])
+const emit = defineEmits(['time', 'next-track', 'prev-track', 'ended'])
 
 // ---- state machine ----
 
@@ -407,6 +407,9 @@ function onAudioEnded() {
   // 保持 paused 状态而非 none → 锁屏 play 按钮仍可用，用户可重播本章（Q5 fix）
   if (hasMediaSession) navigator.mediaSession.playbackState = 'paused'
   if (state.value === 'playing') stopAll()
+  // 断章续播：只把「本章放完了」这件事交回上层。组件自己不判断下一章 ——
+  // 它不知道章表，也不知道下一章有没有音频。
+  emit('ended')
 }
 
 function onAudioError() {

@@ -332,6 +332,29 @@ console.log('\n[authapi — 端到端：登录限流]')
   t('IP 桶到线 -> 连没见过的邮箱也 429', ipLocked.status === 429)
 }
 
+console.log('\n[authapi — 端到端：注册 / 重发限流给的等待秒数（回归：曾经恒等于 1 秒）]')
+{
+  const db = newDb()
+  const env = { DB: d1(db) }
+  const ORIGIN = 'https://my-reader.ferrari11.com'
+  const SITE = 'https://my-reader.ferrari11.com'
+  const post = (path, body) => new Request(SITE + path, {
+    method: 'POST', headers: { Origin: ORIGIN, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+  const NOW = Date.now()
+
+  for (let i = 0; i < 10; i++) await env.DB.prepare(SQL_INSERT_ATTEMPT).bind('register-ip', 'unknown', NOW).run()
+  const reg = await handleAuth(post('/api/auth/register', { email: 'x1@qq.com', password: 'correct horse 1' }), env)
+  t('注册 IP 桶到线 -> 429', reg.status === 429)
+  t('注册 429 的 retryAfter = 3600 秒（不是 1 秒）', (await reg.json()).retryAfter === 3600)
+  t('注册 429 的 Retry-After 头 = 3600', reg.headers.get('Retry-After') === '3600')
+
+  for (let i = 0; i < 10; i++) await env.DB.prepare(SQL_INSERT_ATTEMPT).bind('verify-ip', 'unknown', NOW).run()
+  const ver = await handleAuth(post('/api/auth/verify-request', { email: 'x2@qq.com' }), env)
+  t('重发 IP 桶到线 -> 429', ver.status === 429)
+  t('重发 429 的 retryAfter = 3600 秒', (await ver.json()).retryAfter === 3600)
+}
+
 console.log('\n[authapi — 端到端：重置密码]')
 {
   const db = newDb()
