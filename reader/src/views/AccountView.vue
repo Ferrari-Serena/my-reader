@@ -1,6 +1,8 @@
 <template>
   <div class="account-view">
     <p v-if="auth.notice.value" class="banner notice">{{ auth.notice.value }}</p>
+    <!-- 认领提示走独立横幅：它是后台异步发生的，不该被表单流程的 notice 盖掉 -->
+    <p v-if="auth.claimNotice.value" class="banner notice">{{ auth.claimNotice.value }}</p>
 
     <!-- 已登录 -->
     <template v-if="auth.user.value">

@@ -27,7 +27,10 @@ const state = reactive({
   ready: false, // 首次 me() 是否已回来
   busy: false,
   error: '',
-  notice: ''
+  notice: '',
+  // 与 notice 分开一个槽：认领是**后台异步**发生的，而 notice 是表单流程自己在写，
+  // 两者抢同一个位置时谁后写谁赢 —— 注册那一条就把「已并入账号」盖掉了（真机实测抓到）。
+  claimNotice: ''
 })
 
 let _started = false
@@ -138,6 +141,7 @@ export async function signOut() {
     state.csrf = ''
     state.ready = true
     state.busy = false
+    state.claimNotice = ''
   }
 }
 
@@ -156,6 +160,9 @@ export async function claim(code) {
 }
 
 export function note(msg) { state.notice = msg }
+
+/** 认领同步码后的一句话（走独立横幅，不与表单提示争位置） */
+export function noteClaim(msg) { state.claimNotice = msg }
 export function clearMessages() { state.error = ''; state.notice = '' }
 
 export function useAuth() {
@@ -167,6 +174,7 @@ export function useAuth() {
     busy: computed(() => state.busy),
     error: computed(() => state.error),
     notice: computed(() => state.notice),
-    signIn, signUp, signOut, sendReset, resendVerify, claim, loadMe, note, clearMessages
+    claimNotice: computed(() => state.claimNotice),
+    signIn, signUp, signOut, sendReset, resendVerify, claim, loadMe, note, noteClaim, clearMessages
   }
 }

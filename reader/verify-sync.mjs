@@ -556,7 +556,7 @@ console.log('\n[第 3 步 — reconcileTenant：把「认领」与「换键」�
         user.value = { ...user.value, syncCode: 'MAINCODE' }
         return { ok: true, status: 200, data: { ok: true, code: 'MAINCODE', claimed: true } }
       },
-      note: (m) => notices.push(m),
+      noteClaim: (m) => notices.push(m),
     }
   }
 

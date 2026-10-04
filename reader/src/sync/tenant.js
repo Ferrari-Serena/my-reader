@@ -58,7 +58,7 @@ export async function reconcileTenant(auth) {
     await sync.adoptCode(code)
     // 真认领才提一句；换新设备登录（只是接管）不提，免得每次开账号页都弹一句
     if (r.data.claimed) {
-      auth.note('Your words and progress on this device are now part of this account.')
+      auth.noteClaim('Your words and progress on this device are now part of this account.')
     }
     return { action, code, claimed: !!r.data.claimed }
   } finally {
