@@ -190,5 +190,36 @@ const tiny = entries.slice(0, 5)
 const tinyQs = generateQuestions(tiny, tiny, [], 20)
 t('小词池不崩溃且缩减', Array.isArray(tinyQs) && tinyQs.length <= 5)
 
+// ═══ 5. 0.3 分词口径（连字符复合词 + NGSL 例外） ═══
+console.log('\n[dict 分词口径]')
+
+// 连字符复合词：改口径前 tokenize 只吃 [a-zA-Z]{3,}，well-known 被拆成 well + known
+// 两个碎片、两个都在 NGSL 里 → 整条词被滤掉，点它只能联网（0.3 修的系统性缺口）
+{
+  const compoundProbes = ['well-known', 'after-dinner', 'passer-by', 'self-indulgence', 'pocket-handkerchief']
+  const compoundMiss = compoundProbes.filter(w => {
+    const k = resolveDictKey(w, jw, alias)
+    return !k || !(jw[k].definitions || []).length
+  })
+  t(`连字符复合词离线命中（${compoundProbes.length} 个探针）`, compoundMiss.length === 0, '落空: ' + compoundMiss.join(', '))
+
+  const wk = resolveDictKey('well-known', jw, alias)
+  t('复合词以整体为词头（不是拆成 well + known）',
+    !!wk && jw[wk].lemma === 'well-known' && (jw[wk].surfaces || []).includes('well-known'))
+}
+
+// NGSL 例外：clothes / ground 的 ECDICT 词头是 clothe / grind（语义不同），
+// 按词头过滤会把正文里真正会点的「衣服 / 地面」整条滤掉
+// → 这两条以自身为词头、不过 NGSL 滤网
+{
+  const ck = resolveDictKey('clothes', jw, alias)
+  t('NGSL 例外 clothes 离线命中', !!ck && (jw[ck].definitions || []).length > 0)
+  t('clothes 是自己的词头（不是 clothe 的别名）', !!ck && ck === 'clothes' && jw[ck].lemma === 'clothes')
+
+  const gk = resolveDictKey('ground', jw, alias)
+  t('NGSL 例外 ground 离线命中', !!gk && (jw[gk].definitions || []).length > 0)
+  t('ground 是自己的词头（不是 grind 的别名）', !!gk && gk === 'ground' && jw[gk].lemma === 'ground')
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
