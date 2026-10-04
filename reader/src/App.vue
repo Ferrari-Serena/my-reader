@@ -67,7 +67,8 @@ const showTabbar = computed(() => {
   return ['BookList', 'Vocabulary', 'Flashcards', 'Quiz', 'Account'].includes(route.name)
 })
 const showBack = computed(() => {
-  return route.name === 'Reader'
+  // 账号页也要一条退路：那里唯一的按钮是「登出」，手快很容易误点
+  return route.name === 'Reader' || route.name === 'Account'
 })
 const backLabel = computed(() => 'Home')
 

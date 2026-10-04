@@ -3,19 +3,33 @@
     <p v-if="auth.notice.value" class="banner notice">{{ auth.notice.value }}</p>
 
     <!-- 已登录 -->
-    <section v-if="auth.user.value" class="card">
-      <h2 class="card-title">Signed in</h2>
-      <p class="email">{{ auth.user.value.email }}</p>
-      <p v-if="auth.user.value.emailVerified" class="line ok">✅ Email verified</p>
-      <p v-else class="line warn">
-        ⚠️ Email not verified yet —
-        <button class="link" :disabled="auth.busy.value" @click="doResend">resend the link</button>
-      </p>
-      <p class="hint">Books, words and progress on this device stay put when you sign out.</p>
-      <button class="btn" :disabled="auth.busy.value" @click="doSignOut">
-        {{ auth.busy.value ? 'Signing out…' : 'Sign out' }}
-      </button>
-    </section>
+    <template v-if="auth.user.value">
+      <section class="card">
+        <h2 class="card-title">Signed in</h2>
+        <p class="email">{{ auth.user.value.email }}</p>
+        <p v-if="auth.user.value.emailVerified" class="line ok">✅ Email verified</p>
+        <p v-else class="line warn">
+          ⚠️ Email not verified yet —
+          <button class="link" :disabled="auth.busy.value" @click="doResend">resend the link</button>
+        </p>
+        <p class="hint">Books, words and progress on this device stay put when you sign out.</p>
+      </section>
+
+      <!-- 登出：**单独放到页面最下面 + 二次确认**。它是这一页唯一的破坏性动作，
+           贴着上面的信息放，手快一点就退出去了。 -->
+      <div class="danger-zone">
+        <button v-if="!confirmingOut" class="btn" @click="confirmingOut = true">Sign out</button>
+        <div v-else class="confirm">
+          <p class="confirm-text">Sign out of this device?</p>
+          <div class="confirm-actions">
+            <button class="btn" :disabled="auth.busy.value" @click="confirmingOut = false">Cancel</button>
+            <button class="btn danger" :disabled="auth.busy.value" @click="doSignOut">
+              {{ auth.busy.value ? 'Signing out…' : 'Yes, sign out' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <!-- 未登录 -->
     <template v-else>
@@ -93,6 +107,7 @@ const email = ref('')
 const password = ref('')
 const confirm = ref('')
 const formError = ref('')
+const confirmingOut = ref(false)
 
 onMounted(() => { auth.loadMe() })
 
@@ -124,6 +139,7 @@ const canSubmit = computed(() => {
 })
 
 function setMode(next) {
+  confirmingOut.value = false
   mode.value = next
   formError.value = ''
   password.value = ''
@@ -172,7 +188,11 @@ async function submit() {
 }
 
 function doResend() { auth.resendVerify() }
-function doSignOut() { auth.signOut() }
+
+function doSignOut() {
+  confirmingOut.value = false
+  auth.signOut()
+}
 </script>
 
 <style scoped>
@@ -305,5 +325,37 @@ function doSignOut() { auth.signOut() }
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-secondary, #6e6e73);
+}
+
+.danger-zone {
+  margin: 28px 0 8px;
+}
+
+.confirm {
+  border: 1px solid #f0c2bb;
+  background: #fdf3f2;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.confirm-text {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #8a2b1d;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.confirm-actions .btn {
+  margin-top: 0;
+}
+
+.btn.danger {
+  border-color: #c0392b;
+  background: #c0392b;
+  color: #fff;
 }
 </style>
