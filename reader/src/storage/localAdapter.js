@@ -60,6 +60,29 @@ export function clearTombstones(words) {
   if (changed) writeTombstones(map)
 }
 
+/**
+ * 把外来墓碑并入本地台账（备份回导用）。
+ * 同词取**较晚**的时间戳；**绝不删除本地已有的墓碑** ——
+ * 那是本机还没推出去的删除，被或写掉就会被服务器的旧存活条目静默复活。
+ * @returns {number} 实际并入 / 更新的条数
+ */
+export function mergeTombstones(incoming) {
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return 0
+  const tombs = readTombstones()
+  let n = 0
+  for (const [word, ts] of Object.entries(incoming)) {
+    if (word === '__proto__' || word === 'constructor' || word === 'prototype') continue
+    const key = (word + '').toLowerCase()
+    if (!key || typeof ts !== 'string' || !ts) continue
+    const cur = tombs[key]
+    if (cur && !(ts > cur)) continue // 本地已有同刻或更新的墓碑，不动
+    tombs[key] = ts
+    n++
+  }
+  if (n) writeTombstones(tombs)
+  return n
+}
+
 // ── 待推送脏词集合（0.1） ──────────────────────────────────
 // 与删除台账同理：脏集合以前只活在内存里，页面一关就没了。于是「改了但没推出去」的
 // 改动会随关页一起消失 —— 下次启动脏集合是空的，只有再次修改那个词才会重新标脏，

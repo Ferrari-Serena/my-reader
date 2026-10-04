@@ -6,7 +6,7 @@
 
 - 📖 **分章节阅读** 带 Kokoro TTS 逐章音频 + 段落定位播放
 - 🔍 **点击查词** ECDICT 本地中文释义 + M-W 英文兜底
-- 📝 **生词本** 收藏/搜索/筛选/导出导入 + 跨设备同步
+- 📝 **生词本** 收藏/搜索/筛选/一键备份（导出/回导 JSON）+ 跨设备同步
 - 🔄 **FSRS 闪卡** 间隔复习 + 背面拼写默写
 - ✅ **测验** 句子语境填空 + 选择题 + 错题重练 + SAT 专项 + 词组测试
 - 📗 **词组高亮** 阅读页收藏词所在词组整体标记
@@ -18,7 +18,7 @@
 
 ## 测试
 
-五套纯逻辑测试（合计 247 条），CI 在部署前跑；本地也可单跑：
+五套纯逻辑测试（合计 280 条），CI 在部署前跑；本地也可单跑：
 
 ```bash
 cd reader && npm test   # verify-core / verify-sync / smoke-test
@@ -27,7 +27,7 @@ cd worker && npm test   # verify-worker / verify-sql
 
 - `reader/verify-core.mjs` — 词典 / 分词 / 词组 / 存储核心
 - `reader/verify-sync.mjs` — 同步合并、keepalive 预算裁剪、进度迁移、脏词持久化
-- `reader/smoke-test.mjs` — 生词本读写冒烟
+- `reader/smoke-test.mjs` — 生词本读写冒烟（含 0.6 备份包导出/回导）
 - `worker/verify-worker.mjs` — Worker 路由 / 缓存 / CORS / 限流纯函数
 - `worker/verify-sql.mjs` — 用 `node:sqlite` 真跑 D1 SQL（同步 / 限流）
 

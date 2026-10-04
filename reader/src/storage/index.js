@@ -15,6 +15,7 @@ export {
   importVocabulary,
   loadTombstones,
   clearTombstones,
+  mergeTombstones,
   loadDirtyWords,
   saveDirtyWords,
   sync
