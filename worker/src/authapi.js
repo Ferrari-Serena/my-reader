@@ -1,0 +1,450 @@
+/**
+ * my-reader 账号端点（第 2 步「开门」· B 块）
+ *
+ *   POST /api/auth/register        { email, password }  → 201 建号 + 发验证信
+ *   POST /api/auth/verify-request  { email }            → 200（一律 200，防枚举）+ 重发验证信
+ *   GET  /api/auth/verify?token=…                       → HTML 结果页（一次性令牌）
+ *   POST /api/auth/login           { email, password }  → 200 + Set-Cookie（会话）
+ *   POST /api/auth/logout                               → 200 + 清 cookie（本地数据一律保留）
+ *   GET  /api/auth/me                                   → 200 当前账号（顺带续期）/ 401
+ *
+ * 设计要点（口径来源：方案 §2.x / §3.1、migrations/0003、auth.js 文件头）
+ *   - 密码与令牌的**原语**全在 auth.js（纯逻辑，99 条断言）；本文件只做「取数据 → 调原语 → 落库」
+ *   - 会话 30 天滚动 + 180 天绝对上限：判定只调 auth.js 的 sessionState / rollSession，不在这里另写一套
+ *   - cookie：httpOnly + Secure + SameSite=Lax + Path=/；同源（站点与 /api/* 同域）→ 不设 Domain
+ *   - 防枚举：邮箱不存在也烧一次 dummyVerify 再回同一个 401，快慢不泄信息
+ *   - 限流：失败计数落 login_attempts（scope = 'ip' | 'email' | 'register-ip'）；
+ *     失败姿态 fail-open（表读/写报错按「没失败过」放行并打日志），与 ratelimit.js 一致
+ *   - CSRF 第一层 = Origin 校验（见 originBlocked）；spec 2.5 要的 token 是第二层，留到 B-5（要前端配合）
+ *
+ * 不在本文件范围：claim（游客认领，D 块）、reset（重置密码，B-2）、delete（注销，F 块）、前端页（G 块）。
+ */
+
+import { corsFor, isAllowedOrigin } from './cors.js'
+import { clientIp } from './ratelimit.js'
+import { sendMail, siteUrl, verifyEmailContent } from './send.js'
+import {
+  SESSION_COOKIE, SESSION_ROLLING_MS, SESSION_ABSOLUTE_MS, VERIFY_TOKEN_MS,
+  normalizeEmail, newToken, tokenHash, sessionState, rollSession,
+  sessionCookie, clearSessionCookie, hashPassword, verifyPassword, dummyVerify,
+  checkPasswordPolicy, needsRehash,
+} from './auth.js'
+
+/** 登录失败滑窗与阈值（同一 (scope,key) 桶内计数） */
+export const LOGIN_WINDOW_MS = 15 * 60 * 1000
+export const LOGIN_MAX_PER_EMAIL = 6
+export const LOGIN_MAX_PER_IP = 30
+
+/** 注册滑窗与阈值（按 IP；防「一台机器狂建号」） */
+export const REGISTER_WINDOW_MS = 60 * 60 * 1000
+export const REGISTER_MAX_PER_IP = 10
+
+/** 失败行的保留时长；只在「该桶恰好清零」这个时机顺手清（与 ratelimit.js 的清法同思路） */
+const ATTEMPT_KEEP_MS = 24 * 60 * 60 * 1000
+
+/** 注册时拿不到「刚插进去那行」的报错就按邮箱占用处理 */
+const UNIQUE_VIOLATION = 'UNIQUE'
+
+// ── SQL：导出是为了让 verify-authapi.mjs 拿**真**语句在真 SQLite 上跑 ──────────
+// （抄一份迟早会和这里漂移，那样的测试没有意义 —— 同 sync.js 的 SQL_ALIVE_UPSERT）
+
+export const SQL_INSERT_USER = `INSERT INTO users
+   (id, email, password_hash, created_at, updated_at, email_verified_at, sync_code, deleted_at)
+   VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)`
+
+/** 登录用：连 password_hash 一起取；**只按归一化邮箱查**（唯一索引就是这个形态） */
+export const SQL_USER_BY_EMAIL = `SELECT id, email, password_hash, email_verified_at, deleted_at
+   FROM users WHERE email = ?`
+
+/** /me 用：不带 password_hash（少一份哈希在内存里游荡） */
+export const SQL_USER_BY_ID = `SELECT id, email, email_verified_at, deleted_at FROM users WHERE id = ?`
+
+/** 邮箱验证：已验过就不覆盖原时刻（COALESCE），但 updated_at 照刷 */
+export const SQL_MARK_VERIFIED = `UPDATE users
+   SET email_verified_at = COALESCE(email_verified_at, ?), updated_at = ? WHERE id = ?`
+
+export const SQL_UPDATE_PASSWORD_HASH = `UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`
+
+export const SQL_INSERT_SESSION = `INSERT INTO sessions
+   (token_hash, user_id, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?, ?)`
+
+export const SQL_SESSION_BY_HASH = `SELECT token_hash, user_id, created_at, last_seen_at, expires_at
+   FROM sessions WHERE token_hash = ?`
+
+export const SQL_ROLL_SESSION = `UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?`
+
+export const SQL_DELETE_SESSION = `DELETE FROM sessions WHERE token_hash = ?`
+
+/** 登录时顺手清该用户已死的会话：滚动窗口过了，或越过绝对上限 */
+export const SQL_PURGE_USER_SESSIONS = `DELETE FROM sessions
+   WHERE user_id = ? AND (expires_at <= ? OR created_at <= ?)`
+
+export const SQL_INSERT_TOKEN = `INSERT INTO auth_tokens
+   (token_hash, user_id, kind, created_at, expires_at, used_at) VALUES (?, ?, ?, ?, ?, NULL)`
+
+/** 重发 = 作废同类未用令牌（口径写在 0003 注释里：旧的由 B 块按 kind 作废） */
+export const SQL_VOID_TOKENS = `DELETE FROM auth_tokens WHERE user_id = ? AND kind = ? AND used_at IS NULL`
+
+export const SQL_TOKEN_BY_HASH = `SELECT token_hash, user_id, kind, created_at, expires_at, used_at
+   FROM auth_tokens WHERE token_hash = ?`
+
+/** 一次性：只允许从「未用过」改成「用过」，重复用 changes = 0 */
+export const SQL_USE_TOKEN = `UPDATE auth_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL`
+
+export const SQL_COUNT_ATTEMPTS = `SELECT COUNT(*) AS n FROM login_attempts
+   WHERE scope = ? AND key = ? AND ts > ?`
+
+export const SQL_INSERT_ATTEMPT = `INSERT INTO login_attempts (scope, key, ts) VALUES (?, ?, ?)`
+
+/** 登录成功后清掉该邮箱的失败行（DDL 注释里的口径） */
+export const SQL_CLEAR_EMAIL_ATTEMPTS = `DELETE FROM login_attempts WHERE scope = 'email' AND key = ?`
+
+export const SQL_PURGE_ATTEMPTS = `DELETE FROM login_attempts WHERE ts < ?`
+
+// ── 小工具 ────────────────────────────────────────────────────────────────────
+
+/** JSON 响应；账号响应一律 no-store（别让任何中间层缓存住凭据或 cookie） */
+function json(cors, data, status = 200, extra = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...cors, ...extra },
+  })
+}
+
+function htmlPage(cors, title, body, status = 200) {
+  const doc = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title></head>
+<body style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.8;max-width:560px;margin:12vh auto;padding:0 20px;color:#222">
+${body}
+</body></html>`
+  return new Response(doc, {
+    status,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...cors },
+  })
+}
+
+/**
+ * 从 Cookie 头里取一个 cookie。
+ * 只做最基本的分号切分 —— 我们自己只写一个 cookie，不需要 RFC 全解析器；
+ * 值里的 '=' 靠「第一个 = 之前是名字」处理，base64url 令牌不含 '='。
+ */
+export function readCookie(header, name) {
+  if (typeof header !== 'string' || !header) return null
+  for (const part of header.split(';')) {
+    const i = part.indexOf('=')
+    if (i < 0) continue
+    if (part.slice(0, i).trim() === name) return part.slice(i + 1).trim()
+  }
+  return null
+}
+
+/**
+ * CSRF 第一层：写操作要求 Origin 缺席或命中白名单。
+ * 浏览器跨站 POST 必带 Origin → 挡掉「evil.com 借用户浏览器打我们」。
+ * 挡不住的正是同站子域（白名单本就放行 *.ferrari11.com）—— 那才是 spec 2.5 要 token 的场景。
+ * 「Origin 缺席即放行」不会松掉这一层的意义：脚本本来就没有用户的 cookie 可用。
+ * 'Origin: null'（沙箱 iframe / file://）也照挡：正常自家页面永远不会发 'null'。
+ */
+export function originBlocked(request, env) {
+  const o = request.headers.get('Origin')
+  return !!o && !isAllowedOrigin(o, env)
+}
+
+/** 数窗口内的失败条数；读失败 → 0（fail-open） */
+export async function attemptCount(env, scope, key, since) {
+  try {
+    const row = await env.DB.prepare(SQL_COUNT_ATTEMPTS).bind(scope, key, since).first()
+    return (row && row.n) || 0
+  } catch (e) {
+    console.error('login_attempts read failed (fail-open):', e.message)
+    return 0
+  }
+}
+
+/** 记一条失败；purgeOld 时顺手清过老的行。整体 fail-open。 */
+export async function noteAttempt(env, scope, key, nowMs, purgeOld = false) {
+  try {
+    if (purgeOld) await env.DB.prepare(SQL_PURGE_ATTEMPTS).bind(nowMs - ATTEMPT_KEEP_MS).run()
+    await env.DB.prepare(SQL_INSERT_ATTEMPT).bind(scope, key, nowMs).run()
+  } catch (e) {
+    console.error('login_attempts insert failed (fail-open):', e.message)
+  }
+}
+
+function retryAfterSec(fromMs, nowMs) {
+  return Math.max(1, Math.ceil((fromMs - nowMs) / 1000))
+}
+
+/** 对外可见的用户形态：**不含** password_hash / deleted_at */
+function publicUser(row) {
+  return { id: row.id, email: row.email, emailVerified: !!row.email_verified_at }
+}
+
+/** 建一个会话行，返回令牌**原文**（只进 cookie；库里只有 sha256） */
+async function createSession(env, userId, nowMs) {
+  const token = newToken(32)
+  await env.DB.prepare(SQL_INSERT_SESSION)
+    .bind(await tokenHash(token), userId, nowMs, nowMs, nowMs + SESSION_ROLLING_MS)
+    .run()
+  return token
+}
+
+/**
+ * 生成验证令牌并发信。作废旧未用令牌在前 —— 重发后老链接立即失效。
+ * 返回 { ok, error }；**发信失败不抛**，由调用方决定怎么告诉用户。
+ */
+async function issueVerifyToken(env, userId, email, nowMs) {
+  await env.DB.prepare(SQL_VOID_TOKENS).bind(userId, 'verify').run()
+  const token = newToken(32)
+  await env.DB.prepare(SQL_INSERT_TOKEN)
+    .bind(await tokenHash(token), userId, 'verify', nowMs, nowMs + VERIFY_TOKEN_MS)
+    .run()
+
+  const site = siteUrl(env)
+  // 链接指向 Worker 自己（/api/auth/verify），不是前端页 —— 点开即验证，不经前端路由
+  const link = `${site}/api/auth/verify?token=${encodeURIComponent(token)}`
+  const { subject, text, html } = verifyEmailContent({ link, site, validHours: VERIFY_TOKEN_MS / 3600000 })
+  const res = await sendMail(env, { to: email, subject, text, html })
+  return res.ok ? { ok: true } : { ok: false, error: res.detail || `resend ${res.status}` }
+}
+
+// ── 端点 ──────────────────────────────────────────────────────────────────────
+
+async function handleRegister(request, env, cors) {
+  let body
+  try { body = await request.json() } catch { return json(cors, { error: 'invalid-json' }, 400) }
+
+  const email = normalizeEmail(body && body.email)
+  if (!email) return json(cors, { error: 'invalid-email' }, 400)
+
+  const policy = checkPasswordPolicy(body && body.password)
+  if (policy) return json(cors, { error: 'weak-password', reason: policy }, 400)
+
+  const nowMs = Date.now()
+  const ip = clientIp(request)
+
+  const ipN = await attemptCount(env, 'register-ip', ip, nowMs - REGISTER_WINDOW_MS)
+  if (ipN >= REGISTER_MAX_PER_IP) {
+    const retryAfter = retryAfterSec(nowMs - REGISTER_WINDOW_MS + REGISTER_WINDOW_MS, nowMs)
+    return json(cors, { error: 'too-many-attempts', retryAfter }, 429, { 'Retry-After': String(retryAfter) })
+  }
+  await noteAttempt(env, 'register-ip', ip, nowMs, ipN === 0)
+
+  // 占用检测与插入之间仍有竞态窗口，靠 users.email 的唯一索引兜底（见 catch）
+  const existing = await env.DB.prepare(SQL_USER_BY_EMAIL).bind(email).first()
+  if (existing) return json(cors, { error: 'email-taken' }, 409)
+
+  const userId = crypto.randomUUID()
+  const hash = await hashPassword(String(body.password))
+  try {
+    await env.DB.prepare(SQL_INSERT_USER).bind(userId, email, hash, nowMs, nowMs).run()
+  } catch (e) {
+    if (String(e && e.message).includes(UNIQUE_VIOLATION)) return json(cors, { error: 'email-taken' }, 409)
+    throw e
+  }
+
+  const sent = await issueVerifyToken(env, userId, email, nowMs)
+  // 账号已建、信没发出去：如实告诉客户端「信没发成，可以重发」，不假装成功
+  return json(cors, { ok: true, email, emailVerified: false, mailSent: sent.ok, ...(sent.ok ? {} : { mailError: sent.error }) }, 201)
+}
+
+async function handleVerifyRequest(request, env, cors) {
+  let body
+  try { body = await request.json() } catch { return json(cors, { error: 'invalid-json' }, 400) }
+
+  const email = normalizeEmail(body && body.email)
+  if (!email) return json(cors, { error: 'invalid-email' }, 400)
+
+  const nowMs = Date.now()
+  const ip = clientIp(request)
+  const ipN = await attemptCount(env, 'verify-ip', ip, nowMs - REGISTER_WINDOW_MS)
+  if (ipN >= REGISTER_MAX_PER_IP) {
+    const retryAfter = retryAfterSec(nowMs - REGISTER_WINDOW_MS + REGISTER_WINDOW_MS, nowMs)
+    return json(cors, { error: 'too-many-attempts', retryAfter }, 429, { 'Retry-After': String(retryAfter) })
+  }
+  await noteAttempt(env, 'verify-ip', ip, nowMs, ipN === 0)
+
+  const user = await env.DB.prepare(SQL_USER_BY_EMAIL).bind(email).first()
+  // 无论账号在不在、验没验过，一律回同一个 200 —— 否则这个端点就成了「邮箱是否注册」的探测器
+  if (user && !user.email_verified_at) {
+    const sent = await issueVerifyToken(env, user.id, user.email, nowMs)
+    if (!sent.ok) console.error('verify-request send failed:', sent.error)
+  }
+  return json(cors, { ok: true })
+}
+
+async function handleVerify(request, env, cors) {
+  const token = new URL(request.url).searchParams.get('token') || ''
+  const fail = (title, body) => htmlPage(cors, title, body, 200)
+
+  if (!token) {
+    return fail('链接不完整', '<h2>链接不完整</h2><p>这封邮件里的链接似乎被截断了。请回到 my-reader 重新发送一封。</p>')
+  }
+
+  const nowMs = Date.now()
+  const row = await env.DB.prepare(SQL_TOKEN_BY_HASH).bind(await tokenHash(token)).first()
+
+  // 查不到、类型不对、已用过、已过期：四种情况给四种说法 —— 这里**不怕**枚举，
+  // 令牌是 32 字节随机串，猜不中；而且这个页面的受众本来就是点开邮件的本人。
+  if (!row || row.kind !== 'verify') {
+    return fail('链接无效', '<h2>链接无效</h2><p>这条链接无效或已被替换。请回到 my-reader 重新发送一封。</p>')
+  }
+  if (row.used_at) {
+    return fail('链接已用过', '<h2>链接已经用过了</h2><p>一个链接只能用一次。如果你的邮箱还没验证成功，请重新发送一封。</p>')
+  }
+  if (nowMs > row.expires_at) {
+    return fail('链接已过期', '<h2>链接已过期</h2><p>验证链接 24 小时内有效。请回到 my-reader 重新发送一封。</p>')
+  }
+
+  // 标记已用在前：两个标签页同时点开时，只有 changes=1 的那个继续往下走
+  const used = await env.DB.prepare(SQL_USE_TOKEN).bind(nowMs, row.token_hash).run()
+  if (!((used && used.meta && used.meta.changes) || 0)) {
+    return fail('链接已用过', '<h2>链接已经用过了</h2><p>请回到 my-reader 重新发送一封。</p>')
+  }
+  await env.DB.prepare(SQL_MARK_VERIFIED).bind(nowMs, nowMs, row.user_id).run()
+  // 验证成功即作废该账号其余未用的验证链接（重发链路会留下几条，别让它们继续有效）
+  try {
+    await env.DB.prepare(SQL_VOID_TOKENS).bind(row.user_id, 'verify').run()
+  } catch (e) {
+    console.error('void verify tokens failed (非致命):', e.message)
+  }
+
+  const site = siteUrl(env)
+  return htmlPage(cors, '邮箱验证成功',
+    `<h2>邮箱验证成功 ✅</h2>
+     <p>现在回 my-reader 登录就能用了。</p>
+     <p><a href="${site}/">打开 my-reader</a></p>`)
+}
+
+async function handleLogin(request, env, cors) {
+  let body
+  try { body = await request.json() } catch { return json(cors, { error: 'invalid-json' }, 400) }
+
+  const email = normalizeEmail(body && body.email)
+  if (!email) return json(cors, { error: 'invalid-email' }, 400)
+  const password = typeof (body && body.password) === 'string' ? body.password : ''
+
+  const nowMs = Date.now()
+  const ip = clientIp(request)
+
+  const ipN = await attemptCount(env, 'ip', ip, nowMs - LOGIN_WINDOW_MS)
+  const mailN = await attemptCount(env, 'email', email, nowMs - LOGIN_WINDOW_MS)
+  if (ipN >= LOGIN_MAX_PER_IP || mailN >= LOGIN_MAX_PER_EMAIL) {
+    const retryAfter = Math.ceil(LOGIN_WINDOW_MS / 1000)
+    return json(cors, { error: 'too-many-attempts', retryAfter }, 429, { 'Retry-After': String(retryAfter) })
+  }
+
+  const user = await env.DB.prepare(SQL_USER_BY_EMAIL).bind(email).first()
+  // ⚠️ 注销冷静期（deleted_at 非空）当下按「凭据无效」处理 —— 不新开一个「这号在注销中」的
+  //    枚举口子；F 块落地注销时再定「冷静期内登录算不算撤销注销」。
+  const ok = user && !user.deleted_at ? await verifyPassword(password, user.password_hash) : false
+
+  if (!ok) {
+    // 邮箱不存在也烧掉同等时间：响应快慢不能回答「这个邮箱注册过没有」
+    if (!user) await dummyVerify(password)
+    const purge = ipN === 0 && mailN === 0
+    await noteAttempt(env, 'ip', ip, nowMs, purge)
+    await noteAttempt(env, 'email', email, nowMs)
+    return json(cors, { error: 'invalid-credentials' }, 401)
+  }
+
+  // 成功：清掉该邮箱的失败行（DDL 注释的口径），顺手清死会话
+  try {
+    await env.DB.prepare(SQL_CLEAR_EMAIL_ATTEMPTS).bind(email).run()
+    await env.DB.prepare(SQL_PURGE_USER_SESSIONS).bind(user.id, nowMs, nowMs - SESSION_ABSOLUTE_MS).run()
+  } catch (e) {
+    console.error('login cleanup failed (非致命):', e.message)
+  }
+
+  // 圈数升档：当前口径下永远为假（存的已是顶格 10 万），平台放开上限后才有意义
+  if (needsRehash(user.password_hash)) {
+    try {
+      await env.DB.prepare(SQL_UPDATE_PASSWORD_HASH).bind(await hashPassword(password), nowMs, user.id).run()
+    } catch (e) {
+      console.error('rehash failed (非致命):', e.message)
+    }
+  }
+
+  const token = await createSession(env, user.id, nowMs)
+  return json(cors, { ok: true, user: publicUser(user) }, 200, {
+    'Set-Cookie': sessionCookie(token, Math.floor(SESSION_ROLLING_MS / 1000)),
+  })
+}
+
+async function handleLogout(request, env, cors) {
+  const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)
+  if (token) {
+    try {
+      await env.DB.prepare(SQL_DELETE_SESSION).bind(await tokenHash(token)).run()
+    } catch (e) {
+      console.error('logout delete failed (非致命):', e.message)
+    }
+  }
+  // 本地数据一律保留 —— 登出只清服务端会话与本机登录标记，不动书/生词/进度
+  return json(cors, { ok: true }, 200, { 'Set-Cookie': clearSessionCookie() })
+}
+
+async function handleMe(request, env, cors) {
+  const nowMs = Date.now()
+  const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)
+  if (!token) return json(cors, { error: 'unauthenticated' }, 401)
+
+  const hash = await tokenHash(token)
+  const row = await env.DB.prepare(SQL_SESSION_BY_HASH).bind(hash).first()
+  const state = sessionState(row, nowMs)
+  if (state !== 'ok') {
+    // 死会话顺手清掉（坏数据/过期/越绝对上限都清），免得表越滚越大
+    if (row) {
+      try { await env.DB.prepare(SQL_DELETE_SESSION).bind(hash).run() } catch (e) { console.error('session gc failed:', e.message) }
+    }
+    return json(cors, { error: 'unauthenticated', reason: state }, 401, { 'Set-Cookie': clearSessionCookie() })
+  }
+
+  const rolled = rollSession(row, nowMs)
+  const user = await env.DB.prepare(SQL_USER_BY_ID).bind(row.user_id).first()
+  if (!user || user.deleted_at) {
+    try { await env.DB.prepare(SQL_DELETE_SESSION).bind(hash).run() } catch { /* 尽力而为 */ }
+    return json(cors, { error: 'unauthenticated' }, 401, { 'Set-Cookie': clearSessionCookie() })
+  }
+
+  try {
+    await env.DB.prepare(SQL_ROLL_SESSION).bind(rolled.last_seen_at, rolled.expires_at, hash).run()
+  } catch (e) {
+    // 续期失败不挡住这次请求：cookie 还是有效的，下次访问再续
+    console.error('session roll failed (非致命):', e.message)
+  }
+
+  const maxAge = Math.max(0, Math.floor((rolled.expires_at - nowMs) / 1000))
+  return json(cors, { ok: true, user: publicUser(user) }, 200, {
+    'Set-Cookie': sessionCookie(token, maxAge),
+  })
+}
+
+/**
+ * /api/auth/* 分发。不匹配就回 null，让 index.js 继续往下走（与 handleSync 同形）。
+ */
+export async function handleAuth(request, env) {
+  const url = new URL(request.url)
+  if (!url.pathname.startsWith('/api/auth/')) return null
+
+  const cors = corsFor(request, env)
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors })
+
+  const isWrite = request.method === 'POST'
+  if (isWrite && originBlocked(request, env)) return json(cors, { error: 'bad-origin' }, 403)
+
+  try {
+    if (isWrite && url.pathname === '/api/auth/register') return await handleRegister(request, env, cors)
+    if (isWrite && url.pathname === '/api/auth/verify-request') return await handleVerifyRequest(request, env, cors)
+    if (isWrite && url.pathname === '/api/auth/login') return await handleLogin(request, env, cors)
+    if (isWrite && url.pathname === '/api/auth/logout') return await handleLogout(request, env, cors)
+    if (request.method === 'GET' && url.pathname === '/api/auth/verify') return await handleVerify(request, env, cors)
+    if (request.method === 'GET' && url.pathname === '/api/auth/me') return await handleMe(request, env, cors)
+    return json(cors, { error: 'not-found' }, 404)
+  } catch (e) {
+    console.error('auth error:', e && e.message, e && e.stack)
+    return json(cors, { error: 'internal' }, 500)
+  }
+}

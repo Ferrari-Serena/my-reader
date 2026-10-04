@@ -8,12 +8,14 @@
  *                         被限流时 → 429 { error, scope } + Retry-After 头
  * GET /api/audio/<bookId>/<file>  → R2 对象本体（支持 Range → 206 / 416）
  * HEAD /api/audio/<bookId>/<file> → 同上但不回 body（上传校验脚本探活用）
+ * POST/GET /api/auth/*  → 账号与会话（见 authapi.js）
  * GET /health           → { status: 'ok' }
  *
  * 绑定：env.DB = D1 数据库（表见 schema.sql）；env.MW_API_KEY = wrangler secret
  */
 
 import { handleSync } from './sync.js'
+import { handleAuth } from './authapi.js'
 import { parseRange } from './range.js'
 import { corsFor } from './cors.js'
 import { takeToken, clientIp } from './ratelimit.js'
@@ -40,6 +42,10 @@ export default {
     // 同步端点分发（匹配 /api/sync/*）
     const syncRes = await handleSync(request, env)
     if (syncRes !== null) return syncRes
+
+    // 账号端点分发（匹配 /api/auth/*）
+    const authRes = await handleAuth(request, env)
+    if (authRes !== null) return authRes
 
     if (url.pathname === '/health') {
       return json(cors, { status: 'ok' })
