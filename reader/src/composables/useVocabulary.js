@@ -7,6 +7,14 @@ import { reactive, computed } from 'vue'
 import * as storage from '../storage/index.js'
 import { SCHEMA_VERSION, migrate } from '../storage/schema.js'
 import { nowIso } from '../sync/clock.js'
+import { applyRemoteProgress } from '../sync/progress.js'
+import {
+  EXPORT_KIND,
+  EXPORT_VERSION,
+  MAX_BACKUP_BYTES,
+  analyzeBackup,
+  collectProgress
+} from '../utils/exportBundle.js'
 
 const state = reactive({
   words: {},   // key: lemma 小写 → WordEntry
@@ -267,6 +275,82 @@ async function importJSON(file) {
   return result
 }
 
+/**
+ * 最小导出（0.6）：一键导出整包本地数据。
+ * 包含生词（含错题/SRS 槽位）、删除台账、待推脏词、阅读/音频进度；
+ * 目前没有独立的笔记/设置存储键（见 data/backup.schema.md）。
+ * 输出形态与 analyzeBackup / importBackup 对称：导出后必须能原样回导。
+ */
+async function exportBackup() {
+  await init()
+  const doc = await storage.loadVocabulary()
+  return {
+    app: 'my-reader',
+    type: EXPORT_KIND,
+    exportVersion: EXPORT_VERSION,
+    exportedAt: nowIso(),
+    data: {
+      vocabulary: {
+        version: doc.version || SCHEMA_VERSION,
+        updatedAt: doc.updatedAt || nowIso(),
+        words: { ...doc.words }
+      },
+      tombstones: storage.loadTombstones(),
+      dirty: storage.loadDirtyWords(),
+      progress: collectProgress()
+    }
+  }
+}
+
+/**
+ * 回导备份包。合并口径与「跨设备拉取」完全一致（同一套 planMerge）：
+ *   - 生词：LWW；本地已有且更新的条目**保留本地**（回导不覆盖更晚的学习记录）
+ *   - 墓碑：备份里仍生效的删除**并入本地台账**（下次推送把删除发出去），
+ *           但绝不删除本地已有的墓碑 —— 那是本机还没推出去的删除
+ *   - 进度：LWW 写回同名 localStorage 键
+ * @returns {{words:{applied,removed}, tombstones:number, progress:number}}；文件非法时 throw Error
+ */
+async function importBackup(file) {
+  await init()
+  if (!file || typeof file.text !== 'function') throw new Error('No file selected')
+  if (typeof file.size === 'number' && file.size > MAX_BACKUP_BYTES) {
+    throw new Error('File too large (max 10 MB)')
+  }
+  let raw
+  try { raw = JSON.parse(await file.text()) } catch { throw new Error('Not valid JSON') }
+  const res = analyzeBackup(raw)
+  if (!res.ok) throw new Error(res.error)
+  const { vocabulary, tombstones, dirty, progress } = res.data
+
+  // 单词 + 墓碑：复用与远程拉取同一条合并链（含本地未推删除保护）
+  const { mergeAndApply } = await import('./useSync.js')
+  const plan = await mergeAndApply(useVocabulary(), vocabulary.words, tombstones)
+
+  // 备份里仍生效的删除并入本地台账 → 下次推送把删除发给服务器。
+  // 存活词不并（说明是「删了又收藏」，复活优先）。
+  const stillDeleted = {}
+  for (const [word, ts] of Object.entries(tombstones)) {
+    if (state.words[word]) continue
+    stillDeleted[word] = ts
+  }
+  const tombstonesMerged = storage.mergeTombstones(stillDeleted)
+
+  // 备份带来的数据对服务器都是「本机新数据」 → 标脏推一次；
+  // 导出时还欠推的脏词（dirty）也一并带上。
+  const dirtyList = new Set([...plan.apply.map(p => p.word), ...dirty, ...Object.keys(stillDeleted)])
+  if (dirtyList.size) markDirty(...dirtyList)
+
+  const writtenProgress = applyRemoteProgress(progress)
+
+  if (dirtyList.size) Promise.resolve().then(() => _schedulePush())
+
+  return {
+    words: { applied: plan.apply.length, removed: plan.remove.length },
+    tombstones: tombstonesMerged,
+    progress: writtenProgress.length
+  }
+}
+
 // 懒加载 useSync（避免循环导入：useSync → useVocabulary → useSync）
 let _pushCache = undefined
 function _schedulePush() {
@@ -299,6 +383,8 @@ export function useVocabulary() {
     clearAll,
     exportJSON,
     importJSON,
+    exportBackup,
+    importBackup,
     // 同步层用来做「只推脏词」：useSync 取走脏集合，推送失败再还回来
     markDirty,
     clearDirty,

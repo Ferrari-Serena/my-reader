@@ -6,13 +6,13 @@
       <div class="menu-wrap">
         <button class="menu-btn" @click.stop="menuOpen = !menuOpen">⋯</button>
         <div v-if="menuOpen" class="menu-dropdown" @click.stop>
-          <button class="menu-item" @click="doExport">Export JSON</button>
-          <button class="menu-item" @click="fileInput?.click(); menuOpen = false">Import JSON</button>
+          <button class="menu-item" @click="doExportBackup">⬇ Export Backup</button>
+          <button class="menu-item" @click="fileInput?.click(); menuOpen = false">⬆ Import Backup</button>
           <button class="menu-item" @click="showSyncPanel = true; menuOpen = false">↻ Sync Devices</button>
           <button class="menu-item danger" @click="doClearAll">Clear all</button>
         </div>
       </div>
-      <input ref="fileInput" type="file" accept=".json,application/json" style="display:none" @change="doImport" />
+      <input ref="fileInput" type="file" accept=".json,application/json" style="display:none" @change="doImportBackup" />
     </div>
 
     <!-- Sync Panel -->
@@ -95,7 +95,7 @@
       <p class="empty-hint">While reading, tap any word and choose “+ Add to Words”.</p>
       <div class="empty-actions">
         <router-link to="/books" class="action-btn primary">Go to Books</router-link>
-        <button class="action-btn" @click="fileInput?.click()">Import JSON</button>
+        <button class="action-btn" @click="fileInput?.click()">Import Backup</button>
       </div>
     </div>
 
@@ -274,27 +274,30 @@ watch(vocab.persistFailed, (failed) => {
 
 // ---- export / import / clear ----
 
-async function doExport() {
+async function doExportBackup() {
   menuOpen.value = false
-  const envelope = await vocab.exportJSON()
+  const envelope = await vocab.exportBackup()
   const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `my-reader-vocab-${new Date().toISOString().slice(0, 10)}.json`
+  a.download = `my-reader-backup-${new Date().toISOString().slice(0, 10)}.json`
   a.click()
   URL.revokeObjectURL(url)
+  const n = Object.keys(envelope.data.vocabulary.words).length
+  const p = Object.keys(envelope.data.progress).length
+  showToast(`Backup exported — ${n} words, ${p} reading positions`)
 }
 
-async function doImport(event) {
+async function doImportBackup(event) {
   const file = event.target.files?.[0]
   event.target.value = '' // 允许再次选同一文件
   if (!file) return
   try {
-    const { added, skipped } = await vocab.importJSON(file)
-    showToast(`Imported ${added} new words, skipped ${skipped} existing`)
+    const r = await vocab.importBackup(file)
+    showToast(`Backup restored — ${r.words.applied} words, ${r.tombstones} deletions, ${r.progress} positions`)
   } catch (e) {
-    showToast(`Import failed: ${e.message}`)
+    showToast(`Backup restore failed: ${e.message}`)
   }
 }
 
