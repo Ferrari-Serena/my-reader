@@ -19,15 +19,16 @@ function t(name, cond) {
   else { fail++; console.log(`  FAIL ${name}`) }
 }
 
-// ── 建库：用真的 schema.sql，再补上 0001 迁移（schema.sql 已是最终形态，
-//    这里单独验证迁移脚本本身能跑通）
+// ── 建库 A：手搓 sync_data 初版，再按序跑 0001 / 0002 / 0003 —— 验证迁移链本身能跑通
+//    （空库跑 schema.sql 那条路见文件末尾「schema.sql 单独建库」）
 const db = new DatabaseSync(':memory:')
 db.exec(`CREATE TABLE sync_data (
   code TEXT NOT NULL, word TEXT NOT NULL, payload TEXT NOT NULL,
   updated_at TEXT NOT NULL, PRIMARY KEY (code, word))`)
 db.exec(readFileSync(new URL('./migrations/0001_sync_tombstones_progress.sql', import.meta.url), 'utf8'))
 // 0002 限流表（幂等，见 migrations/0002_rate_limit.sql）
-db.exec(readFileSync(new URL('./migrations/0002_rate_limit.sql', import.meta.url), 'utf8'))
+db.exec(readFileSync(new URL('./migrations/0002_rate_limit.sql', import.meta.url), 'utf8'))// 0003 账号 / 会话 / 失败计数 / 恢复码（幂等，见 migrations/0003_users_sessions.sql）
+db.exec(readFileSync(new URL('./migrations/0003_users_sessions.sql', import.meta.url), 'utf8'))
 
 const CODE = 'TESTCODE'
 const alive = db.prepare(SQL_ALIVE_UPSERT)
@@ -140,5 +141,81 @@ console.log('\n[0002 迁移 + takeToken 集成（0.0 止血 · 第二半）]')
       { ip: 'h', now: NOW })).allowed === true)
 }
 
+console.log('\n[0003 迁移 — 账号 / 会话 / 失败计数 / 邮件令牌（第 2 步「开门」）]')
+{
+  const hasTable = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name=?").get(n).n === 1
+  const hasIndex = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index' AND name=?").get(n).n === 1
+
+  t('users 建出', hasTable('users'))
+  t('sessions 建出', hasTable('sessions'))
+  t('login_attempts 建出', hasTable('login_attempts'))
+  t('auth_tokens 建出', hasTable('auth_tokens'))
+
+  t('users 有 email_verified_at 列（邮箱验证）', db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('users') WHERE name='email_verified_at'").get().n === 1)
+  t('users.email 有唯一索引', hasIndex('idx_users_email'))
+  t('users.sync_code 有唯一索引（一账号一主码）', hasIndex('idx_users_sync_code'))
+  t('sessions 有 (user_id) 索引', hasIndex('idx_sessions_user'))
+  t('sessions 有 (expires_at) 索引（过期清理）', hasIndex('idx_sessions_expires'))
+  t('login_attempts 有 (scope,key,ts) 索引', hasIndex('idx_login_attempts'))
+  t('auth_tokens 有 (user_id,kind) 索引', hasIndex('idx_auth_tokens_user'))
+
+  t('0003 幂等：重复执行不报错', (() => {
+    try { db.exec(readFileSync(new URL('./migrations/0003_users_sessions.sql', import.meta.url), 'utf8')); return true }
+    catch { return false }
+  })())
+
+  // 语义断言：光把表建出来不够，得真撞一次约束
+  const insUser = db.prepare('INSERT INTO users (id, email, password_hash, created_at, updated_at, sync_code, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+  insUser.run('u_1', 'a@b.com', 'pbkdf2-sha256$1$s$h', 1, 1, null, null)
+  t('邮箱重复插入被唯一约束拒绝', (() => {
+    try { insUser.run('u_2', 'a@b.com', 'x', 1, 1, null, null); return false } catch { return true }
+  })())
+  insUser.run('u_2', 'c@d.com', 'x', 1, 1, null, null)
+  t('sync_code 全为 NULL 时多行共存（未认领互不冲突）', db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 2)
+
+  db.prepare('UPDATE users SET sync_code = ? WHERE id = ?').run('CODE1', 'u_1')
+  t('同一主码被第二个账号占用则被拒（一码只属一账号）', (() => {
+    try { db.prepare('UPDATE users SET sync_code = ? WHERE id = ?').run('CODE1', 'u_2'); return false } catch { return true }
+  })())
+
+  const insTok = db.prepare('INSERT INTO auth_tokens (token_hash, user_id, kind, created_at, expires_at, used_at) VALUES (?, ?, ?, ?, ?, ?)')
+  insTok.run('k1', 'u_1', 'verify', 1, 2, null)
+  t('令牌哈希重复插入被拒（主键即一次性，跨 kind 也不许复用）', (() => {
+    try { insTok.run('k1', 'u_2', 'reset', 1, 2, null); return false } catch { return true }
+  })())
+  t('同一用户可同时持有 verify / reset 两类令牌', (() => {
+    try { insTok.run('k2', 'u_1', 'reset', 1, 2, null); return true } catch { return false }
+  })())
+
+  const insSess = db.prepare('INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?, ?)')
+  insSess.run('t1', 'u_1', 1, 1, 2)
+  t('会话令牌哈希重复插入被拒（主键即唯一）', (() => {
+    try { insSess.run('t1', 'u_2', 1, 1, 2); return false } catch { return true }
+  })())
+}
+
+console.log('\n[schema.sql 与 0003 一致（新建库直接建出最终形态）]')
+{
+  const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
+  for (const name of ['users', 'sessions', 'login_attempts', 'auth_tokens']) {
+    t(`schema.sql 含表 ${name}`, new RegExp(`CREATE TABLE IF NOT EXISTS ${name}\\b`).test(schemaSql))
+  }
+  for (const name of ['idx_users_email', 'idx_users_sync_code', 'idx_sessions_user', 'idx_sessions_expires', 'idx_login_attempts', 'idx_auth_tokens_user']) {
+    t(`schema.sql 含索引 ${name}`, schemaSql.includes(name))
+  }
+}
+console.log('\n[schema.sql 单独建库（权威源：空库直接建出最终形态）]')
+{
+  const fresh = new DatabaseSync(':memory:')
+  const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
+  let ok = true
+  try { fresh.exec(schemaSql) } catch (e) { ok = false; console.log('   ', e.message) }
+  t('schema.sql 能在空库上跑通', ok)
+  t('schema.sql 建出 8 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表）',
+    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 8)
+  t('schema.sql 幂等：重复执行不报错', ok && (() => {
+    try { fresh.exec(schemaSql); return true } catch { return false }
+  })())
+}
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
