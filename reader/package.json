@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node verify-core.mjs && node verify-sync.mjs && node smoke-test.mjs"
+    "test": "node verify-core.mjs && node verify-sync.mjs && node smoke-test.mjs && node verify-authui.mjs"
   },
   "dependencies": {
     "ts-fsrs": "^5.4.1",

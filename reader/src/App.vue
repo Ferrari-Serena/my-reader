@@ -31,6 +31,10 @@
         <span class="tab-icon">✅</span>
         <span class="tab-label">Quiz</span>
       </router-link>
+      <router-link to="/account" class="tab-item">
+        <span class="tab-icon">👤</span>
+        <span class="tab-label">Account</span>
+      </router-link>
     </nav>
   </div>
 </template>
@@ -39,6 +43,7 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSync } from './composables/useSync'
+import { useAuth } from './composables/useAuth'
 import { migrateAudioPositions } from './sync/progressMigrate.js'
 
 const router = useRouter()
@@ -53,9 +58,13 @@ migrateAudioPositions()
 // 阅读进度和生词都得等用户想起来点那个 tab 才会跨设备更新。
 useSync()
 
+// 启动就问一次「我是谁」：账号页（第 5 个 tab）打开就是热的，不必等一次往返。
+// 失败一律吞（见 useAuth.js）：没登录 / 离线都不该影响读书。
+useAuth()
+
 const showHeader = computed(() => true)
 const showTabbar = computed(() => {
-  return ['BookList', 'Vocabulary', 'Flashcards', 'Quiz'].includes(route.name)
+  return ['BookList', 'Vocabulary', 'Flashcards', 'Quiz', 'Account'].includes(route.name)
 })
 const showBack = computed(() => {
   return route.name === 'Reader'
@@ -68,7 +77,8 @@ const currentTitle = computed(() => {
     Reader: '',
     Vocabulary: 'Vocabulary',
     Flashcards: 'Flashcards',
-    Quiz: 'Quiz'
+    Quiz: 'Quiz',
+    Account: 'Account'
   }
   return titles[route.name] || 'my-reader'
 })
