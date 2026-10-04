@@ -2,7 +2,7 @@
 
 用户在生词本页面一键导出的**本机全量备份**，由 `reader/src/utils/exportBundle.js`（形状/校验）与
 `reader/src/composables/useVocabulary.js` 的 `exportBackup()` / `importBackup(file)`（落盘）产出与消费。
-用途：域名迁移前备份（见 [[域名迁移-操作方案]] §1 硬前置）、换机迁移、误删恢复。
+用途：域名迁移前备份（见 Obsidian `2-活动项目/my-reader/域名迁移-操作方案` §1 硬前置）、换机迁移、误删恢复。
 
 ## Schema
 
