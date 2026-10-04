@@ -1,6 +1,6 @@
 # my-reader — 英语阅读+词汇深度学习工具
 
-> v1.0 · 2026-07-18 · `www.ferrari11.com`
+> v1.0 · 2026-07-18 · `my-reader.ferrari11.com`（2026-10-04 由 `www.ferrari11.com` 迁入）
 
 ## 功能
 
@@ -33,7 +33,7 @@ cd worker && npm test   # verify-worker / verify-sql
 
 ## 部署
 
-GitHub Pages (`www.ferrari11.com`) + Cloudflare Worker（词典 + 同步 API）+ D1 数据库
+GitHub Pages (`my-reader.ferrari11.com`) + Cloudflare Worker（词典 + 同步 API）+ D1 数据库
 
 ## 本地工具
 

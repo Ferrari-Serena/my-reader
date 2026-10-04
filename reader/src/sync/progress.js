@@ -6,7 +6,7 @@
  * 代价是同步层必须知道这些键长什么样，所以就都收在这里，
  * 由 useReadingPosition / AudioPlayer 反过来 import，避免格式在两处各写一遍。
  *
- * 音频键为什么不用完整 audioUrl：那个串里嵌着域名（https://www.ferrari11.com/...），
+ * 音频键为什么不用完整 audioUrl：那个串里嵌着域名（https://my-reader.ferrari11.com/...），
  * 而这个 app 已经换过一次域名（github.io 子路径 → 自定义域），
  * 一旦再换，旧键全成孤儿，同步逻辑里还硬编码着域名。
  * 值为什么是对象而不是光秃的秒数：LWW 需要时间戳，纯数字没法比新旧。

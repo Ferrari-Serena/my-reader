@@ -78,7 +78,7 @@
     <div class="result-ok" id="resultOk"></div>
     <button class="btn btn-tts" id="btnTts">🎵 生成朗读音频（后台运行，一本书数小时）</button>
     <p class="tts-status" id="ttsStatus"></p>
-    <button class="btn btn-deploy" id="btnDeploy">🚀 部署到 www.ferrari11.com</button>
+    <button class="btn btn-deploy" id="btnDeploy">🚀 部署到 my-reader.ferrari11.com</button>
   </div>
 
   <div class="result-err" id="resultErr"></div>
@@ -203,7 +203,7 @@ btnDeploy.onclick = async () => {
     else { resultOk.textContent = '✅ ' + data.message }
   } catch (e) { showError(e.message) }
   btnDeploy.disabled = false
-  btnDeploy.textContent = '🚀 部署到 www.ferrari11.com'
+  btnDeploy.textContent = '🚀 部署到 my-reader.ferrari11.com'
 }
 
 function showError(msg) {
