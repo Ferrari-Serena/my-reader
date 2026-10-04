@@ -26,7 +26,7 @@
 import { corsFor } from './cors.js'
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // 去掉了容易混淆的 0/O/1/I
-const CODE_LEN = 8
+export const CODE_LEN = 8
 
 const CODE_TTL_MS = 90 * 86400000 // 90 天无活动即废弃
 const CLOCK_SLACK_MS = 5 * 60 * 1000 // 容许 5 分钟的未来偏差
@@ -57,7 +57,7 @@ export const SQL_TOMB_UPSERT = `INSERT INTO sync_data (code, word, payload, upda
      deleted_at = excluded.deleted_at
    WHERE excluded.updated_at > sync_data.updated_at`
 
-function randCode() {
+export function randCode() {
   const buf = new Uint8Array(CODE_LEN)
   crypto.getRandomValues(buf)
   return Array.from(buf, n => CODE_CHARS[n % CODE_CHARS.length]).join('')

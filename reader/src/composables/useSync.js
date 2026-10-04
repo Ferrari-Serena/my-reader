@@ -23,6 +23,9 @@ import { budgetKeepaliveParts } from '../sync/budget.js'
 
 const SYNC_BASE = '/api/sync'
 const SYNC_CODE_KEY = 'reader-sync-code'
+/** 换租户键时，旧码挪到这里（不删）—— 万一要人工回退，用户还能把它抄回来重新配对 */
+const SYNC_CODE_STASH_KEY = 'reader-sync-code-previous'
+const CODE_LEN = 8
 const TIMEOUT = 8000
 const PUSH_DEBOUNCE_MS = 1500 // 尾随防抖：答题连点不再是一次一推
 const KEEPALIVE_RETRY_MS = 1500 // keepalive 载荷被裁后的补发间隔
@@ -359,6 +362,42 @@ if (typeof window !== 'undefined') {
   })
 }
 
+/**
+ * 换租户键（登录认领 / 接管后由 sync/tenant.js 调）。
+ *
+ * 三件事，顺序有讲究：
+ *   1) 旧键挪到备份位（**不删**）—— 服务端那边旧码可能已经作废（认领是改名），
+ *      但万一要人工回退，用户还能把这串码抄回来重新配对。
+ *   2) 换键 ＋ 本机词表整体标脏：本机生词是**一份全局词表**（不按码分家），
+ *      换键后它在服务端属于「新码下还没有的」。不标脏就不会被推上去，
+ *      账号那边也就永远看不到这台机器上攒的内容。
+ *   3) 先拉后推（与 pullOnce/pushNow 既有姿态一致）：先把新键已有的内容合并进来，
+ *      再让本机内容按时间戳去竞争，避免本机旧值把账号里的新值盖掉。
+ */
+async function adoptCode(rawCode, { stash = true } = {}) {
+  const clean = (rawCode + '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (clean.length !== CODE_LEN) return false
+  if (clean === state.code) return true
+
+  if (stash && state.code) {
+    try { localStorage.setItem(SYNC_CODE_STASH_KEY, state.code) } catch { /* quota */ }
+  }
+  state.code = clean
+  state.paired = false
+  state.rejected = 0
+  state.error = ''
+  try { localStorage.setItem(SYNC_CODE_KEY, clean) } catch { /* quota */ }
+
+  const vocab = useVocabulary()
+  await vocab.init()
+  vocab.markAllDirty()
+  const ok = await pullOnce()
+  // 这次已经拉过了；拉失败就别把标志置真，留给 autoPullOnce 下次重试
+  _autoPulled = ok
+  pushSoon(0)
+  return true
+}
+
 export function useSync() {
   // 首次调用时触发自动拉取（页面启动 + 已有配对码）
   autoPullOnce()
@@ -373,6 +412,7 @@ export function useSync() {
     progressRevision: computed(() => state.progressRev),
     createCode,
     pairCode,
+    adoptCode,
     syncNow,
     push: pushNow,
     pushSoon,

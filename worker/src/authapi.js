@@ -19,15 +19,16 @@
  *   - 限流：失败计数落 login_attempts（scope = 'ip' | 'email' | 'register-ip'）；
  *     失败姿态 fail-open（表读/写报错按「没失败过」放行并打日志），与 ratelimit.js 一致
  *   - CSRF 两层都在这：第一层 = Origin 校验（见 originBlocked）；第二层 = **会话派生令牌**
- *     （见 guardCsrf / auth.js 的 csrfToken）。带有效会话的写操作（现在只有 logout）必须带
+ *     （见 guardCsrf / auth.js 的 csrfToken）。带有效会话的写操作（logout / claim）必须带
  *     `X-CSRF-Token`，值与 /api/auth/me 回的 csrf 一致 —— 挡的是同站子域（Origin 白名单里的自家子域）
  *   - 重置密码：令牌 kind='reset'（1 小时、一次性）；改完踢掉该账号**所有**会话
  *
- * 不在本文件范围：claim（游客认领，D 块）、delete（注销，F 块）、前端页（G 块）。
+ * 不在本文件范围：delete（注销，F 块）、前端页（G 块）。
  */
 
 import { corsFor, isAllowedOrigin } from './cors.js'
 import { clientIp } from './ratelimit.js'
+import { CODE_LEN, randCode } from './sync.js'
 import { sendMail, siteUrl, verifyEmailContent, resetEmailContent } from './send.js'
 import {
   SESSION_COOKIE, SESSION_ROLLING_MS, SESSION_ABSOLUTE_MS, VERIFY_TOKEN_MS, RESET_TOKEN_MS,
@@ -62,11 +63,11 @@ export const SQL_INSERT_USER = `INSERT INTO users
    VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)`
 
 /** 登录用：连 password_hash 一起取；**只按归一化邮箱查**（唯一索引就是这个形态） */
-export const SQL_USER_BY_EMAIL = `SELECT id, email, password_hash, email_verified_at, deleted_at
+export const SQL_USER_BY_EMAIL = `SELECT id, email, password_hash, email_verified_at, deleted_at, sync_code
    FROM users WHERE email = ?`
 
 /** /me 用：不带 password_hash（少一份哈希在内存里游荡） */
-export const SQL_USER_BY_ID = `SELECT id, email, email_verified_at, deleted_at FROM users WHERE id = ?`
+export const SQL_USER_BY_ID = `SELECT id, email, email_verified_at, deleted_at, sync_code FROM users WHERE id = ?`
 
 /** 邮箱验证：已验过就不覆盖原时刻（COALESCE），但 updated_at 照刷 */
 export const SQL_MARK_VERIFIED = `UPDATE users
@@ -187,7 +188,9 @@ export async function noteAttempt(env, scope, key, nowMs, purgeOld = false) {
 
 /** 对外可见的用户形态：**不含** password_hash / deleted_at */
 function publicUser(row) {
-  return { id: row.id, email: row.email, emailVerified: !!row.email_verified_at }
+  // syncCode = 账号主码（第 3 步「登录 ↔ 数据」的租户键）。NULL = 还没认领过 ——
+  // 前端拿它对账本机的租户键。
+  return { id: row.id, email: row.email, emailVerified: !!row.email_verified_at, syncCode: row.sync_code || null }
 }
 
 /** 建一个会话行，返回令牌**原文**（只进 cookie；库里只有 sha256） */
@@ -400,6 +403,115 @@ async function handleLogout(request, env, cors) {
   }
   // 本地数据一律保留 —— 登出只清服务端会话与本机登录标记，不动书/生词/进度
   return json(cors, { ok: true }, 200, { 'Set-Cookie': clearSessionCookie() })
+}
+
+// ── 认领游客同步码（D 块 · 登录 ↔ 数据 链）───────────────────────────────
+
+export const SQL_SET_USER_SYNC_CODE = `UPDATE users SET sync_code = ?, updated_at = ? WHERE id = ?`
+export const SQL_USER_BY_SYNC_CODE = `SELECT id FROM users WHERE sync_code = ? LIMIT 1`
+export const SQL_SYNC_DATA_RENAME = `UPDATE sync_data SET code = ? WHERE code = ?`
+export const SQL_SYNC_PROGRESS_RENAME = `UPDATE sync_progress SET code = ? WHERE code = ?`
+export const SQL_CODE_IN_DATA = `SELECT 1 AS ok FROM sync_data WHERE code = ? LIMIT 1`
+export const SQL_CODE_IN_PROGRESS = `SELECT 1 AS ok FROM sync_progress WHERE code = ? LIMIT 1`
+
+/** 洗同步码：只留大写字母数字，长度不对就当「没码」（返回空串） */
+function normalizeCode(raw) {
+  if (typeof raw !== 'string') return ''
+  const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return clean.length === CODE_LEN ? clean : ''
+}
+
+/** 这个码在服务端有没有行（两张表都看）—— 用于避开重名/冲突 */
+async function codeInUse(env, code) {
+  const a = await env.DB.prepare(SQL_CODE_IN_DATA).bind(code).first()
+  if (a) return true
+  const b = await env.DB.prepare(SQL_CODE_IN_PROGRESS).bind(code).first()
+  return !!b
+}
+
+/** 铸一个未被占用的新码；连撞 5 次就放弃（概率上不可能） */
+async function mintCode(env) {
+  for (let i = 0; i < 5; i++) {
+    const code = randCode()
+    if (!(await codeInUse(env, code))) return code
+  }
+  return null
+}
+
+/**
+ * POST /api/auth/claim  body: { code }  —— 把「本机游客码」认领成账号主码。
+ *
+ * 为什么是「改名」而不是「就地把 users.sync_code 写成本机码」：
+ * 已裁「认领后换新码」—— 而旧码正是数据的租户键。所以给账号铸一个**新**主码，
+ * 把旧码底下的行**整体改到新码下**（一次事务、不复制）。旧码的哨兵行随之搬走
+ * → 旧码从这一刻起就是 404；数据一行不丢、一个字节不摆。
+ *
+ * 四种进入姿态（更新店里只认领一次）：
+ *   - 账号已有主码 + 本机码就是它      → 无事（幂等，reason='already-mine'）
+ *   - 账号已有主码 + 本机码另有其人    → **不认领**，回账号主码（换新设备登录走这条）
+ *   - 账号未认领 + 本机码在别人名下  → 不吞别人的码，只给账号铸一个空主码
+ *   - 账号未认领 + 本机码是自己的      → 真认领（铸新码 ＋ 改名 ＋ 落 sync_code）
+ */
+async function handleClaim(request, env, cors) {
+  const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)
+  // 认领是敏感写操作：与 logout 同一道 CSRF 闸（没会话就不要令牌，下面直接 401）
+  const csrfRes = await guardCsrf(request, env, cors, token)
+  if (csrfRes) return csrfRes
+  if (!token) return json(cors, { error: 'unauthenticated' }, 401)
+
+  let body = null
+  try { body = await request.json() } catch { body = null }
+
+  const nowMs = Date.now()
+  const row = await env.DB.prepare(SQL_SESSION_BY_HASH).bind(await tokenHash(token)).first()
+  if (sessionState(row, nowMs) !== 'ok') return json(cors, { error: 'unauthenticated' }, 401)
+
+  const user = await env.DB.prepare(SQL_USER_BY_ID).bind(row.user_id).first()
+  if (!user || user.deleted_at) return json(cors, { error: 'unauthenticated' }, 401)
+
+  const want = normalizeCode(body && body.code)
+
+  // ① 账号已经有主码：认领只发生一次，后面的设备只是「接管」
+  if (user.sync_code) {
+    return json(cors, {
+      ok: true, code: user.sync_code, claimed: false,
+      reason: want && want === user.sync_code ? 'already-mine' : 'already-claimed'
+    }, 200)
+  }
+
+  // ② 账号未认领：只能搬自己的码 —— 不能是别人账号的主码，也要真有行可搬
+  let movable = false
+  if (want) {
+    const owner = await env.DB.prepare(SQL_USER_BY_SYNC_CODE).bind(want).first()
+    if (!owner && await codeInUse(env, want)) movable = true
+  }
+
+  const code = await mintCode(env)
+  if (!code) return json(cors, { error: 'could not allocate code' }, 503)
+
+  try {
+    if (movable) {
+      // 一个事务：要么整批改名 + 落主码，要么都不做（别留下「数据搬了、主码没落」的半截状态）
+      await env.DB.batch([
+        env.DB.prepare(SQL_SYNC_DATA_RENAME).bind(code, want),
+        env.DB.prepare(SQL_SYNC_PROGRESS_RENAME).bind(code, want),
+        env.DB.prepare(SQL_SET_USER_SYNC_CODE).bind(code, nowMs, user.id),
+      ])
+    } else {
+      await env.DB.prepare(SQL_SET_USER_SYNC_CODE).bind(code, nowMs, user.id).run()
+    }
+  } catch (e) {
+    // 并发：另一个请求刚给这个账号落了主码 → 读回来就是了（幂等）
+    if (String(e && e.message).includes(UNIQUE_VIOLATION)) {
+      const again = await env.DB.prepare(SQL_USER_BY_ID).bind(user.id).first()
+      if (again && again.sync_code) {
+        return json(cors, { ok: true, code: again.sync_code, claimed: false, reason: 'already-claimed' }, 200)
+      }
+    }
+    throw e
+  }
+
+  return json(cors, { ok: true, code, claimed: movable, moved: movable, from: movable ? want : '' }, 200)
 }
 
 async function handleMe(request, env, cors) {
@@ -660,6 +772,7 @@ export async function handleAuth(request, env) {
     if (isWrite && url.pathname === '/api/auth/verify-request') return await handleVerifyRequest(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/login') return await handleLogin(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/logout') return await handleLogout(request, env, cors)
+    if (isWrite && url.pathname === '/api/auth/claim') return await handleClaim(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/reset-request') return await handleResetRequest(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/reset-confirm') return await handleResetConfirm(request, env, cors)
     if (request.method === 'GET' && url.pathname === '/api/auth/verify') return await handleVerify(request, env, cors)

@@ -21,6 +21,7 @@ import {
   SQL_COUNT_ATTEMPTS, SQL_INSERT_ATTEMPT, SQL_CLEAR_EMAIL_ATTEMPTS, SQL_PURGE_ATTEMPTS,
 } from './src/authapi.js'
 import { tokenHash, SESSION_ABSOLUTE_MS } from './src/auth.js'
+import { handleSync } from './src/sync.js'
 
 let pass = 0, fail = 0
 function t(name, cond) {
@@ -51,8 +52,20 @@ function d1(db) {
         bind(...a) { args = a; return api },
         async run() { const r = stmt.run(...args); return { success: true, meta: { changes: r.changes } } },
         async first() { const row = stmt.get(...args); return row === undefined ? null : row },
+        async all() { return { results: stmt.all(...args) } },
       }
       return api
+    },
+    /**
+     * D1 的 batch 是一个事务。这里这个适配器只能顺序跑（没实现回滚）——
+     * 所以「要么整批成功、要么都不做」这一条**测不到**，只能靠真 D1。
+     */
+    batch(stmts) {
+      return (async () => {
+        const out = []
+        for (const s of stmts) out.push(await s.run())
+        return out
+      })()
     },
   }
 }
@@ -458,6 +471,115 @@ console.log('\n[authapi — 端到端：重置密码]')
     const r = await handleAuth(post('/api/auth/reset-confirm', { token: raw4, password: 'json password 9', confirm: 'other password 9' }), env)
     return r.status === 400 && (await r.json()).error === 'password-mismatch'
   })())
+}
+
+console.log('\n[authapi — 端到章：游客码认领（D 块）]')
+{
+  const db = newDb()
+  const env = { DB: d1(db) }
+  const ORIGIN = 'https://my-reader.ferrari11.com'
+  const SITE = 'https://my-reader.ferrari11.com'
+  const req = (path, { method = 'GET', body, cookie, csrf } = {}) => new Request(SITE + path, {
+    method,
+    headers: {
+      Origin: ORIGIN,
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(csrf === undefined ? {} : { 'X-CSRF-Token': csrf }),
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const post = (path, body, opts = {}) => req(path, { method: 'POST', body, ...opts })
+
+  const META = '__meta__'
+  const NOW = Date.now()
+  const seedData = (code, word, ts) => db.prepare(
+    'INSERT INTO sync_data (code, word, payload, updated_at, deleted_at) VALUES (?, ?, ?, ?, NULL)'
+  ).run(code, word, JSON.stringify({ snapshot: { word } }), ts)
+  const seedMeta = (code, ts) => db.prepare(
+    'INSERT INTO sync_data (code, word, payload, updated_at, deleted_at) VALUES (?, ?, ?, ?, NULL)'
+  ).run(code, META, JSON.stringify({ created: new Date().toISOString() }), ts)
+  const seedProgress = (code, key, ts) => db.prepare(
+    'INSERT INTO sync_progress (code, key, payload, updated_at) VALUES (?, ?, ?, ?)'
+  ).run(code, key, JSON.stringify({ pct: 42 }), ts)
+  const codeOf = (email) => db.prepare('SELECT sync_code FROM users WHERE email = ?').get(email).sync_code
+  const uidOf = (email) => db.prepare('SELECT id FROM users WHERE email = ?').get(email).id
+  const rowsUnder = (code) => db.prepare('SELECT COUNT(*) AS n FROM sync_data WHERE code = ?').get(code).n
+  const progsUnder = (code) => db.prepare('SELECT COUNT(*) AS n FROM sync_progress WHERE code = ?').get(code).n
+
+  async function signupAndLogin(email) {
+    await handleAuth(post('/api/auth/register', { email, password: 'correct horse 1' }), env)
+    const r = await handleAuth(post('/api/auth/login', { email, password: 'correct horse 1' }), env)
+    const j = await r.json()
+    return { cookie: 'mr_session=' + readCookie(r.headers.get('Set-Cookie'), 'mr_session'), csrf: j.csrf, login: j }
+  }
+  const claim = (s, code) => handleAuth(post('/api/auth/claim', { code }, { cookie: s.cookie, csrf: s.csrf }), env)
+
+  // ① 门禁
+  const A = await signupAndLogin('claim-a@qq.com')
+  t('无 cookie 的 claim -> 401', (await handleAuth(post('/api/auth/claim', { code: 'AAAABBBB' }), env)).status === 401)
+  const noCsrf = await handleAuth(post('/api/auth/claim', { code: 'AAAABBBB' }, { cookie: A.cookie }), env)
+  t('带会话但不带 CSRF 头 -> 403 bad-csrf', noCsrf.status === 403 && (await noCsrf.json()).error === 'bad-csrf')
+  t('登录响应就带 syncCode（未认领时为 null）', A.login.user.syncCode === null)
+
+  // ② 真认领：本机码底下有数据
+  const G1 = 'AAAA2222'
+  seedMeta(G1, NOW)
+  seedData(G1, 'alpha', NOW)
+  seedProgress(G1, 'the-giver/ch-01', NOW)
+  t('认领前：旧码底下 2 行', rowsUnder(G1) === 2 && progsUnder(G1) === 1)
+
+  const c1 = await claim(A, G1)
+  const b1 = await c1.json()
+  t('认领 -> 200 ＋ claimed=true ＋ 回一个 8 位新主码',
+    c1.status === 200 && b1.ok === true && b1.claimed === true && typeof b1.code === 'string' && b1.code.length === 8 && b1.code !== G1)
+  t('账号主码落库（users.sync_code）', codeOf('claim-a@qq.com') === b1.code)
+  t('旧码一行不剩 -> 它从此就是 404', rowsUnder(G1) === 0 && progsUnder(G1) === 0)
+  t('数据原样在新码下（META ＋ alpha）', rowsUnder(b1.code) === 2)
+  t('进度也跟着搬了', progsUnder(b1.code) === 1)
+  // pull 属于 /api/sync/*，走 handleSync（handleAuth 只接 /api/auth/*，不匹配就回 null）
+  t('用旧码 pull -> 404', (await handleSync(req('/api/sync/pull?code=' + G1), env)).status === 404)
+  t('用新码 pull -> 200（且能读到搬过去的词）', await (async () => {
+    const r = await handleSync(req('/api/sync/pull?code=' + b1.code), env)
+    if (r.status !== 200) return false
+    const j = await r.json()
+    return 'alpha' in (j.words || {})
+  })())
+  const me1 = await handleAuth(req('/api/auth/me', { cookie: A.cookie }), env)
+  t('/me 也带上了主码', (await me1.json()).user.syncCode === b1.code)
+
+  // ③ 幂等：认领只发生一次
+  const c2 = await claim(A, b1.code)
+  const b2 = await c2.json()
+  t('拿同一个码再认领 -> claimed=false ＋ already-mine ＋ 主码不变',
+    c2.status === 200 && b2.claimed === false && b2.reason === 'already-mine' && b2.code === b1.code)
+  const c3 = await claim(A, 'ZZZZZZZZ')
+  const b3 = await c3.json()
+  t('拿别的码再认领 -> 不换主码（already-claimed）', b3.claimed === false && b3.reason === 'already-claimed' && b3.code === b1.code)
+
+  // ④ 不吞别人的码：本机码正是另一个账号的主码
+  const C = await signupAndLogin('claim-c@qq.com')
+  const c4 = await claim(C, b1.code)
+  const b4 = await c4.json()
+  t('摸到别人的主码 -> 不认领（claimed=false）', c4.status === 200 && b4.claimed === false)
+  t('不吞：A 的主码仍在 A 名下', db.prepare('SELECT id FROM users WHERE sync_code = ?').get(b1.code).id === uidOf('claim-a@qq.com'))
+  t('不吞：A 的数据一行未动', rowsUnder(b1.code) === 2)
+  t('且 C 也拿到了自己的主码（与 A 不同）', typeof b4.code === 'string' && b4.code.length === 8 && b4.code !== b1.code && codeOf('claim-c@qq.com') === b4.code)
+
+  // ⑤ 本机没码 / 码在服务端查不到 / 码形状不对 -> 都只是「铸一个空主码」，不报错
+  const D = await signupAndLogin('claim-d@qq.com')
+  const b5 = await (await claim(D, '')).json()
+  t('本机没码（空串）-> 铸为空主码、claimed=false', b5.claimed === false && typeof b5.code === 'string' && b5.code.length === 8)
+  const E = await signupAndLogin('claim-e@qq.com')
+  const b6 = await (await claim(E, 'QWER9999')).json()
+  t('码在服务端查不到 -> 同样铸新码、claimed=false', b6.claimed === false && b6.code !== 'QWER9999')
+  const F = await signupAndLogin('claim-f@qq.com')
+  const ff = await claim(F, 'AB')
+  t('码形状不对（长度）-> 不报 400，当作没码处理', ff.status === 200 && (await ff.json()).claimed === false)
+
+  // ⑥ 一账号一主码：各账号主码两两不同
+  const codes = ['claim-a@qq.com', 'claim-c@qq.com', 'claim-d@qq.com', 'claim-e@qq.com', 'claim-f@qq.com'].map(codeOf)
+  t('五个账号五个不同主码（唯一索引真在管事）', new Set(codes).size === 5 && codes.every(c => typeof c === 'string' && c.length === 8))
 }
 
 console.log('\n[authapi — 接线：index.js 真的会把它接上]')

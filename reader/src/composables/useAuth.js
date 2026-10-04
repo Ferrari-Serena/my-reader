@@ -2,7 +2,7 @@
  * 账号会话单例（module-level reactive，仿 useSync）。
  *
  * 与「同步码」的关系：**两套并存**（第 2 步已裁「不破坏现有同步码用户」）。
- * 账号只管身份（注册 / 登录 / 登出 / 重发验证信 / 申请重置）；本地数据仍走本机存储 ＋ 同步码，
+ * 账号只管身份（注册 / 登录 / 登出 / 重发验证信 / 申请重置 / 认领同步码）；本地数据仍走本机存储 ＋ 同步码，
  * 把本地数据并到账号底下是第 3 步（租户键 c:<码> → u:<id>）的事 —— **本文件不碰存储层**。
  *
  * 安全口径（与 worker/src/authapi.js 逐条对应）：
@@ -141,6 +141,20 @@ export async function signOut() {
   }
 }
 
+/**
+ * 认领本机同步码（D 块 · 登录 ↔ 数据）。服务端答 { ok, code, claimed }：
+ * code = 这个账号的**主码**（不管本次是真认领，还是账号早就有了）。
+ * 认领是「带会话的敏感写操作」—— 与登出同一道 CSRF 闸，所以必须带 X-CSRF-Token。
+ */
+export async function claim(code) {
+  if (!state.csrf) await loadMe()
+  const r = await post('/claim', { code: code || '' }, { csrf: state.csrf })
+  if (r.ok && r.data && r.data.code && state.user) {
+    state.user = { ...state.user, syncCode: r.data.code }
+  }
+  return r
+}
+
 export function note(msg) { state.notice = msg }
 export function clearMessages() { state.error = ''; state.notice = '' }
 
@@ -153,6 +167,6 @@ export function useAuth() {
     busy: computed(() => state.busy),
     error: computed(() => state.error),
     notice: computed(() => state.notice),
-    signIn, signUp, signOut, sendReset, resendVerify, loadMe, note, clearMessages
+    signIn, signUp, signOut, sendReset, resendVerify, claim, loadMe, note, clearMessages
   }
 }

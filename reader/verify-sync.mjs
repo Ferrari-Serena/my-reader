@@ -464,5 +464,126 @@ console.log('\n[0.1 — 冷启动补推（拉成功后，有欠推脏词才发 /
   vc.clearDirty(vc.pendingDirty())
 }
 
+console.log('\n[第 3 步 — 登录 ↔ 数据：租户键对账判据（纯函数）]')
+{
+  const { tenantAction } = await import('./src/sync/tenant.js')
+  t('账号还没主码 -> claim（拿本机码去认领）', tenantAction({ accountCode: null, localCode: 'AAAAAAAA' }) === 'claim')
+  t('账号没主码 ＋ 本机也没码 -> 还是 claim（让服务端铸一个）', tenantAction({ accountCode: '', localCode: '' }) === 'claim')
+  t('账号有主码、本机不同 -> adopt（接管）', tenantAction({ accountCode: 'AAAAAAAA', localCode: 'BBBBBBBB' }) === 'adopt')
+  t('两边一样 -> none（幂等，不白跑网络）', tenantAction({ accountCode: 'AAAAAAAA', localCode: 'AAAAAAAA' }) === 'none')
+  t('账号有主码、本机没码 -> adopt（这就是「换新设备登录」）', tenantAction({ accountCode: 'AAAAAAAA', localCode: '' }) === 'adopt')
+}
+
+console.log('\n[第 3 步 — adoptCode：换租户键的三件事]')
+{
+  const realFetch = globalThis.fetch
+  const calls = []
+  const jsonRes = (obj) => ({ ok: true, status: 200, json: async () => obj })
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url)
+    calls.push({ url: u, body: opts.body ? JSON.parse(opts.body) : null })
+    if (u.includes('/pull')) {
+      return jsonRes({ words: { beta: { word: 'beta', updatedAt: T1, snapshot: { definitions: ['b'] } } }, tombstones: {}, progress: {} })
+    }
+    if (u.includes('/push')) return jsonRes({ rejected: 0 })
+    return jsonRes({})
+  }
+  const tick = (ms) => new Promise(r => setTimeout(r, ms))
+
+  // 本机先有一个词（走正常存储通道写进去），再起一个带旧码的实例
+  await mergeAndApply(useVocabulary(), { gamma: { word: 'gamma', updatedAt: T1, snapshot: { definitions: ['g'] } } }, {})
+  const vc2 = useVocabulary()
+  vc2.clearDirty(vc2.pendingDirty())
+  store.delete('reader-vocab-dirty')
+  store.delete('reader-sync-code-previous')
+  store.set('reader-sync-code', 'OLDCODE1')
+
+  const mod = await import('./src/composables/useSync.js?sim=TENANT')
+  const sync = mod.useSync()
+  t('实例起来时用的是盘上的旧码', sync.code.value === 'OLDCODE1')
+  await tick(40)
+  calls.length = 0
+
+  const ok = await sync.adoptCode('NEWCODE2')
+  t('adoptCode 成功', ok === true)
+  t('① 键换成新码', sync.code.value === 'NEWCODE2')
+  t('① 新码落盘（刷新后还认得）', store.get('reader-sync-code') === 'NEWCODE2')
+  t('② 旧码挪到备份位、没被删', store.get('reader-sync-code-previous') === 'OLDCODE1')
+  t('③ 先拉一次新键', calls.some(c => c.url.includes('/pull?code=NEWCODE2')))
+  await tick(60)
+  const push = calls.find(c => c.url.includes('/push'))
+  t('③ 随后把本机词整体推给新键', !!push && push.body && push.body.code === 'NEWCODE2')
+  t('推的里面真有本机原有的那个词', !!push && !!push.body && 'gamma' in push.body.words)
+
+  // 形状不对的码：不动任何东西
+  calls.length = 0
+  t('码长度不对 -> 拒绝且不改键', (await sync.adoptCode('AB')) === false && sync.code.value === 'NEWCODE2')
+  t('拒绝时不发任何请求', calls.length === 0)
+  // 同一个码：幂等
+  calls.length = 0
+  t('同一个码 -> true 且不重新拉推', (await sync.adoptCode('NEWCODE2')) === true && calls.length === 0)
+
+  globalThis.fetch = realFetch
+  store.delete('reader-sync-code')
+  store.delete('reader-sync-code-previous')
+}
+
+console.log('\n[第 3 步 — reconcileTenant：把「认领」与「换键」串起来]')
+{
+  const realFetch = globalThis.fetch
+  const calls = []
+  const jsonRes = (obj) => ({ ok: true, status: 200, json: async () => obj })
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url)
+    calls.push({ url: u, body: opts.body ? JSON.parse(opts.body) : null })
+    if (u.includes('/pull')) return jsonRes({ words: {}, tombstones: {}, progress: {} })
+    if (u.includes('/push')) return jsonRes({ rejected: 0 })
+    return jsonRes({})
+  }
+  const { reconcileTenant } = await import('./src/sync/tenant.js')
+  const tick = (ms) => new Promise(r => setTimeout(r, ms))
+
+  const claimCalls = [], notices = []
+  // 仿真 useAuth：认领成功后它会把 user.syncCode 回写成账号主码（
+  // 正是因为这个回写，后面再对账才会得到 'none' —— 不回写就会反复认领）
+  const fakeAuth = (syncCode) => {
+    const user = { value: { id: 'u1', email: 'a@b.co', syncCode } }
+    return {
+      user,
+      csrf: { value: 'tok' },
+      claim: async (code) => {
+        claimCalls.push(code)
+        user.value = { ...user.value, syncCode: 'MAINCODE' }
+        return { ok: true, status: 200, data: { ok: true, code: 'MAINCODE', claimed: true } }
+      },
+      note: (m) => notices.push(m),
+    }
+  }
+
+  t('没登录 -> null（什么都不做）', (await reconcileTenant({ user: { value: null } })) === null)
+
+  // 账号已有主码：只接管，不认领
+  claimCalls.length = 0
+  const r1 = await reconcileTenant(fakeAuth('ACCTCODE'))
+  t('账号有主码 -> 动作是 adopt，不去认领', r1 && r1.action === 'adopt' && claimCalls.length === 0)
+
+  // 账号未认领：先认领、再换键，并提一句给用户
+  const fake = fakeAuth(null)
+  const r2 = await reconcileTenant(fake)
+  t('账号没主码 -> 动作是 claim', r2 && r2.action === 'claim' && r2.claimed === true)
+  t('认领时把本机码交了上去', claimCalls.length === 1)
+  t('认领成功后本身也换了键', r2.code === 'MAINCODE' && store.get('reader-sync-code') === 'MAINCODE')
+  t('真认领才提一句「已并入账号」', notices.length === 1 && /part of this account/.test(notices[0]))
+
+  // 对账完了再来一次：两边一样，不白跑
+  claimCalls.length = 0
+  notices.length = 0
+  const r3 = await reconcileTenant(fake)
+  t('已对齐后再调 -> none（不重复认领/重复提醒）', r3 && r3.action === 'none' && claimCalls.length === 0 && notices.length === 0)
+
+  globalThis.fetch = realFetch
+  await tick(5)
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

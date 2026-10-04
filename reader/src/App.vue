@@ -40,10 +40,11 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSync } from './composables/useSync'
 import { useAuth } from './composables/useAuth'
+import { reconcileTenant } from './sync/tenant.js'
 import { migrateAudioPositions } from './sync/progressMigrate.js'
 
 const router = useRouter()
@@ -60,7 +61,12 @@ useSync()
 
 // 启动就问一次「我是谁」：账号页（第 5 个 tab）打开就是热的，不必等一次往返。
 // 失败一律吞（见 useAuth.js）：没登录 / 离线都不该影响读书。
-useAuth()
+const auth = useAuth()
+
+// 登录 ↔ 数据（第 3 步）：账号一出现就把本机租户键对到账号上
+// （首次＝认领本机游客码；之后＝接管账号主码）。
+// 放在这里而不是 useAuth / useSync 里：这是「身份」与「同步」两个模块的接缝，谁都不该 import 对方。
+watch(() => auth.user.value, (u) => { if (u) reconcileTenant(auth) })
 
 const showHeader = computed(() => true)
 const showTabbar = computed(() => {
