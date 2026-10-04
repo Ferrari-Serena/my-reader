@@ -23,7 +23,11 @@
         <h2 class="card-title">{{ heading }}</h2>
         <p class="hint">{{ subheading }}</p>
 
-        <form @submit.prevent="submit">
+        <!-- novalidate：关掉浏览器原生校验。type="email" 的原生检查会**先**把提交挡下，
+             于是我们自己那套（与后端同口径：域名必须带点）永远跑不到 —— 提示语就成了死代码，
+             而且混出中英两套说法。这里让提示只有一个来源：authForm.js。
+             type="email" 保留只为移动端弹对键盘。 -->
+        <form novalidate @submit.prevent="submit">
           <label class="label" for="acct-email">Email</label>
           <input
             id="acct-email" v-model.trim="email" class="input" type="email"
