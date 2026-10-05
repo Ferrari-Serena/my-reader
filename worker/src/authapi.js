@@ -10,6 +10,8 @@
  *   POST /api/auth/reset-request   { email }            → 200（一律 200，防枚举）+ 发重置信
  *   GET  /api/auth/reset?token=…                        → HTML 表单页（填新密码）
  *   POST /api/auth/reset-confirm   token + password     → 改密 + 踢掉所有会话
+ *   POST /api/auth/delete          { password }         → 注销：落冷静期标记 + 踢掉所有会话
+ *   POST /api/auth/restore         { email, password }  → 冷静期内撤销注销（密码确认，重新登录）
  *
  * 设计要点（口径来源：方案 §2.x / §3.1、migrations/0003、auth.js 文件头）
  *   - 密码与令牌的**原语**全在 auth.js（纯逻辑，99 条断言）；本文件只做「取数据 → 调原语 → 落库」
@@ -23,7 +25,10 @@
  *     `X-CSRF-Token`，值与 /api/auth/me 回的 csrf 一致 —— 挡的是同站子域（Origin 白名单里的自家子域）
  *   - 重置密码：令牌 kind='reset'（1 小时、一次性）；改完踢掉该账号**所有**会话
  *
- * 不在本文件范围：delete（注销，F 块）、前端页（G 块）。
+ * 注销（F 块，2026-10-05）：deleted_at 落软删标记，满 30 天由 purgeDeletedAccounts 真删
+ *   （连带清掉主码名下的 sync_data / sync_progress）。清理入口 = index.js 的 scheduled（Cron）。
+ *
+ * 不在本文件范围：前端页（G 块）。
  */
 
 import { corsFor, isAllowedOrigin } from './cors.js'
@@ -34,6 +39,7 @@ import {
   SESSION_COOKIE, SESSION_ROLLING_MS, SESSION_ABSOLUTE_MS, VERIFY_TOKEN_MS, RESET_TOKEN_MS,
   normalizeEmail, newToken, tokenHash, sessionState, rollSession,
   sessionCookie, clearSessionCookie, hashPassword, verifyPassword, dummyVerify,
+  PURGE_AFTER_MS, deletionState, purgeDueAt, daysLeft,
   checkPasswordPolicy, needsRehash, csrfToken, csrfMatches,
 } from './auth.js'
 
@@ -69,6 +75,21 @@ export const SQL_USER_BY_EMAIL = `SELECT id, email, password_hash, email_verifie
 /** /me 用：不带 password_hash（少一份哈希在内存里游荡） */
 export const SQL_USER_BY_ID = `SELECT id, email, email_verified_at, deleted_at, sync_code FROM users WHERE id = ?`
 
+/** 注销二次确认用：这条才带 password_hash（/me 那条刻意不带） */
+export const SQL_USER_FULL_BY_ID = `SELECT id, email, password_hash, email_verified_at, deleted_at, sync_code
+   FROM users WHERE id = ?`
+
+/** 落注销标记：只在「还没被注销」时可改（并发下第二次 changes = 0） */
+export const SQL_MARK_DELETED = `UPDATE users SET deleted_at = ?, updated_at = ?
+   WHERE id = ? AND deleted_at IS NULL`
+
+/** 撤销注销：清标记 + 刷 updated_at */
+export const SQL_CLEAR_DELETED = `UPDATE users SET deleted_at = NULL, updated_at = ? WHERE id = ?`
+
+/** 到期真删的扫描（只取一批）：冷静期已满的账号 */
+export const SQL_USERS_DUE_PURGE = `SELECT id, email, sync_code FROM users
+   WHERE deleted_at IS NOT NULL AND deleted_at <= ? ORDER BY deleted_at LIMIT ?`
+
 /** 邮箱验证：已验过就不覆盖原时刻（COALESCE），但 updated_at 照刷 */
 export const SQL_MARK_VERIFIED = `UPDATE users
    SET email_verified_at = COALESCE(email_verified_at, ?), updated_at = ? WHERE id = ?`
@@ -91,6 +112,13 @@ export const SQL_PURGE_USER_SESSIONS = `DELETE FROM sessions
 
 /** 改密后踢光该账号所有会话（凭据变了，旧会话不该继续有效） */
 export const SQL_DELETE_USER_SESSIONS = `DELETE FROM sessions WHERE user_id = ?`
+export const SQL_DELETE_USER_TOKENS = `DELETE FROM auth_tokens WHERE user_id = ?`
+
+/** 到期真删：连带清掉该账号主码名下的两类同步数据（口径 ②） */
+export const SQL_PURGE_SYNC_DATA = `DELETE FROM sync_data WHERE code = ?`
+export const SQL_PURGE_SYNC_PROGRESS = `DELETE FROM sync_progress WHERE code = ?`
+
+export const SQL_DELETE_USER = `DELETE FROM users WHERE id = ?`
 
 export const SQL_INSERT_TOKEN = `INSERT INTO auth_tokens
    (token_hash, user_id, kind, created_at, expires_at, used_at) VALUES (?, ?, ?, ?, ?, NULL)`
@@ -352,9 +380,9 @@ async function handleLogin(request, env, cors) {
   }
 
   const user = await env.DB.prepare(SQL_USER_BY_EMAIL).bind(email).first()
-  // ⚠️ 注销冷静期（deleted_at 非空）当下按「凭据无效」处理 —— 不新开一个「这号在注销中」的
-  //    枚举口子；F 块落地注销时再定「冷静期内登录算不算撤销注销」。
-  const ok = user && !user.deleted_at ? await verifyPassword(password, user.password_hash) : false
+  // 密码先照验 —— 冷静期（deleted_at 非空）不在这里直接当「凭据无效」：那会让用户
+  // 无法撤销注销。验过之后再分流（F 块 2026-10-05）。
+  const ok = user ? await verifyPassword(password, user.password_hash) : false
 
   if (!ok) {
     // 邮箱不存在也烧掉同等时间：响应快慢不能回答「这个邮箱注册过没有」
@@ -363,6 +391,23 @@ async function handleLogin(request, env, cors) {
     await noteAttempt(env, 'ip', ip, nowMs, purge)
     await noteAttempt(env, 'email', email, nowMs)
     return json(cors, { error: 'invalid-credentials' }, 401)
+  }
+
+  // 凭据对、但账号在冷静期：**不下发会话**，只如实告诉客户端「它在注销中」＋ 到期时刻，
+  // 由前端引导去「撤销注销」（POST /restore）。已到期的（逻辑上已不存在）按凭据无效处理。
+  if (user.deleted_at) {
+    if (deletionState(user.deleted_at, nowMs) !== 'pending') {
+      return json(cors, { error: 'invalid-credentials' }, 401)
+    }
+    try {
+      await env.DB.prepare(SQL_CLEAR_EMAIL_ATTEMPTS).bind(email).run()
+    } catch (e) {
+      console.error('login cleanup failed (非致命):', e.message)
+    }
+    return json(cors, {
+      ok: false, pendingDeletion: true, email: user.email,
+      purgeAfter: purgeDueAt(user.deleted_at), daysLeft: daysLeft(user.deleted_at, nowMs),
+    }, 200)
   }
 
   // 成功：清掉该邮箱的失败行（DDL 注释的口径），顺手清死会话
@@ -548,6 +593,131 @@ async function handleMe(request, env, cors) {
   return json(cors, { ok: true, user: publicUser(user), csrf: await csrfToken(token) }, 200, {
     'Set-Cookie': sessionCookie(token, maxAge),
   })
+}
+
+// ── 注销（F 块）：软删标记 + 30 天冷静期，到期由 purgeDeletedAccounts 真删 ──────────
+
+/**
+ * POST /api/auth/delete  body: { password }
+ * 三道门：有效会话 ＋ CSRF 令牌 ＋ **重输密码**（二次确认）。
+ * 只落 deleted_at 标记并踢掉所有会话 —— 数据**不动**（本地数据也不动），满 30 天由定时清理真删。
+ */
+async function handleDelete(request, env, cors) {
+  const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)
+  const csrfRes = await guardCsrf(request, env, cors, token)
+  if (csrfRes) return csrfRes
+  if (!token) return json(cors, { error: 'unauthenticated' }, 401)
+
+  let body = null
+  try { body = await request.json() } catch { body = null }
+  const password = typeof (body && body.password) === 'string' ? body.password : ''
+  if (!password) return json(cors, { error: 'password-required' }, 400)
+
+  const nowMs = Date.now()
+  const row = await env.DB.prepare(SQL_SESSION_BY_HASH).bind(await tokenHash(token)).first()
+  if (sessionState(row, nowMs) !== 'ok') return json(cors, { error: 'unauthenticated' }, 401)
+
+  const user = await env.DB.prepare(SQL_USER_FULL_BY_ID).bind(row.user_id).first()
+  if (!user || user.deleted_at) return json(cors, { error: 'unauthenticated' }, 401)
+
+  // 二次确认：密码不对就不动。失败也计数 —— 劫持来的会话不能靠这个端点爆破密码。
+  if (!(await verifyPassword(password, user.password_hash))) {
+    await noteAttempt(env, 'ip', clientIp(request), nowMs)
+    await noteAttempt(env, 'email', user.email, nowMs)
+    return json(cors, { error: 'invalid-credentials' }, 401)
+  }
+
+  try {
+    await env.DB.batch([
+      env.DB.prepare(SQL_MARK_DELETED).bind(nowMs, nowMs, user.id),
+      env.DB.prepare(SQL_DELETE_USER_SESSIONS).bind(user.id),
+    ])
+  } catch (e) {
+    console.error('delete account failed:', e && e.message)
+    return json(cors, { error: 'internal' }, 500)
+  }
+
+  return json(cors, {
+    ok: true, deletedAt: nowMs,
+    purgeAfter: purgeDueAt(nowMs), daysLeft: daysLeft(nowMs, nowMs),
+  }, 200, { 'Set-Cookie': clearSessionCookie() })
+}
+
+/**
+ * POST /api/auth/restore  body: { email, password }
+ * 冷静期内撤销注销。与登录同形（密码确认 ＋ 同一套失败限流），成功后直接给会话 ——
+ * 注销已把会话都踢了，所以这里只能靠**密码**认人，不能要求会话。
+ */
+async function handleRestore(request, env, cors) {
+  let body
+  try { body = await request.json() } catch { return json(cors, { error: 'invalid-json' }, 400) }
+
+  const email = normalizeEmail(body && body.email)
+  if (!email) return json(cors, { error: 'invalid-email' }, 400)
+  const password = typeof (body && body.password) === 'string' ? body.password : ''
+
+  const nowMs = Date.now()
+  const ip = clientIp(request)
+  const ipN = await attemptCount(env, 'ip', ip, nowMs - LOGIN_WINDOW_MS)
+  const mailN = await attemptCount(env, 'email', email, nowMs - LOGIN_WINDOW_MS)
+  if (ipN >= LOGIN_MAX_PER_IP || mailN >= LOGIN_MAX_PER_EMAIL) {
+    const retryAfter = Math.ceil(LOGIN_WINDOW_MS / 1000)
+    return json(cors, { error: 'too-many-attempts', retryAfter }, 429, { 'Retry-After': String(retryAfter) })
+  }
+
+  const user = await env.DB.prepare(SQL_USER_BY_EMAIL).bind(email).first()
+  const ok = user ? await verifyPassword(password, user.password_hash) : false
+  if (!ok) {
+    if (!user) await dummyVerify(password)
+    await noteAttempt(env, 'ip', ip, nowMs, ipN === 0 && mailN === 0)
+    await noteAttempt(env, 'email', email, nowMs)
+    return json(cors, { error: 'invalid-credentials' }, 401)
+  }
+  if (!user.deleted_at) return json(cors, { error: 'not-pending' }, 409)
+  if (deletionState(user.deleted_at, nowMs) !== 'pending') return json(cors, { error: 'gone' }, 410)
+
+  await env.DB.prepare(SQL_CLEAR_DELETED).bind(nowMs, user.id).run()
+  try {
+    await env.DB.prepare(SQL_CLEAR_EMAIL_ATTEMPTS).bind(email).run()
+  } catch (e) {
+    console.error('restore cleanup failed (非致命):', e.message)
+  }
+
+  const fresh = await createSession(env, user.id, nowMs)
+  return json(cors, {
+    ok: true, user: publicUser({ ...user, deleted_at: null }), csrf: await csrfToken(fresh),
+  }, 200, { 'Set-Cookie': sessionCookie(fresh, Math.floor(SESSION_ROLLING_MS / 1000)) })
+}
+
+/** 到期真删一次最多清多少个账号（Cron 单次预算；剩下的下一轮继续） */
+export const PURGE_BATCH_LIMIT = 100
+
+/**
+ * 到期真删（Cron 入口，见 index.js 的 scheduled）。对每个冷静期已满的账号：
+ *   - 主码名下的 sync_data / sync_progress（口径 ②：**连带清**）
+ *   - 该账号的会话 / 邮件令牌 / 邮箱失败计数行
+ *   - 最后删 users 行（dict_cache 是全体共享的词典缓存，**不动**）
+ * 幂等：删过的下一轮查不到，天然不重复。
+ */
+export async function purgeDeletedAccounts(env, nowMs = Date.now()) {
+  const cutoff = nowMs - PURGE_AFTER_MS
+  const res = await env.DB.prepare(SQL_USERS_DUE_PURGE).bind(cutoff, PURGE_BATCH_LIMIT).all()
+  const rows = (res && res.results) || []
+  let purged = 0
+  for (const u of rows) {
+    const stmts = []
+    if (u.sync_code) {
+      stmts.push(env.DB.prepare(SQL_PURGE_SYNC_DATA).bind(u.sync_code))
+      stmts.push(env.DB.prepare(SQL_PURGE_SYNC_PROGRESS).bind(u.sync_code))
+    }
+    stmts.push(env.DB.prepare(SQL_DELETE_USER_SESSIONS).bind(u.id))
+    stmts.push(env.DB.prepare(SQL_DELETE_USER_TOKENS).bind(u.id))
+    if (u.email) stmts.push(env.DB.prepare(SQL_CLEAR_EMAIL_ATTEMPTS).bind(u.email))
+    stmts.push(env.DB.prepare(SQL_DELETE_USER).bind(u.id))
+    await env.DB.batch(stmts)
+    purged++
+  }
+  return { purged, scanned: rows.length }
 }
 
 // ── 重置密码（B-2 剩余）+ CSRF 第二层（spec 2.5）──────────────────────────────
@@ -773,6 +943,8 @@ export async function handleAuth(request, env) {
     if (isWrite && url.pathname === '/api/auth/login') return await handleLogin(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/logout') return await handleLogout(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/claim') return await handleClaim(request, env, cors)
+    if (isWrite && url.pathname === '/api/auth/delete') return await handleDelete(request, env, cors)
+    if (isWrite && url.pathname === '/api/auth/restore') return await handleRestore(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/reset-request') return await handleResetRequest(request, env, cors)
     if (isWrite && url.pathname === '/api/auth/reset-confirm') return await handleResetConfirm(request, env, cors)
     if (request.method === 'GET' && url.pathname === '/api/auth/verify') return await handleVerify(request, env, cors)

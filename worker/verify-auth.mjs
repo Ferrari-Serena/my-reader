@@ -238,5 +238,22 @@ console.log('\n[auth.js — CSRF 第二层（会话派生令牌）]')
   t('跨会话不通用：拿 A 的令牌套 B 的会话 -> false', (await A.csrfMatches('another-session', a)) === false)
   t('令牌里不含会话令牌本身（不是简单拼接）', a.indexOf(s) === -1)
 }
+
+console.log('\n[auth.js — 注销冷静期（F 块）]')
+{
+  const DAY = 24 * 60 * 60 * 1000
+  t('冷静期 = 30 天', A.PURGE_AFTER_MS === 30 * DAY)
+  t('无标记 -> none', A.deletionState(null, 0) === 'none' && A.deletionState(undefined, 1e12) === 'none' && A.deletionState(0, 0) === 'none')
+  t('刚注销 -> pending', A.deletionState(1000, 1000) === 'pending')
+  t('差 1 毫秒到期仍是 pending', A.deletionState(1000, 1000 + A.PURGE_AFTER_MS - 1) === 'pending')
+  t('正好到期 -> due（边界含端点）', A.deletionState(1000, 1000 + A.PURGE_AFTER_MS) === 'due')
+  t('过期 -> due', A.deletionState(1000, 1000 + A.PURGE_AFTER_MS + 5) === 'due')
+  t('purgeDueAt = 标记 + 30 天', A.purgeDueAt(5000) === 5000 + A.PURGE_AFTER_MS)
+  t('purgeDueAt 无标记 -> 0', A.purgeDueAt(null) === 0 && A.purgeDueAt(0) === 0)
+  t('daysLeft：刚注销 -> 30 天', A.daysLeft(1000, 1000) === 30)
+  t('daysLeft：剩 1 毫秒也按 1 天说（向上取整）', A.daysLeft(1000, 1000 + A.PURGE_AFTER_MS - 1) === 1)
+  t('daysLeft：到期 / 过期 -> 0', A.daysLeft(1000, 1000 + A.PURGE_AFTER_MS) === 0 && A.daysLeft(1000, 1000 + A.PURGE_AFTER_MS + 9) === 0)
+  t('daysLeft：无标记 -> 0', A.daysLeft(null, 1e12) === 0)
+}
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

@@ -31,6 +31,55 @@
           </div>
         </div>
       </div>
+      <!-- 注销：二次确认（重输密码）+ 30 天冷静期。放在登出下面，是这一页最重的破坏性动作。 -->
+      <div class="danger-zone">
+        <button v-if="!confirmingDelete" class="btn danger-outline" @click="openDelete">Delete account…</button>
+        <div v-else class="confirm">
+          <p class="confirm-text">
+            Delete this account? It is scheduled for deletion and kept for 30 days — sign in
+            again before then to cancel. After 30 days the account and the words and progress
+            synced to it are permanently erased. Books and words on this device are not touched.
+          </p>
+          <label class="label" for="del-pw">Confirm with your password</label>
+          <input
+            id="del-pw" v-model="deletePassword" class="input" type="password"
+            autocomplete="current-password" :disabled="auth.busy.value"
+          />
+          <p v-if="auth.error.value" class="error">{{ auth.error.value }}</p>
+          <div class="confirm-actions">
+            <button class="btn" :disabled="auth.busy.value" @click="closeDelete">Cancel</button>
+            <button class="btn danger" :disabled="auth.busy.value || !deletePassword" @click="doDelete">
+              {{ auth.busy.value ? 'Deleting…' : 'Delete my account' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- 冷静期中：撤销注销（密码确认；注销已把会话都踢了，所以这里只认密码） -->
+    <template v-else-if="auth.pendingDeletion.value">
+      <section class="card">
+        <h2 class="card-title">Account scheduled for deletion</h2>
+        <p class="hint">
+          {{ auth.pendingDeletion.value.email }} is scheduled to be deleted.
+          About {{ auth.pendingDeletion.value.daysLeft }} day(s) from now it will be erased for good.
+          Enter your password to cancel — your words and progress come right back.
+        </p>
+        <form novalidate @submit.prevent="doCancelDeletion">
+          <label class="label" for="restore-pw">Password</label>
+          <input
+            id="restore-pw" v-model="restorePassword" class="input" type="password"
+            autocomplete="current-password" :disabled="auth.busy.value"
+          />
+          <p v-if="auth.error.value" class="error">{{ auth.error.value }}</p>
+          <button class="btn primary" type="submit" :disabled="auth.busy.value || !restorePassword">
+            {{ auth.busy.value ? 'Working…' : 'Cancel deletion' }}
+          </button>
+        </form>
+        <p class="switch">
+          <button class="link" type="button" @click="forgetPending">Use a different account</button>
+        </p>
+      </section>
     </template>
 
     <!-- 未登录 -->
@@ -110,6 +159,9 @@ const password = ref('')
 const confirm = ref('')
 const formError = ref('')
 const confirmingOut = ref(false)
+const confirmingDelete = ref(false)
+const deletePassword = ref('')
+const restorePassword = ref('')
 
 onMounted(() => { auth.loadMe() })
 
@@ -194,6 +246,46 @@ function doResend() { auth.resendVerify() }
 function doSignOut() {
   confirmingOut.value = false
   auth.signOut()
+}
+
+function openDelete() {
+  confirmingDelete.value = true
+  deletePassword.value = ''
+  auth.clearMessages()
+}
+
+function closeDelete() {
+  confirmingDelete.value = false
+  deletePassword.value = ''
+  auth.clearMessages()
+}
+
+async function doDelete() {
+  if (!deletePassword.value) return
+  const r = await auth.deleteAccount(deletePassword.value)
+  if (r.ok) {
+    confirmingDelete.value = false
+    deletePassword.value = ''
+    const days = (r.data && r.data.daysLeft) || 30
+    auth.note('Account scheduled for deletion. It will be erased in about ' + days
+      + ' days unless you sign in and cancel before then.')
+  }
+}
+
+async function doCancelDeletion() {
+  if (!restorePassword.value) return
+  const pending = auth.pendingDeletion.value
+  const r = await auth.cancelDeletion(pending ? pending.email : '', restorePassword.value)
+  if (r.ok) {
+    restorePassword.value = ''
+    auth.note('Welcome back — your account is active again.')
+  }
+}
+
+function forgetPending() {
+  auth.clearPendingDeletion()
+  restorePassword.value = ''
+  auth.clearMessages()
 }
 </script>
 
@@ -359,5 +451,10 @@ function doSignOut() {
   border-color: #c0392b;
   background: #c0392b;
   color: #fff;
+}
+
+.btn.danger-outline {
+  border-color: #d98c81;
+  color: #c0392b;
 }
 </style>

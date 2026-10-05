@@ -13,3 +13,8 @@ binding = "AUDIO"
 bucket_name = "my-reader-audio"
 
 # M-W API Key 用 secret，不进代码：npx wrangler secret put MW_API_KEY
+
+# 注销冷静期到期真删（第 2 步 F 块）：每天 03:17 UTC 跑一次 purgeDeletedAccounts
+# （见 src/index.js 的 scheduled 与 src/authapi.js）。改这里要重新 `wrangler deploy` 才生效。
+[triggers]
+crons = ["17 3 * * *"]

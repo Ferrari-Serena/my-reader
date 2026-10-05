@@ -106,6 +106,34 @@ export function clearSessionCookie() {
   return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 注销冷静期（第 2 步 F 块）：软删标记 + 到期真删
+//   口径（2026-10-05 Ferrari 裁）：① deleted_at 落标记，满 30 天由清理逻辑真删；
+//   ② 真删时**连带清掉**该账号主码名下的 sync_data / sync_progress。
+//   本文件只放纯判据；落库与清理在 authapi.js（在 node:sqlite 上端到端真跑）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 注销冷静期：从 deleted_at 起算，满这么久就真删 */
+export const PURGE_AFTER_MS = 30 * 24 * 60 * 60 * 1000
+
+/** 注销状态：'none' 未注销 | 'pending' 冷静期内（可撤销）| 'due' 已到期（待清理） */
+export function deletionState(deletedAt, now) {
+  if (typeof deletedAt !== 'number' || !deletedAt) return 'none'
+  return now >= deletedAt + PURGE_AFTER_MS ? 'due' : 'pending'
+}
+
+/** 真删时刻 = deleted_at + 冷静期；没有标记回 0 */
+export function purgeDueAt(deletedAt) {
+  return (typeof deletedAt === 'number' && deletedAt) ? deletedAt + PURGE_AFTER_MS : 0
+}
+
+/** 冷静期还剩几天（向上取整，纯给用户看）；已到期 / 无标记回 0 */
+export function daysLeft(deletedAt, now) {
+  const due = purgeDueAt(deletedAt)
+  if (!due || now >= due) return 0
+  return Math.ceil((due - now) / (24 * 60 * 60 * 1000))
+}
+
 /**
  * CSRF 第二层（spec 2.5）—— **会话派生**的令牌：不落库、不加 cookie、不加表列。
  *

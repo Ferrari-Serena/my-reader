@@ -15,7 +15,7 @@
  */
 
 import { handleSync } from './sync.js'
-import { handleAuth } from './authapi.js'
+import { handleAuth, purgeDeletedAccounts } from './authapi.js'
 import { parseRange } from './range.js'
 import { corsFor } from './cors.js'
 import { takeToken, clientIp } from './ratelimit.js'
@@ -184,7 +184,20 @@ export default {
     }
 
     return new Response('Not found', { status: 404, headers: cors })
-  }
+  },
+
+  /**
+   * Cron 入口（wrangler.toml 的 [triggers]）：注销冷静期到期真删。
+   * 清理逻辑在 authapi.js 的 purgeDeletedAccounts（与端点共用同一套 SQL 常量）。
+   */
+  async scheduled(event, env, ctx) {
+    try {
+      const r = await purgeDeletedAccounts(env, Date.now())
+      console.log('scheduled purge:', JSON.stringify(r))
+    } catch (e) {
+      console.error('scheduled purge failed:', e && e.message, e && e.stack)
+    }
+  },
 }
 
 /**

@@ -30,7 +30,10 @@ const state = reactive({
   notice: '',
   // 与 notice 分开一个槽：认领是**后台异步**发生的，而 notice 是表单流程自己在写，
   // 两者抢同一个位置时谁后写谁赢 —— 注册那一条就把「已并入账号」盖掉了（真机实测抓到）。
-  claimNotice: ''
+  claimNotice: '',
+  // 冷静期待撤销的账号（只有登录时服务端回 pendingDeletion 才有）：
+  // { email, purgeAfter, daysLeft } | null
+  pendingDeletion: null
 })
 
 let _started = false
@@ -91,11 +94,17 @@ async function post(path, body, extra = {}) {
 }
 
 export async function signIn(email, password) {
+  state.pendingDeletion = null
   const r = await post('/login', { email, password })
   if (r.ok && r.data.user) {
     state.user = r.data.user
     state.csrf = r.data.csrf || ''
     state.ready = true
+  } else if (r.ok && r.data.pendingDeletion) {
+    // 凭据对、但账号在冷静期：服务端**不下发会话**，只报告 —— 交给界面引导「撤销注销」
+    state.pendingDeletion = {
+      email, purgeAfter: r.data.purgeAfter || 0, daysLeft: r.data.daysLeft || 0,
+    }
   }
   return r
 }
@@ -142,6 +151,7 @@ export async function signOut() {
     state.ready = true
     state.busy = false
     state.claimNotice = ''
+    state.pendingDeletion = null
   }
 }
 
@@ -159,6 +169,45 @@ export async function claim(code) {
   return r
 }
 
+/**
+ * 注销账号（F 块）。带会话 + CSRF + **重输密码**（二次确认）。
+ * 服务端只落冷静期标记并踢掉所有会话 → 本地也当已登出；**本地数据一律不动**。
+ * 返回 { ok, data:{ purgeAfter, daysLeft } }。
+ */
+export async function deleteAccount(password) {
+  if (!state.csrf) await loadMe()
+  const r = await post('/delete', { password }, { csrf: state.csrf })
+  if (r.ok) {
+    state.user = null
+    state.csrf = ''
+    state.ready = true
+    state.claimNotice = ''
+    state.pendingDeletion = null
+  }
+  return r
+}
+
+/**
+ * 撤销注销（冷静期内）。与登录同形：只靠**密码**认人（注销已把会话都踢了）。
+ * 成功 = 账号恢复 + 直接登录。
+ */
+export async function cancelDeletion(email, password) {
+  const r = await post('/restore', { email, password })
+  if (r.ok && r.data.user) {
+    state.user = r.data.user
+    state.csrf = r.data.csrf || ''
+    state.ready = true
+    state.pendingDeletion = null
+  } else if (!r.ok && r.status === 410) {
+    // 冷静期已过：这号救不回来了，收起撤销面板
+    state.pendingDeletion = null
+  }
+  return r
+}
+
+/** 放弃撤销、改用别的账号（纯界面动作） */
+export function clearPendingDeletion() { state.pendingDeletion = null }
+
 export function note(msg) { state.notice = msg }
 
 /** 认领同步码后的一句话（走独立横幅，不与表单提示争位置） */
@@ -175,6 +224,8 @@ export function useAuth() {
     error: computed(() => state.error),
     notice: computed(() => state.notice),
     claimNotice: computed(() => state.claimNotice),
-    signIn, signUp, signOut, sendReset, resendVerify, claim, loadMe, note, noteClaim, clearMessages
+    pendingDeletion: computed(() => state.pendingDeletion),
+    signIn, signUp, signOut, sendReset, resendVerify, claim, loadMe, note, noteClaim, clearMessages,
+    deleteAccount, cancelDeletion, clearPendingDeletion
   }
 }

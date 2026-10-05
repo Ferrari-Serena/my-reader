@@ -2,7 +2,7 @@
  * authapi.js 的验证。三层：
  *   ① 纯助手 —— cookie 解析 / Origin 闸 / 限流表的 fail-open
  *   ② 真 SQLite 上跑**真** SQL（users / sessions / auth_tokens / login_attempts）
- *   ③ 端到端：register → login → me → logout、验证信链接、重发、限流
+ *   ③ 端到端：register → login → me → logout、验证信链接、重发、限流、注销 / 撤销 / 到期真删
  * 用法: node verify-authapi.mjs
  *
  * 为什么必须端到端：这块是「联网 + 落库」的活，只测纯函数测不出「cookie 没下发」
@@ -19,8 +19,11 @@ import {
   SQL_INSERT_SESSION, SQL_SESSION_BY_HASH, SQL_ROLL_SESSION, SQL_PURGE_USER_SESSIONS,
   SQL_INSERT_TOKEN, SQL_VOID_TOKENS, SQL_TOKEN_BY_HASH, SQL_USE_TOKEN,
   SQL_COUNT_ATTEMPTS, SQL_INSERT_ATTEMPT, SQL_CLEAR_EMAIL_ATTEMPTS, SQL_PURGE_ATTEMPTS,
+  SQL_USER_FULL_BY_ID, SQL_MARK_DELETED, SQL_CLEAR_DELETED, SQL_USERS_DUE_PURGE,
+  SQL_DELETE_USER, SQL_DELETE_USER_TOKENS, SQL_PURGE_SYNC_DATA, SQL_PURGE_SYNC_PROGRESS,
+  purgeDeletedAccounts, PURGE_BATCH_LIMIT,
 } from './src/authapi.js'
-import { tokenHash, SESSION_ABSOLUTE_MS } from './src/auth.js'
+import { tokenHash, SESSION_ABSOLUTE_MS, PURGE_AFTER_MS } from './src/auth.js'
 import { handleSync } from './src/sync.js'
 
 let pass = 0, fail = 0
@@ -169,6 +172,25 @@ console.log('\n[authapi — SQL：login_attempts]')
   t('按 (scope,key) 分桶：ip 桶不受影响', db.prepare(SQL_COUNT_ATTEMPTS).get('ip', 'a@b.com', NOW - 1000).n === 0)
   t('清过期行（按 ts 清，不分桶）', db.prepare(SQL_PURGE_ATTEMPTS).run(NOW - 99999).changes === 1)
   t('成功后清该邮箱失败行（窗口内那 3 条）', db.prepare(SQL_CLEAR_EMAIL_ATTEMPTS).run('a@b.com').changes === 3)
+}
+
+console.log('\n[authapi — SQL：注销标记 / 撤销 / 到期扫描]')
+{
+  const db = newDb()
+  const NOW = Date.now()
+  db.prepare(SQL_INSERT_USER).run('u1', 'a@qq.com', 'h', NOW, NOW)
+  db.prepare(SQL_INSERT_USER).run('u2', 'b@qq.com', 'h', NOW, NOW)
+  t('SQL_USER_FULL_BY_ID 带 password_hash（注销二次确认要用）', db.prepare(SQL_USER_FULL_BY_ID).get('u1').password_hash === 'h')
+  t('落注销标记 changes=1', db.prepare(SQL_MARK_DELETED).run(NOW + 1, NOW + 1, 'u1').changes === 1)
+  t('重复落标记 changes=0（deleted_at IS NULL 守卫）', db.prepare(SQL_MARK_DELETED).run(NOW + 2, NOW + 2, 'u1').changes === 0)
+  t('标记写进 deleted_at', db.prepare(SQL_USER_BY_EMAIL).get('a@qq.com').deleted_at === NOW + 1)
+  t('撤销：清标记 changes=1', db.prepare(SQL_CLEAR_DELETED).run(NOW + 3, 'u1').changes === 1)
+  t('撤销后 deleted_at 为空', db.prepare(SQL_USER_BY_EMAIL).get('a@qq.com').deleted_at === null)
+
+  db.prepare(SQL_MARK_DELETED).run(NOW - PURGE_AFTER_MS - 10, NOW, 'u1') // 已到期
+  db.prepare(SQL_MARK_DELETED).run(NOW - 1000, NOW, 'u2')                // 冷静期中
+  const due = db.prepare(SQL_USERS_DUE_PURGE).all(NOW - PURGE_AFTER_MS, PURGE_BATCH_LIMIT)
+  t('到期扫描只挑冷静期已满的账号', due.length === 1 && due[0].id === 'u1')
 }
 
 // ═══ ③ 端到端 ═══════════════════════════════════════════════════════════════
@@ -582,6 +604,97 @@ console.log('\n[authapi — 端到章：游客码认领（D 块）]')
   t('五个账号五个不同主码（唯一索引真在管事）', new Set(codes).size === 5 && codes.every(c => typeof c === 'string' && c.length === 8))
 }
 
+console.log('\n[authapi — 端到章：注销 / 冷静期撤销 / 到期真删（F 块）]')
+{
+  const db = newDb()
+  const env = { DB: d1(db) }
+  const ORIGIN = 'https://my-reader.ferrari11.com'
+  const SITE = ORIGIN
+  const req = (path, { method = 'GET', body, cookie, origin = ORIGIN, csrf } = {}) => new Request(SITE + path, {
+    method,
+    headers: {
+      ...(origin ? { Origin: origin } : {}),
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(csrf === undefined ? {} : { 'X-CSRF-Token': csrf }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const post = (path, body, opts = {}) => req(path, { method: 'POST', body, ...opts })
+  const bodyOf = async (r) => { try { return await r.json() } catch { return {} } }
+  const PW = 'correct horse 1'
+  const userOf = (e) => db.prepare(SQL_USER_BY_EMAIL).get(e)
+  const sessionCount = (uid) => db.prepare('SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?').get(uid).n
+
+  // 建号 + 登录 + 认领主码 + 灌同步数据（供「到期连带清」验证）
+  await handleAuth(post('/api/auth/register', { email: 'del@qq.com', password: PW }), env)
+  const uid = userOf('del@qq.com').id
+  const login = await handleAuth(post('/api/auth/login', { email: 'del@qq.com', password: PW }), env)
+  const cookie = 'mr_session=' + readCookie(login.headers.get('Set-Cookie') || '', 'mr_session')
+  const csrf = (await bodyOf(login)).csrf
+  const claimRes = await handleAuth(post('/api/auth/claim', { code: '' }, { cookie, csrf }), env)
+  const mainCode = (await bodyOf(claimRes)).code
+  db.prepare('INSERT INTO sync_data (code, word, payload, updated_at, deleted_at) VALUES (?, ?, ?, ?, NULL)').run(mainCode, 'w1', '{}', String(Date.now()))
+  db.prepare('INSERT INTO sync_progress (code, key, payload, updated_at) VALUES (?, ?, ?, ?)').run(mainCode, 'reading:x', '{}', String(Date.now()))
+  t('前置就位：账号 / 主码 / 两类同步数据', !!uid && typeof mainCode === 'string' && mainCode.length === 8)
+
+  // 门禁
+  t('注销：无会话 -> 401', (await handleAuth(post('/api/auth/delete', { password: PW }), env)).status === 401)
+  t('注销：有会话无 CSRF -> 403 且没落标记', await (async () => {
+    const r = await handleAuth(post('/api/auth/delete', { password: PW }, { cookie }), env)
+    return r.status === 403 && (await bodyOf(r)).error === 'bad-csrf' && userOf('del@qq.com').deleted_at === null
+  })())
+  t('注销：空密码 -> 400 password-required', (await handleAuth(post('/api/auth/delete', {}, { cookie, csrf }), env)).status === 400)
+  t('注销：密码不对 -> 401 且没落标记', await (async () => {
+    const r = await handleAuth(post('/api/auth/delete', { password: 'wrong wrong' }, { cookie, csrf }), env)
+    return r.status === 401 && userOf('del@qq.com').deleted_at === null
+  })())
+
+  // 真注销
+  const del = await handleAuth(post('/api/auth/delete', { password: PW }, { cookie, csrf }), env)
+  const dj = await bodyOf(del)
+  t('注销（密码对）-> 200 ＋ 落 deleted_at', del.status === 200 && typeof dj.deletedAt === 'number' && userOf('del@qq.com').deleted_at === dj.deletedAt)
+  t('注销 -> 清 cookie（Max-Age=0）', /Max-Age=0/.test(del.headers.get('Set-Cookie') || ''))
+  t('注销 -> 该账号会话全踢', sessionCount(uid) === 0)
+  t('注销 -> 数据还没动（冷静期内不删）', db.prepare('SELECT COUNT(*) AS n FROM sync_data WHERE code = ?').get(mainCode).n === 1)
+  t('注销后旧 cookie 的 me -> 401', (await handleAuth(req('/api/auth/me', { cookie }), env)).status === 401)
+
+  // 冷静期内登录：不下发会话，只报告待注销
+  const pl = await handleAuth(post('/api/auth/login', { email: 'del@qq.com', password: PW }), env)
+  const plj = await bodyOf(pl)
+  t('冷静期内登录 -> 200 pendingDeletion 且**无**会话 cookie', pl.status === 200 && plj.pendingDeletion === true && !/Max-Age=2592000/.test(pl.headers.get('Set-Cookie') || ''))
+  t('冷静期内登录 -> 带到期时刻与剩余天数', typeof plj.purgeAfter === 'number' && plj.daysLeft === 30)
+  t('冷静期内登录：错的密码照样 401', (await handleAuth(post('/api/auth/login', { email: 'del@qq.com', password: 'nope nope' }), env)).status === 401)
+
+  // 撤销注销
+  t('撤销：密码不对 -> 401', (await handleAuth(post('/api/auth/restore', { email: 'del@qq.com', password: 'nope nope' }), env)).status === 401)
+  const rs = await handleAuth(post('/api/auth/restore', { email: 'del@qq.com', password: PW }), env)
+  const rsj = await bodyOf(rs)
+  t('撤销（密码对）-> 200 ＋ 直接给会话', rs.status === 200 && rsj.user && rsj.user.id === uid && /Max-Age=2592000/.test(rs.headers.get('Set-Cookie') || ''))
+  t('撤销后 deleted_at 清空', userOf('del@qq.com').deleted_at === null)
+  const rcookie = 'mr_session=' + readCookie(rs.headers.get('Set-Cookie') || '', 'mr_session')
+  t('撤销后新会话能用（me -> 200）', (await handleAuth(req('/api/auth/me', { cookie: rcookie }), env)).status === 200)
+  t('未在注销中时撤销 -> 409 not-pending', (await handleAuth(post('/api/auth/restore', { email: 'del@qq.com', password: PW }), env)).status === 409)
+
+  // 到期真删
+  const T = Date.now()
+  await handleAuth(post('/api/auth/delete', { password: PW }, { cookie: rcookie, csrf: rsj.csrf }), env)
+  db.prepare('UPDATE users SET deleted_at = ? WHERE id = ?').run(T - PURGE_AFTER_MS - 1, uid) // 拨到已到期
+  t('已到期：restore -> 410 gone', (await handleAuth(post('/api/auth/restore', { email: 'del@qq.com', password: PW }), env)).status === 410)
+  const purge = await purgeDeletedAccounts(env, T)
+  t('到期真删：清掉 1 个账号', purge.purged === 1)
+  t('到期真删：users 行没了', userOf('del@qq.com') == null)
+  t('到期真删：连带清掉主码名下 sync_data', db.prepare('SELECT COUNT(*) AS n FROM sync_data WHERE code = ?').get(mainCode).n === 0)
+  t('到期真删：连带清掉 sync_progress', db.prepare('SELECT COUNT(*) AS n FROM sync_progress WHERE code = ?').get(mainCode).n === 0)
+
+  // 未到期的账号不受影响
+  await handleAuth(post('/api/auth/register', { email: 'keep@qq.com', password: PW }), env)
+  const kuid = userOf('keep@qq.com').id
+  db.prepare(SQL_MARK_DELETED).run(T - 1000, T, kuid) // 刚注销 1 秒
+  const purge2 = await purgeDeletedAccounts(env, T)
+  t('未到期的账号不动（purged=0、行还在）', purge2.purged === 0 && userOf('keep@qq.com') != null)
+}
+
 console.log('\n[authapi — 接线：index.js 真的会把它接上]')
 {
   const worker = (await import('./src/index.js')).default
@@ -601,6 +714,7 @@ console.log('\n[authapi — 接线：index.js 真的会把它接上]')
     method: 'OPTIONS', headers: { Origin: 'https://evil.com' },
   }), env)
   t('OPTIONS 预检仍由 index.js 统一接（204）', r5.status === 204)
+  t('index.js 导出 scheduled（Cron 入口在）', typeof worker.scheduled === 'function')
 }
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

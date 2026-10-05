@@ -3,7 +3,7 @@
  *   utils/authForm.js — 邮箱/密码校验、二次确认、错误码文案
  * 用法: node verify-authui.mjs
  *
- * 为什么测这些「一句话」：端点真伪在 worker 侧有 350 条断言，前端真正会错的是
+ * 为什么测这些「一句话」：端点真伪在 worker 侧有 421 条断言，前端真正会错的是
  * 「同一个错误码该说什么」「按钮什么时候该禁用」这类**埋在组件里就测不到**的判断。
  * 本文件只测纯函数 —— 组件的渲染/提交不在这一层（那要靠真机手点）。
  */
@@ -67,6 +67,13 @@ t('裸 status 0 -> 也当网络（没有 code 时不许说「未知错误」）'
 t('unknown 5xx -> 说「我们这边出问题」', A.authErrorMessage(503, {}).includes('our side'))
 t('完全认不出来 -> 兜底一句，且不抛', typeof A.authErrorMessage(400, {}) === 'string' && A.authErrorMessage(undefined, undefined).length > 0)
 t('code 优先于 status：invalid-email + 429 仍是「邮箱不对」', A.authErrorMessage(429, { error: 'invalid-email' }) === 'Enter a valid email address.')
+
+
+console.log('\n[authForm — 注销 / 撤销的文案]')
+t('password-required -> 要求输密码确认', A.authErrorMessage(400, { error: 'password-required' }).includes('password'))
+t('gone -> 说明冷静期已过、救不回来', A.authErrorMessage(410, { error: 'gone' }).includes('30-day'))
+t('not-pending -> 说明这号没在注销中', A.authErrorMessage(409, { error: 'not-pending' }).includes('not scheduled'))
+t('注销时密码不对沿用 invalid-credentials 文案', A.authErrorMessage(401, { error: 'invalid-credentials' }).includes('incorrect'))
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

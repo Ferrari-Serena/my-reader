@@ -1,7 +1,7 @@
 /**
  * 账号表单的**纯逻辑**（不碰网络、不碰 vue）—— 前端这一层唯一值得单测的东西。
  *
- * 为什么单拎出来：端点真伪在 worker 侧已有 350 条断言；前端容易错的不是「能不能调通」，
+ * 为什么单拎出来：端点真伪在 worker 侧已有 421 条断言；前端容易错的不是「能不能调通」，
  * 而是「同一个错误码在不同表单里该说什么」「按钮什么时候该禁用」——
  * 埋在组件里就只能靠手点，测不到。校验口径与后端逐条对齐：
  *   - 邮箱：与 worker/src/auth.js 的 normalizeEmail 同口径（有 @、有点、无空白、长度）
@@ -63,6 +63,9 @@ export function authErrorMessage(status, payload) {
       : 'Too many attempts. Try again a bit later.'
   }
   if (code === 'bad-origin' || code === 'bad-csrf') return 'That request was blocked for safety — reload the page and try again.'
+  if (code === 'password-required') return 'Enter your password to confirm.'
+  if (code === 'gone') return 'That account can no longer be restored — its 30-day window has passed.'
+  if (code === 'not-pending') return 'This account is not scheduled for deletion.'
   if (code === 'network' || status === 0) return 'Cannot reach the server. Check your connection and try again.'
   if (code === 'internal' || status >= 500) return 'Something went wrong on our side. Try again in a moment.'
   return 'Something went wrong. Try again.'
