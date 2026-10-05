@@ -266,6 +266,8 @@ async function doDelete() {
   if (r.ok) {
     confirmingDelete.value = false
     deletePassword.value = ''
+    // 注销成功后默认落到「登录」态（而不是留在注册态）：我们刚告诉用户「再登录一次就能撤销」
+    mode.value = 'signin'
     const days = (r.data && r.data.daysLeft) || 30
     auth.note('Account scheduled for deletion. It will be erased in about ' + days
       + ' days unless you sign in and cancel before then.')
