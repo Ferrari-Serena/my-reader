@@ -559,6 +559,26 @@ async function handleClaim(request, env, cors) {
   return json(cors, { ok: true, code, claimed: movable, moved: movable, from: movable ? want : '' }, 200)
 }
 
+/**
+ * 只读会话校验（第 6 步 6.4b 用）：带有效会话回 userId，否则 null。
+ * 刻意**不续期、不写库** —— 一章音频多则十几次 Range 请求，每个都写一次 D1 不划算；
+ * 续期交给 /api/auth/me 那条正常路径。
+ */
+export async function sessionUserId(request, env) {
+  const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)
+  if (!token) return null
+  try {
+    const hash = await tokenHash(token)
+    const row = await env.DB.prepare(SQL_SESSION_BY_HASH).bind(hash).first()
+    if (sessionState(row, Date.now()) !== 'ok') return null
+    return row.user_id
+  } catch (e) {
+    // fail-closed：查不动会话就当没登录（音频回落浏览器朗读），不要把 500 甩给播放器
+    console.error('session check failed (fail-closed):', e && e.message)
+    return null
+  }
+}
+
 async function handleMe(request, env, cors) {
   const nowMs = Date.now()
   const token = readCookie(request.headers.get('Cookie'), SESSION_COOKIE)

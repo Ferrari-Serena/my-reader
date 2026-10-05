@@ -7,6 +7,8 @@
  *                         未收录时 → 404 { notFound: true, suggestions[] }
  *                         被限流时 → 429 { error, scope } + Retry-After 头
  * GET /api/audio/<bookId>/<file>  → R2 对象本体（支持 Range → 206 / 416）
+ *   · 已下架版权书的 id（the-giver / artemis-fowl / divergent…）→ 404（对象留档）
+ *   · BYO 别名 id → **需登录会话**，映射到归档音频（见 audioalias.js）
  * HEAD /api/audio/<bookId>/<file> → 同上但不回 body（上传校验脚本探活用）
  * POST/GET /api/auth/*  → 账号与会话（见 authapi.js）
  * GET /health           → { status: 'ok' }
@@ -17,8 +19,9 @@
  */
 
 import { handleSync } from './sync.js'
-import { handleAuth, purgeDeletedAccounts } from './authapi.js'
+import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
 import { parseRange } from './range.js'
+import { audioRequestPlan } from './audioalias.js'
 import { corsFor } from './cors.js'
 import { takeToken, clientIp } from './ratelimit.js'
 import { routeOf, buildLogLine, metricsQueries, shapeMetrics } from './monitor.js'
@@ -94,7 +97,18 @@ async function handleRequest(request, env, url) {
     // R2 音频代理：/api/audio/<bookId>/<file>
     const audioMatch = url.pathname.match(/^\/api\/audio\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)$/)
     if (audioMatch && (request.method === 'GET' || request.method === 'HEAD')) {
-      const key = `${audioMatch[1]}/${audioMatch[2]}`
+      const plan = audioRequestPlan(audioMatch[1], audioMatch[2])
+      if (plan.action === 'retired' || plan.action === 'notfound') {
+        // 404 而不是 403：不告诉外面「这个 key 存在但你看不了」
+        return new Response('Not found', { status: 404, headers: cors })
+      }
+      let key = `${audioMatch[1]}/${audioMatch[2]}`
+      if (plan.action === 'mapped') {
+        // 版权书的派生物：只给带有效会话的人（Ferrari 1b 的口径），且只加在这一路上
+        const userId = await sessionUserId(request, env)
+        if (!userId) return new Response('Unauthorized', { status: 401, headers: cors })
+        key = plan.key
+      }
       const ct = key.endsWith('.mp3') ? 'audio/mpeg' : key.endsWith('.json') ? 'application/json' : 'application/octet-stream'
       const headers = {
         'Content-Type': ct,

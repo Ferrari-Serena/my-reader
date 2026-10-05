@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 十一套测试全部通过才允许部署（reader 619 ＋ worker 462 ＝ 1081 条）。都是纯逻辑测试，不依赖浏览器 / 网络 / 线上环境。
+  # 十二套测试全部通过才允许部署（reader 619 ＋ worker 495 ＝ 1114 条）。都是纯逻辑测试，不依赖浏览器 / 网络 / 线上环境。
   test:
     runs-on: ubuntu-latest
 
@@ -38,7 +38,7 @@ jobs:
         working-directory: reader
 
       # worker 的四套测试只用 node 内置模块（node:sqlite 等），零依赖，不必 npm ci
-      - name: Worker tests (verify-worker / verify-auth / verify-authapi / verify-sql)
+      - name: Worker tests (verify-worker / verify-auth / verify-authapi / verify-sql / verify-audioalias)
         run: npm test
         working-directory: worker
 
