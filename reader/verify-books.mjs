@@ -2,14 +2,17 @@
  * BYO 书库 + 书架聚合验证（第 5 步 5B；不依赖浏览器 / 网络 / 线上环境）。
  *   utils/bookShelf.js          — 书架聚合口径（纯函数）
  *   storage/bookAdapter.js      — 入库净化 / 书体与索引同事务 / 列书架 / 删除
+ *   storage/bookDb.js           — IndexedDB 驱动（真驱动，跑在 fake-indexeddb 上）
  *   composables/useBookShelf.js — 两个来源各自降级
  * 用法: node verify-books.mjs
  *
- * ⚠️ 覆盖边界（别把它读成「书库全测过了」）：真正发 IO 的 IndexedDB 驱动
- * （storage/bookDb.js）在 Node 里跑不起来 —— 没有 indexedDB 这个全局。本文件用
- * **内存驱动**跑的是 bookAdapter 的编排语义（净化 / 一次事务 / 排序 / 删除），
- * 内存驱动必须满足 storage/bookDb.js 文件头那份契约。app 实际用的 IndexedDB 驱动
- * 由浏览器实测覆盖（项目日志 5B 条目有记录）。
+ * 书库那一组断言（crudSuite）**跑两遍**：一次内存驱动、一次真 IndexedDB 驱动
+ * （fake-indexeddb 提供 indexedDB 全局）。两边跑同一套断言，是为了逼出「只有真驱动
+ * 才有的行为」—— 比如升级建店、键路径、事务回滚；内存驱动满足不了契约就会红。
+ *
+ * ⚠️ 覆盖边界：fake-indexeddb 是**纯 JS 重新实现**，不是浏览器引擎。它足以压住我们的
+ * 用法（同一事务写两店、回滚、键路径），但引擎特有的坑它照不出来 ——
+ * 真引擎那侧由浏览器实测兜（项目日志 5B 条目：本地 22 条 ＋ 线上 7 条）。
  */
 
 let pass = 0, fail = 0
@@ -26,12 +29,13 @@ async function codeOf(fn) {
 
 const { BOOK_KIND, kindOfBook, builtinEntry, metaOf, sortByAddedAtDesc, shelfOf } = await import('./src/utils/bookShelf.js')
 const { createBookStore, normalizeRecord, BookStoreError } = await import('./src/storage/bookAdapter.js')
-const { STORE_BOOKS, STORE_SHELF } = await import('./src/storage/bookDb.js')
+const idbDriverDefault = await import('./src/storage/bookDb.js')
+const { openBookDb, closeBookDb, BOOK_DB_NAME, BOOK_DB_VERSION, STORE_BOOKS, STORE_SHELF } = idbDriverDefault
 const { useBookShelf } = await import('./src/composables/useBookShelf.js')
 
 // ── 内存驱动（契约见 src/storage/bookDb.js 文件头）──────────────────────
 // put 的做法是「先全部备好、再一次性落盘」：失败时一个字节都不落。
-// 真驱动的事务原子性是浏览器那边的事；这里要保的是**同一次调用**里两店一起写。
+// 真驱动的事务原子性由下面 IDB 那组断言压（见「第二个写入不可克隆 -> 回滚」）。
 const KEY_PATH = { [STORE_BOOKS]: 'bookId', [STORE_SHELF]: 'id' }
 function memoryDriver(opts = {}) {
   const stores = new Map()
@@ -68,6 +72,51 @@ function sampleBook(over = {}) {
     ],
     ...over
   }
+}
+
+/**
+ * 书库一致性套件 —— 内存驱动与真 IDB 驱动跑的是同一套断言。
+ * 只用 bookAdapter 的公开 API 与驱动的 get/count（两侧都有），不窥探实现。
+ */
+async function crudSuite(tag, driver) {
+  const store = createBookStore(driver)
+  const n = (name) => `${tag} · ${name}`
+
+  const meta = await store.saveBook(sampleBook())
+  t(n('saveBook 返回书架条目、不带正文'), meta.id === 'bk_0123456789abcdef' && !('chapters' in meta))
+  t(n('书架索引里没有正文'), !('chapters' in (await driver.get(STORE_SHELF, 'bk_0123456789abcdef'))))
+  t(n('书体店里有正文'), (await driver.get(STORE_BOOKS, 'bk_0123456789abcdef')).chapters.length === 2)
+
+  tEq(n('loadBook 往返一致'), (await store.loadBook('bk_0123456789abcdef')).chapters, sampleBook().chapters)
+  tEq(n('loadBook：slug id -> null'), await store.loadBook('the-giver'), null)
+  tEq(n('loadBook：没有这本 -> null'), await store.loadBook('bk_ffffffffffffffff'), null)
+  tEq(n('countByoBooks'), await store.countByoBooks(), 1)
+
+  // 净化产出的是新对象：改调用方手里那份，库里那份不该跟着变
+  const raw = sampleBook({ bookId: 'bk_3333333333333333', addedAt: '2025-12-01T00:00:00.000Z' })
+  await store.saveBook(raw)
+  raw.chapters[0].paragraphs[0].text = 'MUTATED'
+  t(n('入库即快照（改原对象不影响库里）'),
+    (await store.loadBook('bk_3333333333333333')).chapters[0].paragraphs[0].text === 'alpha')
+
+  await store.saveBook(sampleBook({ author: 'Changed', addedAt: '2026-01-01T00:00:00.000Z' }))
+  await store.saveBook(sampleBook({ bookId: 'bk_bbbbbbbbbbbbbbbb', addedAt: '2026-03-01T00:00:00.000Z' }))
+  const list = await store.listByoBooks()
+  tEq(n('同 id 覆盖不新增'), list.length, 3)
+  tEq(n('列表按加入时间倒序'), list.map(b => b.id),
+    ['bk_bbbbbbbbbbbbbbbb', 'bk_0123456789abcdef', 'bk_3333333333333333'])
+  tEq(n('覆盖真的换了内容'), (await store.loadBook('bk_0123456789abcdef')).author, 'Changed')
+  tEq(n('列表条目不带正文'), list.some(b => 'chapters' in b), false)
+
+  tEq(n('deleteBook -> true'), await store.deleteBook('bk_0123456789abcdef'), true)
+  tEq(n('删除后取不到'), await store.loadBook('bk_0123456789abcdef'), null)
+  tEq(n('删除后索引也没了'), await driver.get(STORE_SHELF, 'bk_0123456789abcdef'), undefined)
+  tEq(n('deleteBook 坏 id -> false（不抛）'), await store.deleteBook('the-giver'), false)
+  tEq(n('deleteBook 不存在的书 -> 不抛'), await store.deleteBook('bk_eeeeeeeeeeeeeeee'), true)
+
+  await store.clearByoBooks()
+  tEq(n('clear 后书体店空'), await driver.count(STORE_BOOKS), 0)
+  tEq(n('clear 后索引店空'), await store.countByoBooks(), 0)
 }
 
 console.log('\n[utils/bookShelf.js — 书架聚合口径]')
@@ -132,6 +181,7 @@ console.log('\n[storage/bookAdapter.js — 入库净化]')
   tEq('段也只剩有字的', dirty.chapters[0].paragraphs.map(p => p.id), ['p-01-001'])
   tEq('计数重算', [dirty.chapterCount, dirty.charCount], [1, 4])
   tEq('空标题 -> Untitled', dirty.title, 'Untitled')
+
   const withJunk = normalizeRecord(sampleBook({
     junk: 'x',
     chapters: [{ id: 'ch-01', paragraphs: [{ id: 'p-01-001', text: 'x', junk: 1 }] }]
@@ -146,34 +196,9 @@ console.log('\n[storage/bookAdapter.js — 入库净化]')
   tEq('BookStoreError 是 Error 子类', new BookStoreError('BAD_ID') instanceof Error, true)
 }
 
-console.log('\n[storage/bookAdapter.js — 书体与书架索引]')
+console.log('\n[storage/bookAdapter.js — 书体与书架索引（内存驱动）]')
 {
-  const drv = memoryDriver()
-  const store = createBookStore(drv)
-
-  const meta = await store.saveBook(sampleBook())
-  t('saveBook 返回书架条目、且不带正文', meta.id === 'bk_0123456789abcdef' && !('chapters' in meta))
-  tEq('书架索引里没有正文', 'chapters' in drv.stores.get(STORE_SHELF).get('bk_0123456789abcdef'), false)
-  tEq('书体店里有正文', drv.stores.get(STORE_BOOKS).get('bk_0123456789abcdef').chapters.length, 2)
-
-  const back = await store.loadBook('bk_0123456789abcdef')
-  tEq('loadBook 往返一致', back.chapters, sampleBook().chapters)
-  tEq('loadBook：slug id -> null', await store.loadBook('the-giver'), null)
-  tEq('loadBook：没有这本 -> null', await store.loadBook('bk_ffffffffffffffff'), null)
-  tEq('countByoBooks', await store.countByoBooks(), 1)
-
-  await store.saveBook(sampleBook({ author: 'Changed', addedAt: '2026-01-01T00:00:00.000Z' }))
-  await store.saveBook(sampleBook({ bookId: 'bk_bbbbbbbbbbbbbbbb', addedAt: '2026-03-01T00:00:00.000Z' }))
-  const list = await store.listByoBooks()
-  tEq('同 id 覆盖不新增', list.length, 2)
-  tEq('列表按加入时间倒序', list.map(b => b.id), ['bk_bbbbbbbbbbbbbbbb', 'bk_0123456789abcdef'])
-  tEq('覆盖真的换了内容', (await store.loadBook('bk_0123456789abcdef')).author, 'Changed')
-  tEq('列表条目不带正文', list.some(b => 'chapters' in b), false)
-
-  tEq('deleteBook -> true', await store.deleteBook('bk_0123456789abcdef'), true)
-  tEq('删除后取不到', await store.loadBook('bk_0123456789abcdef'), null)
-  tEq('删除后索引也没了', drv.stores.get(STORE_SHELF).has('bk_0123456789abcdef'), false)
-  tEq('deleteBook 坏 id -> false（不抛）', await store.deleteBook('the-giver'), false)
+  await crudSuite('内存', memoryDriver())
 
   const putCalls = []
   const delCalls = []
@@ -192,10 +217,51 @@ console.log('\n[storage/bookAdapter.js — 书体与书架索引]')
   const boom = memoryDriver({ onPut: () => { throw new BookStoreError('TX_FAILED', 'boom') } })
   tEq('驱动抛错时如实上抛', await codeOf(() => createBookStore(boom).saveBook(sampleBook())), 'TX_FAILED')
   tEq('抛错后书体店没留痕', boom.stores.get(STORE_BOOKS)?.size || 0, 0)
+}
 
-  await store.clearByoBooks()
-  tEq('clear 后书体空', drv.stores.get(STORE_BOOKS).size, 0)
-  tEq('clear 后索引空', await store.countByoBooks(), 0)
+console.log('\n[storage/bookDb.js — 真 IndexedDB 驱动（fake-indexeddb）]')
+await import('fake-indexeddb/auto')
+{
+  // 每个用例前把库删干净：驱动在模块级缓存连接，不先关掉 deleteDatabase 会被 blocked
+  async function wipeIdb() {
+    await closeBookDb()
+    await new Promise((resolve) => {
+      const req = indexedDB.deleteDatabase(BOOK_DB_NAME)
+      req.onsuccess = req.onerror = req.onblocked = () => resolve()
+    })
+  }
+
+  await wipeIdb()
+  await crudSuite('IDB', idbDriverDefault.default)
+
+  const db = await openBookDb()
+  tEq('DB 名字对', db.name, BOOK_DB_NAME)
+  tEq('DB 版本对', db.version, BOOK_DB_VERSION)
+  tEq('两个 store 都建出来', [...db.objectStoreNames].sort(), [STORE_BOOKS, STORE_SHELF].sort())
+  const roTx = db.transaction([STORE_BOOKS, STORE_SHELF], 'readonly')
+  tEq('books 的 keyPath = bookId', roTx.objectStore(STORE_BOOKS).keyPath, 'bookId')
+  tEq('shelf 的 keyPath = id', roTx.objectStore(STORE_SHELF).keyPath, 'id')
+
+  t('openBookDb 有连接缓存（两次同一连接）', (await openBookDb()) === db)
+  await closeBookDb()
+  const db2 = await openBookDb()
+  t('close 之后能重开（且是新连接）', db2 !== db && db2.name === BOOK_DB_NAME)
+
+  // 事务回滚：第二个写入不可结构化克隆 -> 整个事务回滚，两店都不许留痕
+  const poison = normalizeRecord(sampleBook({ bookId: 'bk_9999999999999999' }))
+  const poisonMeta = metaOf(poison)
+  tEq('第二个写入不可克隆 -> TX_FAILED',
+    await codeOf(() => idbDriverDefault.default.put(
+      [[STORE_BOOKS, poison], [STORE_SHELF, { ...poisonMeta, boom: () => {} }]],
+      [STORE_BOOKS, STORE_SHELF])), 'TX_FAILED')
+  tEq('事务回滚：书体店没留痕', await idbDriverDefault.default.get(STORE_BOOKS, 'bk_9999999999999999'), undefined)
+  tEq('事务回滚：索引店也没留痕', await idbDriverDefault.default.get(STORE_SHELF, 'bk_9999999999999999'), undefined)
+
+  tEq('没有 IndexedDB 时 -> UNAVAILABLE', await codeOf(() => openBookDb({ factory: null })), 'UNAVAILABLE')
+  tEq('空店 count = 0', await idbDriverDefault.default.count(STORE_BOOKS), 0)
+  tEq('删不存在的键不抛', await codeOf(() => idbDriverDefault.default.del([STORE_SHELF], [[STORE_SHELF, 'bk_ffffffffffffffff']])), null)
+  tEq('清空空的店不抛', await codeOf(() => idbDriverDefault.default.clear([STORE_SHELF])), null)
+  await wipeIdb()
 }
 
 console.log('\n[composables/useBookShelf.js — 两个来源各自降级]')

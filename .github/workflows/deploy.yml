@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 十套测试全部通过才允许部署（reader 523 ＋ worker 462 ＝ 985 条）。都是纯逻辑测试，不依赖浏览器 / 网络 / 线上环境。
+  # 十套测试全部通过才允许部署（reader 558 ＋ worker 462 ＝ 1020 条）。都是纯逻辑测试，不依赖浏览器 / 网络 / 线上环境。
   test:
     runs-on: ubuntu-latest
 
