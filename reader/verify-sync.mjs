@@ -585,5 +585,137 @@ console.log('\n[第 3 步 — reconcileTenant：把「认领」与「换键」�
   await tick(5)
 }
 
+console.log('\n[第 3 步 — 记录通道：四类形状净化（纯逻辑）]')
+{
+  const R = await import('./src/sync/records.js')
+  t('RECORD_KINDS 恰是四类', JSON.stringify(R.RECORD_KINDS) === JSON.stringify(['note', 'wrong', 'card', 'setting']))
+  t('schema_version = 1', R.RECORD_SCHEMA_VERSION === 1)
+  t('recordKey / splitRecordKey 往返', (() => {
+    const k = R.recordKey('note', 'n_1')
+    const s = R.splitRecordKey(k)
+    return k === 'note:n_1' && !!s && s.kind === 'note' && s.id === 'n_1'
+  })())
+  t('splitRecordKey 对烂输入返回 null', R.splitRecordKey('noColon') === null && R.splitRecordKey(null) === null)
+
+  const note = R.sanitizeRecord('note', 'n_1', {
+    bookId: 'bk_x', chapterId: 'ch-1', anchor: { paraId: 'p-1', charStart: 3, charEnd: 9 },
+    text: 'hi', color: 'yellow', evil: 'DROP', createdAt: 'A', updatedAt: 'B',
+  })
+  t('note 写入当前 schema_version', note.schema_version === 1)
+  t('note 白名单外的字段被剪掉', !('evil' in note))
+  t('note 保留时间戳', note.updatedAt === 'B' && note.createdAt === 'A')
+  t('note anchor 被归一化', note.anchor.paraId === 'p-1' && note.anchor.charStart === 3 && note.anchor.charEnd === 9)
+  t('未知 kind -> null', R.sanitizeRecord('bogus', 'x_1', {}) === null)
+  t('空 id -> null', R.sanitizeRecord('note', '', {}) === null)
+
+  const c = R.sanitizeRecord('card', 'card_1', { refKind: 'phrase', refKey: 'turn out', srs: { due: 'D', stability: 2, junk: 1 } })
+  t('card 的 srs 只留白名单字段', c.srs.due === 'D' && c.srs.stability === 2 && !('junk' in c.srs))
+  t('card refKind/refKey 保留', c.refKind === 'phrase' && c.refKey === 'turn out')
+
+  const stg = R.sanitizeRecord('setting', 's_theme', { key: 'theme', value: { dark: true } })
+  t('setting 的 value 可承载任意 JSON', !!stg.value && stg.value.dark === true)
+
+  t('newRecordId 前缀正确', R.newRecordId('note').startsWith('n_') && R.newRecordId('card').startsWith('card_'))
+  t('sanitizeRecords 批量丢弃坏条目', R.sanitizeRecords([
+    { kind: 'note', id: 'n_1', payload: { text: 'a' } },
+    { kind: 'bogus', id: 'x', payload: {} },
+    null,
+  ]).length === 1)
+}
+
+console.log('\n[第 3 步 — planRecordMerge：记录通道的新旧判定]')
+{
+  const R = await import('./src/sync/records.js')
+  const T0 = '2026-01-01T00:00:00.000Z', T1 = '2026-01-02T00:00:00.000Z'
+  const rec = (id, ts) => ({ kind: 'note', id, payload: { text: id, updatedAt: ts } })
+  const local = { 'note:n_1': R.sanitizeRecord('note', 'n_1', { text: 'local', updatedAt: T0 }) }
+  t('远程更新 -> apply', R.planRecordMerge(local, [rec('n_1', T1)], [], {}).apply.length === 1)
+  t('远程更旧 -> 不动作', R.planRecordMerge(local, [rec('n_1', T0)], [], {}).apply.length === 0)
+  t('本地没有 -> 直接 apply', R.planRecordMerge({}, [rec('n_9', T1)], [], {}).apply.length === 1)
+  t('远程墓碑更新 -> remove',
+    R.planRecordMerge(local, [], [{ kind: 'note', id: 'n_1', deletedAt: T1 }], {}).remove[0] === 'note:n_1')
+  t('本地比墓碑新（删后又建）-> repush',
+    R.planRecordMerge({ 'note:n_1': R.sanitizeRecord('note', 'n_1', { text: 'later', updatedAt: T1 }) },
+      [], [{ kind: 'note', id: 'n_1', deletedAt: T0 }], {}).repush[0] === 'note:n_1')
+  t('本地未推墓碑压住较旧的远程存活写',
+    R.planRecordMerge({}, [rec('n_1', T0)], [], { 'note:n_1': T1 }).apply.length === 0)
+  t('未知 kind 的远程条目被忽略',
+    R.planRecordMerge({}, [{ kind: 'bogus', id: 'x', payload: {} }], [], {}).apply.length === 0)
+}
+
+console.log('\n[第 3 步 — 记录通道端到端：useSync push/pull（fetch 打桩）]')
+{
+  const realFetch = globalThis.fetch
+  const calls = []
+  let remote = { records: [], recordTombstones: [] }
+  const jsonRes = (obj) => ({ ok: true, status: 200, json: async () => obj })
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url)
+    calls.push({ url: u, body: opts.body ? JSON.parse(opts.body) : null })
+    if (u.includes('/pull')) {
+      return jsonRes({ words: {}, tombstones: {}, progress: {}, records: remote.records, recordTombstones: remote.recordTombstones })
+    }
+    if (u.includes('/push')) return jsonRes({ accepted: 1, rejected: 0, serverNow: new Date().toISOString() })
+    return jsonRes({})
+  }
+  const tick = (ms) => new Promise(r => setTimeout(r, ms))
+
+  // 干净起点：必须先清盘上的同步码，useSync 是在模块加载时就读它的
+  for (const k of ['reader-records-v1', 'reader-records-tombstones', 'reader-records-dirty', 'reader-sync-code']) store.delete(k)
+
+  const rs = await import('./src/sync/recordStore.js')
+  const { useSync } = await import('./src/composables/useSync.js?sim=RECORDS')
+  const sync = useSync()
+
+  await sync.pairCode('RECCODE1')
+  await tick(30)
+  calls.length = 0
+
+  const put = rs.putRecord('note', { bookId: 'bk_x', text: 'hello' })
+  t('putRecord 返回带前缀 id', !!put && put.id.startsWith('n_'))
+  t('putRecord 落盘', !!rs.loadRecordsMap()['note:' + put.id])
+  t('putRecord 标脏', rs.loadRecordDirty().includes('note:' + put.id))
+  t('写入即带 schema_version', rs.loadRecordsMap()['note:' + put.id].schema_version === 1)
+
+  calls.length = 0
+  await sync.push()
+  const pushed = calls.find(c => c.url.includes('/push'))
+  t('push 带上 records（kind/id/payload 完整）',
+    !!pushed && Array.isArray(pushed.body.records) && pushed.body.records[0].kind === 'note'
+    && pushed.body.records[0].id === put.id && pushed.body.records[0].payload.text === 'hello')
+  t('推送成功才清脏', rs.loadRecordDirty().length === 0)
+
+  remote = { records: [{ kind: 'card', id: 'card_r1', payload: { refKind: 'word', refKey: 'apple', updatedAt: '2026-01-05T00:00:00.000Z' } }], recordTombstones: [] }
+  await sync.pull()
+  t('拉取并入远程记录', !!rs.loadRecordsMap()['card:card_r1'])
+  t('并入远程记录不产生脏（否则会回声推回去）', rs.loadRecordDirty().length === 0)
+
+  remote = { records: [], recordTombstones: [{ kind: 'card', id: 'card_r1', deletedAt: '2026-01-06T00:00:00.000Z' }] }
+  await sync.pull()
+  t('远程墓碑删掉本地记录', !rs.loadRecordsMap()['card:card_r1'])
+  t('应用远程墓碑不写本地台账', !('card:card_r1' in rs.loadRecordTombstones()))
+
+  rs.removeRecord('note', put.id)
+  calls.length = 0
+  await sync.push()
+  const tombCall = calls.find(c => c.url.includes('/push'))
+  t('本地删除 -> push 带 recordTombstones',
+    !!tombCall && Array.isArray(tombCall.body.recordTombstones) && tombCall.body.recordTombstones[0].id === put.id)
+
+  // keepalive 路径不带记录，且不得清掉「有改动未推」的记录脏键
+  t('推送墓碑成功后，该键的脏账一并清掉', !rs.loadRecordDirty().includes('note:' + put.id))
+  const cardPut = rs.putRecord('card', { refKind: 'word', refKey: 'beta' })
+  calls.length = 0
+  sync.flushNow()
+  await tick(30)
+  t('keepalive 请求体不含 records（记录不走卸载路径）',
+    calls.every(c => !c.body || !c.body.records))
+  t('keepalive 后「有改动未推」的记录脏键仍在（没被误清）',
+    rs.loadRecordDirty().includes('card:' + cardPut.id))
+
+  globalThis.fetch = realFetch
+  for (const k of ['reader-records-v1', 'reader-records-tombstones', 'reader-records-dirty', 'reader-sync-code']) store.delete(k)
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

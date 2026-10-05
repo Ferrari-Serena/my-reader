@@ -3,6 +3,7 @@
  *   1. fsrs.js — 卡片创建/评分/到期队列/日期序列化
  *   2. spelling.js — 拼写比对/差异标注
  *   3. quizGen.js — 四种题型生成/干扰项/词组题
+ *   4. utils/bookId.js — BYO 书的内容指纹（第 3 步 3.5）
  * 用法: node verify-core.mjs
  */
 
@@ -10,6 +11,7 @@ import { createCard, rate, isDue, buildQueue, nextDueAt } from './src/fsrs.js'
 import { checkSpelling, levenshtein } from './src/utils/spelling.js'
 import { generateQuestions, generatePhraseQuestions } from './src/quizGen.js'
 import { buildDictAlias, resolveDictKey, addEntryForms } from './src/utils/dictIndex.js'
+import { bookIdFromHex, bookIdFromBytes, bookIdFromText, isBookId, BOOK_ID_PREFIX, BOOK_ID_HEX_LEN } from './src/utils/bookId.js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -219,6 +221,30 @@ console.log('\n[dict 分词口径]')
   const gk = resolveDictKey('ground', jw, alias)
   t('NGSL 例外 ground 离线命中', !!gk && (jw[gk].definitions || []).length > 0)
   t('ground 是自己的词头（不是 grind 的别名）', !!gk && gk === 'ground' && jw[gk].lemma === 'ground')
+}
+
+// ═══ 4. BYO 书的内容指纹（第 3 步 3.5）═══
+console.log('\n[utils/bookId.js — BYO 内容指纹]')
+{
+  t('前缀 / 长度常量', BOOK_ID_PREFIX === 'bk_' && BOOK_ID_HEX_LEN === 16)
+  t('bookIdFromHex 取前 16 位并加前缀',
+    bookIdFromHex('ba7816bf8f01cfea414140de5dae2223') === 'bk_ba7816bf8f01cfea')
+  t('bookIdFromHex 容忍大写与非 hex 噪声',
+    bookIdFromHex('BA7816BF-8F01-CFEA-4141') === 'bk_ba7816bf8f01cfea')
+  t('hex 不足 16 位 -> 空串', bookIdFromHex('abc') === '' && bookIdFromHex('') === '')
+  t('isBookId：BYO 形状为真、存量 slug 为假',
+    isBookId('bk_ba7816bf8f01cfea') === true && isBookId('the-giver') === false && isBookId('') === false)
+
+  // known-answer：真 SHA-256 的公布值，JS 与 Python 孪生用同一组，防两侧静默漂移
+  t('sha256("") 前 16 位', (await bookIdFromBytes(new Uint8Array(0))) === 'bk_e3b0c44298fc1c14')
+  t('sha256("abc") 前 16 位（WebCrypto 路径）',
+    (await bookIdFromText('abc')) === 'bk_ba7816bf8f01cfea')
+  t('同一内容算出同一个 id（确定性）',
+    (await bookIdFromText('hello world')) === (await bookIdFromText('hello world')))
+  t('不同内容算出不同 id',
+    (await bookIdFromText('hello world')) !== (await bookIdFromText('hello world!')))
+  t('bookIdFromBytes 与 bookIdFromText 一致',
+    (await bookIdFromBytes(new TextEncoder().encode('abc'))) === (await bookIdFromText('abc')))
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

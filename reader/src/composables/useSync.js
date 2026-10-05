@@ -20,6 +20,8 @@ import { planMerge } from '../sync/merge.js'
 import { syncClock } from '../sync/clock.js'
 import { collectLocalProgress, applyRemoteProgress } from '../sync/progress.js'
 import { budgetKeepaliveParts } from '../sync/budget.js'
+import { planRecordMerge, splitRecordKey } from '../sync/records.js'
+import * as recordStore from '../sync/recordStore.js'
 
 const SYNC_BASE = '/api/sync'
 const SYNC_CODE_KEY = 'reader-sync-code'
@@ -104,6 +106,38 @@ export async function mergeAndApply(vocab, remoteWords, remoteTombstones) {
   return plan
 }
 
+/**
+ * 记录通道的「远程 -> 本地」合并（与 mergeAndApply 同姿态，键换成 '<kind>:<id>'）。
+ * 存储层是无状态的，故同步即可。返回 plan 供调用方决定要不要回推。
+ */
+function mergeRecords(remoteRecords, remoteTombstones) {
+  const plan = planRecordMerge(
+    recordStore.loadRecordsMap(),
+    remoteRecords || [],
+    remoteTombstones || [],
+    recordStore.loadRecordTombstones()
+  )
+  if (plan.apply.length) {
+    recordStore.addRecords(plan.apply.map(a => ({ kind: a.kind, id: a.id, payload: a.payload })))
+  }
+  if (plan.remove.length) {
+    // record:false —— 这个删除服务端已经有了，本地不必再记台账（记了反而会被拒收）
+    recordStore.removeRecords(plan.remove, { record: false, dirty: false })
+    recordStore.clearRecordTombstones(plan.remove)
+  }
+  if (plan.repush.length) {
+    recordStore.clearRecordTombstones(plan.repush)
+    recordStore.markRecordDirty(plan.repush)
+  }
+  return plan
+}
+
+/** 把所有本地记录整体标脏（新建同步码 / 配对 / 换租户键时用，与 vocab.markAllDirty 对称） */
+function markAllRecordsDirty() {
+  const keys = Object.keys(recordStore.loadRecordsMap())
+  if (keys.length) recordStore.markRecordDirty(keys)
+}
+
 /** 拉取 + 合并。返回是否成功（供 autoPullOnce 决定要不要重试） */
 async function pullOnce() {
   if (!state.code) return false
@@ -114,11 +148,12 @@ async function pullOnce() {
     const vocab = useVocabulary()
     await vocab.init()
     const plan = await mergeAndApply(vocab, data.words || {}, data.tombstones || {})
+    const rplan = mergeRecords(data.records, data.recordTombstones)
     if (applyRemoteProgress(data.progress || {}).length) state.progressRev++
     state.lastSync = new Date()
     state.paired = true
     state.error = ''
-    if (plan.repush.length) pushSoon()
+    if (plan.repush.length || rplan.repush.length) pushSoon()
     return true
   } catch (e) {
     if (e.status === 404) {
@@ -165,6 +200,25 @@ async function pushNow(options = {}) {
       if (!(w in words) && !vocab.words.value[w]) tombstones[w] = ts
     }
 
+    // 记录通道（笔记/错题/卡片/设置）：脏记录 + 待推墓碑。
+    // keepalive 那条路径不带记录 —— budget.js 只建模了词/墓碑/进度，且记录的生产者
+    // （笔记/错题/卡片 UI）尚未落地；脏集合已持久化，下次普通推送自会补上。
+    const pushRecords = []
+    const pushRecordTombs = []
+    if (!options.keepalive) {
+      const recMap = recordStore.loadRecordsMap()
+      for (const key of recordStore.loadRecordDirty()) {
+        const payload = recMap[key]
+        const sp = splitRecordKey(key)
+        if (payload && sp) pushRecords.push({ kind: sp.kind, id: sp.id, payload })
+      }
+      for (const [key, ts] of Object.entries(recordStore.loadRecordTombstones())) {
+        if (recMap[key]) continue // 同一次推送里一个键只能有一个状态
+        const sp = splitRecordKey(key)
+        if (sp) pushRecordTombs.push({ kind: sp.kind, id: sp.id, deletedAt: ts })
+      }
+    }
+
     // keepalive 的请求体总量上限 64 KiB（超了浏览器**整条丢弃**，一条都推不出去）。
     // 页面卸载时的那次推送正好走 keepalive，所以先按优先级裁到预算内再发（见 sync/budget.js）。
     const progress = collectLocalProgress()
@@ -186,12 +240,16 @@ async function pushNow(options = {}) {
     }
 
     const hasWords = Object.keys(pushWords).length || Object.keys(pushTombs).length
+    const hasRecords = pushRecords.length || pushRecordTombs.length
 
-    if (hasWords) {
+    if (hasWords || hasRecords) {
+      const body = { code: state.code, words: pushWords, tombstones: pushTombs }
+      if (pushRecords.length) body.records = pushRecords
+      if (pushRecordTombs.length) body.recordTombstones = pushRecordTombs
       const res = await apiFetch('/push', {
         method: 'POST',
         keepalive: !!options.keepalive,
-        body: JSON.stringify({ code: state.code, words: pushWords, tombstones: pushTombs })
+        body: JSON.stringify(body)
       })
       state.lastSync = new Date()
       state.paired = true
@@ -200,13 +258,26 @@ async function pushNow(options = {}) {
       doneKeys = dirtyKeys.filter(k => !(droppedSet && droppedSet.has(k)))
       // 推送成功才清台账——失败时要留着，下次继续推
       if (Object.keys(pushTombs).length) st.clearTombstones(Object.keys(pushTombs))
-      // 时间戳仍是旧的，说明服务端有更新的版本：本地这些词已被拒收，
+      // 记录通道同理：成功才清脏、才清墓碑
+      if (pushRecords.length) recordStore.clearRecordDirty(pushRecords.map(r => r.kind + ':' + r.id))
+      if (pushRecordTombs.length) {
+        const doneTombKeys = pushRecordTombs.map(t => t.kind + ':' + t.id)
+        recordStore.clearRecordTombstones(doneTombKeys)
+        recordStore.clearRecordDirty(doneTombKeys)
+      }
+      // 时间戳仍是旧的，说明服务端有更新的版本：本地这些词/记录已被拒收，
       // 必须立刻拉一次把远程版本合并进来，否则本地会一直以为自己写成功了
       if (state.rejected > 0) await pullOnce()
     } else {
       // 没有任何可推内容（空壳词/已删词）：这些脏词不再挂账，否则每次冷启动都空推一轮
       doneKeys = dirtyKeys
       state.rejected = 0
+      // 只清「既无本体、也无墓碑」的真·空键；keepalive 路径本就跳过记录，
+      // 若照单全清会把「有改动但本次没发」的记录脏键抹掉 —— 那次编辑就永远上不去了。
+      const recMap = recordStore.loadRecordsMap()
+      const recTombs = recordStore.loadRecordTombstones()
+      const staleRecords = recordStore.loadRecordDirty().filter(k => !recMap[k] && !recTombs[k])
+      if (staleRecords.length) recordStore.clearRecordDirty(staleRecords)
     }
 
     // 进度单独一个端点。它的拒收不触发重新拉取——进度是次要数据，
@@ -281,6 +352,7 @@ async function createCode() {
     const vocab = useVocabulary()
     await vocab.init()
     vocab.markAllDirty()
+    markAllRecordsDirty()
     pushSoon(0)
     return data.code
   } catch (e) {
@@ -314,6 +386,7 @@ async function pairCode(code) {
     // 不推的话「配对」只是一次单向下载：A 的生词到了 B，B 的生词永远上不去。
     // 时间戳输的那批会被服务端拒收 → 触发一次重新拉取 → 收敛。
     vocab.markAllDirty()
+    markAllRecordsDirty()
     pushSoon(0)
     return true
   } catch (e) {
@@ -350,7 +423,7 @@ function autoPullOnce() {
     // 不补推的话，页面重开后没有任何变异 → 不会触发 pushSoon → 那次编辑永远上不去。
     // 离线冷启动时这里不会执行（pullOnce 失败），脏词留在盘上等下一次推送自愈。
     const vocab = useVocabulary()
-    if (vocab.pendingDirty().length) pushSoon(0)
+    if (vocab.pendingDirty().length || recordStore.loadRecordDirty().length) pushSoon(0)
   })
 }
 
@@ -391,6 +464,7 @@ async function adoptCode(rawCode, { stash = true } = {}) {
   const vocab = useVocabulary()
   await vocab.init()
   vocab.markAllDirty()
+  markAllRecordsDirty()
   const ok = await pullOnce()
   // 这次已经拉过了；拉失败就别把标志置真，留给 autoPullOnce 下次重试
   _autoPulled = ok
