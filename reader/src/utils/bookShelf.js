@@ -12,6 +12,7 @@
  *   · 两侧都只认形状对的条目，坏的整条丢掉（别把 null 塞进 :key）。
  */
 import { isBookId } from './bookId.js'
+import { isCoverDataUrl } from './bookCover.js'
 
 export const BOOK_KIND = { BUILTIN: 'builtin', BYO: 'byo' }
 
@@ -96,7 +97,7 @@ export function metaOf(record) {
     id,
     title: String(record.title || '').trim() || 'Untitled',
     author: String(record.author || '').trim(),
-    coverUrl: '',
+    coverUrl: isCoverDataUrl(record.coverUrl) ? record.coverUrl : '',
     rights: BYO_RIGHTS,
     visibility: VISIBILITY.PRIVATE,
     category: '',

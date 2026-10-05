@@ -75,6 +75,27 @@ export function parseOpf(opfXml) {
   return { title: oneLine(pick(xml, 'title')), author: oneLine(pick(xml, 'creator')), items, spine }
 }
 
+/**
+ * 从 OPF 找封面那个 manifest item（只认图片）。三条线索，从强到弱：
+ *   ① EPUB3：item 的 properties 里写着 cover-image；
+ *   ② EPUB2：<meta name="cover" content="item-id"/> 指向的 item；
+ *   ③ 兜底：id / href 里带 cover 的图片。
+ * 都没有 -> null（调用方回占位图，不是错误）。
+ */
+export function findCoverItem(opfXml, items) {
+  const list = Array.isArray(items) ? items : []
+  const isImage = (it) => !!it && /^image\//i.test(it.mediaType || '')
+  const byProp = list.find(it => isImage(it) && /(^|\s)cover-image(\s|$)/i.test(it.properties || ''))
+  if (byProp) return byProp
+  const meta = String(opfXml || '').match(/<meta\b[^>]*name\s*=\s*["']cover["'][^>]*>/i)
+  const id = meta ? attr(meta[0], 'content') : ''
+  if (id) {
+    const hit = list.find(it => it.id === id)
+    if (hit) return hit
+  }
+  return list.find(it => isImage(it) && /cover/i.test(`${it.id || ''} ${it.href || ''}`)) || null
+}
+
 /** 章名：优先文档里的第一个 h1..h6，其次 <title>，最后 Chapter N */
 export function chapterTitle(html, n) {
   for (let i = 1; i <= 6; i++) {
@@ -103,6 +124,15 @@ export function parseEpub(bytes, { title = '' } = {}) {
   const dir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : ''
   const byId = new Map(items.map(i => [i.id, i]))
 
+  // 封面（第 7 步 7.4）：用好解包结果里现成的字节，零额外解压；找不到就是 null
+  const coverItem = findCoverItem(strFromU8(entries[opfPath]), items)
+  const coverFile = coverItem && coverItem.href
+    ? (entries[resolvePath(dir, coverItem.href)] || entries[coverItem.href])
+    : null
+  const cover = coverFile && coverFile.length
+    ? { bytes: coverFile, mediaType: coverItem.mediaType || '' }
+    : null
+
   const chapters = []
   for (const ref of spine) {
     if (!ref.idref) continue
@@ -123,5 +153,5 @@ export function parseEpub(bytes, { title = '' } = {}) {
   }
 
   if (!chapters.length) throw new ImportError('EMPTY_CONTENT')
-  return { title: collapse(opfTitle) || collapse(title), author: collapse(author), chapters }
+  return { title: collapse(opfTitle) || collapse(title), author: collapse(author), chapters, cover }
 }

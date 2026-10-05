@@ -139,6 +139,24 @@ export function alreadyOnShelfText() {
   }
 }
 
+/**
+ * 解析产物 -> 入库记录。**显式列字段**，不用 `{ ...book }`。
+ *
+ * 为什么单立一个函数：入库字段表原先写在组件里，没有任何测试咬得住它 ——
+ * 第 7 步 7.4 就在这儿漏过一次（`coverUrl` 没进那张表，导入的书在书架上一律是占位图，
+ * 而所有单测都是绿的，因为测的是 saveBook 而不是组件那张表）。立在纯逻辑层才能被断言。
+ * 计数不落库：存储层的 normalizeRecord 会自己重算（同一份事实别存两遍）。
+ */
+export function recordFromBook(book) {
+  return {
+    bookId: book.bookId,
+    title: book.title,
+    author: book.author,
+    chapters: book.chapters,
+    coverUrl: book.coverUrl || ''
+  }
+}
+
 /** 「开始导入」能不能点：勾了版权、选了文件、且没在忙 */
 export function canStart({ consent, file, busy } = {}) {
   return !!consent && !!file && !busy

@@ -122,6 +122,21 @@ console.log('\n[importFlow — 错误码文案]')
   t('常见码的返回形状都齐（code / message / hint 非空）', shaped)
 }
 
+console.log('\n[importFlow — 解析产物 -> 入库记录]')
+{
+  const book = {
+    bookId: 'bk_0123456789abcdef', title: 'T', author: 'A',
+    chapters: [{ id: 'ch-01', paragraphs: [{ id: 'p-01-001', text: 'x' }] }],
+    coverUrl: 'data:image/png;base64,YQ==', paragraphCount: 1, charCount: 1
+  }
+  const rec = F.recordFromBook(book)
+  tEq('字段表不多不少（少一个就是静默丢数据）', Object.keys(rec).sort(),
+    ['author', 'bookId', 'chapters', 'coverUrl', 'title'])
+  tEq('内嵌封面带过去', rec.coverUrl, 'data:image/png;base64,YQ==')
+  tEq('没有封面时是空串（不是 undefined）', F.recordFromBook({ ...book, coverUrl: undefined }).coverUrl, '')
+  t('计数不落库（存储层自己重算）', !('paragraphCount' in rec) && !('charCount' in rec))
+}
+
 console.log('\n[importFlow — 门与提示]')
 {
   const file = { name: 'a.epub', size: 10 }

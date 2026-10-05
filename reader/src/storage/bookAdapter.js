@@ -10,6 +10,7 @@ import idbDriver, { BookStoreError, STORE_BOOKS, STORE_SHELF } from './bookDb.js
 import { isBookId } from '../utils/bookId.js'
 import { metaOf, sortByAddedAtDesc } from '../utils/bookShelf.js'
 import { nowIso } from '../sync/clock.js'
+import { isCoverDataUrl } from '../utils/bookCover.js'
 
 export { BookStoreError, STORE_BOOKS, STORE_SHELF } from './bookDb.js'
 
@@ -36,6 +37,8 @@ export function normalizeRecord(raw) {
     bookId,
     title: String(raw.title || '').trim() || 'Untitled',
     author: String(raw.author || '').trim(),
+    // 封面：只认自己产的 image data URL，其余（外链 / 非图片 / 超长）一律丢
+    coverUrl: isCoverDataUrl(raw.coverUrl) ? raw.coverUrl : '',
     chapters,
     chapterCount: chapters.length,
     charCount,

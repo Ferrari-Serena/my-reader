@@ -2,6 +2,7 @@
  * BYO 导入解析层验证（第 5 步 5A；不依赖浏览器 / 网络）。
  *   import/errors.js — 错误口径（code/message/hint）
  *   import/book.js   — 格式识别 / 编号 / 出口净化
+ *   utils/bookCover.js — 封面 data URL（大小上限 / 白名单；book.js 与存储层共用）
  *   import/html.js   — XHTML -> 段落（实体、script/style、块级边界）
  *   import/txt.js    — 编码识别（BOM/UTF-8/GBK/UTF-16）+ 切段切章
  *   import/epub.js   — 解包 / container+OPF / spine 顺序 / DRM 拦截
@@ -21,8 +22,9 @@ const { ImportError, IMPORT_ERRORS, IMPORT_LIMITS, toImportError } = await impor
 const { chapterId, paragraphId, formatOf, makeBook, MAX_FILE_BYTES } = await import('./src/import/book.js')
 const { htmlToParagraphs, decodeEntities, stripTags } = await import('./src/import/html.js')
 const { decodeBytes, splitTextToParagraphs, isChapterHeading, paragraphsToChapters, parseTxt } = await import('./src/import/txt.js')
-const { resolvePath, findOpfPath, parseOpf, parseEpub, isEncryptedEpub, readEpubEntries } = await import('./src/import/epub.js')
+const { resolvePath, findOpfPath, parseOpf, findCoverItem, parseEpub, isEncryptedEpub, readEpubEntries } = await import('./src/import/epub.js')
 const { groupLines, linesToParagraphs, pagesToChapters, parsePdf } = await import('./src/import/pdf.js')
+const { bytesToBase64, coverDataUrl, isCoverDataUrl, COVER_MAX_BYTES, COVER_MAX_DATA_URL } = await import('./src/utils/bookCover.js')
 const { importBook } = await import('./src/import/index.js')
 
 let pass = 0, fail = 0
@@ -157,6 +159,35 @@ console.log('\n[txt.js — 编码 / 切段 / 切章]')
   tEq('parseTxt 每章正文段数', book.chapters.map(c => c.paragraphs.length), [3, 2])
 }
 
+console.log('\n[utils/bookCover.js — 封面 data URL（第 7 步 7.4）]')
+{
+  const enc = (x) => new TextEncoder().encode(x)
+  tEq('base64 空字节 -> 空串', bytesToBase64(new Uint8Array(0)), '')
+  tEq('base64 整 3 字节（Man）', bytesToBase64(enc('Man')), 'TWFu')
+  tEq('base64 余 2 字节（Ma）', bytesToBase64(enc('Ma')), 'TWE=')
+  tEq('base64 余 1 字节（M）', bytesToBase64(enc('M')), 'TQ==')
+  tEq('base64 认视图（subarray 也按自己的长度算）', bytesToBase64(enc('Man').subarray(0, 2)), 'TWE=')
+  tEq('base64 非字节输入不炸', bytesToBase64(null), '')
+
+  tEq('coverDataUrl 前缀', coverDataUrl({ bytes: enc('abc'), mediaType: 'image/png' }), 'data:image/png;base64,YWJj')
+  tEq('coverDataUrl media-type 归一（大写能认）', coverDataUrl({ bytes: enc('a'), mediaType: 'IMAGE/JPEG' }), 'data:image/jpeg;base64,YQ==')
+  tEq('coverDataUrl 非图片 -> 空串', coverDataUrl({ bytes: enc('a'), mediaType: 'text/html' }), '')
+  tEq('coverDataUrl 空字节 -> 空串', coverDataUrl({ bytes: new Uint8Array(0), mediaType: 'image/png' }), '')
+  tEq('coverDataUrl 没给对象 -> 空串', coverDataUrl(null), '')
+  t('coverDataUrl 恰好上限（512 KB）-> 有内容', coverDataUrl({ bytes: new Uint8Array(COVER_MAX_BYTES), mediaType: 'image/png' }).length > 0)
+  tEq('coverDataUrl 超 1 字节 -> 空串', coverDataUrl({ bytes: new Uint8Array(COVER_MAX_BYTES + 1), mediaType: 'image/png' }), '')
+
+  const good = coverDataUrl({ bytes: enc('abc'), mediaType: 'image/png' })
+  t('isCoverDataUrl 认自己产的', isCoverDataUrl(good))
+  tEq('isCoverDataUrl 拒外链', isCoverDataUrl('https://cdn.example/x.png'), false)
+  tEq('isCoverDataUrl 拒非图片 data URL', isCoverDataUrl('data:text/html;base64,YQ=='), false)
+  tEq('isCoverDataUrl 拒缺 base64 标记', isCoverDataUrl('data:image/png,YQ=='), false)
+  tEq('isCoverDataUrl 拒前后空白（strict，不 trim）', isCoverDataUrl(' ' + good + ' '), false)
+  tEq('isCoverDataUrl 拒空 / null / 非串', [isCoverDataUrl(''), isCoverDataUrl(null), isCoverDataUrl(42)], [false, false, false])
+  tEq('isCoverDataUrl 拒超长', isCoverDataUrl('data:image/png;base64,' + 'A'.repeat(COVER_MAX_DATA_URL)), false)
+  t('上限口径：data URL 上限放得下满一张上限图', COVER_MAX_DATA_URL > 4 * Math.ceil(COVER_MAX_BYTES / 3))
+}
+
 console.log('\n[epub.js — 解包 / OPF / 正文]')
 {
   tEq('resolvePath 拼相对路径', resolvePath('OEBPS/', 'text/ch2.xhtml'), 'OEBPS/text/ch2.xhtml')
@@ -190,6 +221,26 @@ console.log('\n[epub.js — 解包 / OPF / 正文]')
   ])
   tEq('第二章正文（嵌套目录 text/ 也认得）', book.chapters[1].paragraphs, ['Block div text.', 'After a break.'])
   t('正文里没有 script/style 残留', !JSON.stringify(book.chapters).includes('var x') && !JSON.stringify(book.chapters).includes('color: red'))
+
+  // 封面（第 7 步 7.4）：本模块只负责「找到并取字节」；转 data URL 与限大小在 utils/bookCover.js
+  tEq('sample.epub 没有封面 -> null', book.cover, null)
+  const opfXmlOf = (f) => new TextDecoder().decode(readEpubEntries(read(f))['OEBPS/content.opf'])
+  const itemsOfXml = (xml) => parseOpf(xml).items
+  const coverOpf = opfXmlOf('cover.epub')
+  tEq('线索②：EPUB2 <meta name="cover"> 指向图片项', findCoverItem(coverOpf, itemsOfXml(coverOpf)).href, 'images/cover.png')
+  const propOpf = opfXmlOf('cover3.epub')
+  tEq('线索①：EPUB3 properties="cover-image"', findCoverItem(propOpf, itemsOfXml(propOpf)).href, 'images/cover.jpg')
+  tEq('兜底③：href 里带 cover 的图片', findCoverItem('<package/>', [{ id: 'a', href: 'OEBPS/Cover.jpg', mediaType: 'image/jpeg' }]).href, 'OEBPS/Cover.jpg')
+  tEq('兜底只认图片：cover.xhtml 不算', findCoverItem('<package/>', [{ id: 'cover', href: 'cover.xhtml', mediaType: 'application/xhtml+xml' }]), null)
+  tEq('meta 指向不存在的 id -> 不硬猜', findCoverItem('<meta name="cover" content="nope"/>', [{ id: 'x', href: 'img.png', mediaType: 'image/png' }]), null)
+  tEq('items 不是数组 -> null', findCoverItem('<package/>', null), null)
+
+  const covered = parseEpub(read('cover.epub'))
+  tEq('cover.epub 取到封面 media-type', covered.cover.mediaType, 'image/png')
+  t('cover.epub 取到的是真 PNG 字节', covered.cover.bytes[0] === 0x89 && covered.cover.bytes[1] === 0x50)
+  tEq('cover3.epub 取到 jpeg 封面', parseEpub(read('cover3.epub')).cover.mediaType, 'image/jpeg')
+  tEq('封面只在 manifest、不占正文', covered.chapters.length, 1)
+  t('取封面不影响正文文本', covered.chapters[0].paragraphs[0].startsWith('Alpha paragraph'))
 
   tEq('加密 EPUB -> EPUB_ENCRYPTED', await codeOf(() => parseEpub(read('encrypted.epub'))), 'EPUB_ENCRYPTED')
   tEq('不是 zip -> EPUB_INVALID', await codeOf(() => parseEpub(read('sample.txt'))), 'EPUB_INVALID')
@@ -262,6 +313,10 @@ console.log('\n[index.js — importBook 端到端]')
   t('不同内容给不同 id', other.bookId !== book.bookId)
   tEq('epub 的书名来自 OPF', other.title, 'Import Sample Book')
   tEq('epub -> 两章', other.chapters.length, 2)
+  tEq('没有封面的书 coverUrl 是空串', book.coverUrl, '')
+  const cov = await importBook({ name: 'cover.epub', bytes: read('cover.epub') })
+  tEq('importBook 把内嵌封面带成 data URL', cov.coverUrl.startsWith('data:image/png;base64,'), true)
+  t('importBook 产出的封面过白名单', isCoverDataUrl(cov.coverUrl))
 
   tEq('.mobi -> UNSUPPORTED_FORMAT', await codeOf(() => importBook({ name: 'a.mobi', bytes: new Uint8Array([1, 2, 3, 4]) })), 'UNSUPPORTED_FORMAT')
   tEq('空文件 -> EMPTY_CONTENT', await codeOf(() => importBook({ name: 'a.txt', bytes: new Uint8Array(0) })), 'EMPTY_CONTENT')

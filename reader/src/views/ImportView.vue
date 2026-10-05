@@ -92,6 +92,7 @@ import {
   isHeavy,
   preflightFile,
   progressPercent,
+  recordFromBook,
   stepText,
   stripExt
 } from '../utils/importFlow.js'
@@ -184,12 +185,7 @@ async function start() {
       return
     }
 
-    const meta = await saveBook({
-      bookId: book.bookId,
-      title: book.title,
-      author: book.author,
-      chapters: book.chapters
-    })
+    const meta = await saveBook(recordFromBook(book))
     result.value = { ...meta, existed: false }
     step.value = IMPORT_STEP.DONE
   } catch (e) {

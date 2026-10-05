@@ -5,8 +5,10 @@
  * 走的是同一套渲染路径，不需要为 BYO 分叉：
  *   { bookId, title, author, chapters: [ { id: 'ch-01', title, paragraphs: [ { id: 'p-01-001', text } ] } ] }
  * annotatedWords 可有可无（ReaderView 用 `para.annotatedWords || []`），BYO 不产出。
+ * coverUrl 是**可选**的 data URL（只有 EPUB 内嵌封面才有；见 utils/bookCover.js）。
  */
 import { ImportError, IMPORT_LIMITS } from './errors.js'
+import { coverDataUrl } from '../utils/bookCover.js'
 
 export const MAX_FILE_MB = IMPORT_LIMITS.MAX_FILE_MB
 export const MAX_FILE_BYTES = IMPORT_LIMITS.MAX_FILE_BYTES
@@ -55,7 +57,7 @@ export const collapse = (v) => String(v ?? '').replace(/\s+/g, ' ').trim()
  * 唯一的出口：净化 + 编号 + 称重。空段落/空章直接丢；
  * 全空 -> EMPTY_CONTENT（不产出半本空书）。
  */
-export function makeBook({ bookId = '', title = '', author = '', chapters = [] } = {}) {
+export function makeBook({ bookId = '', title = '', author = '', chapters = [], cover = null } = {}) {
   const cleaned = []
   for (const ch of Array.isArray(chapters) ? chapters : []) {
     const paras = (Array.isArray(ch?.paragraphs) ? ch.paragraphs : [])
@@ -82,6 +84,7 @@ export function makeBook({ bookId = '', title = '', author = '', chapters = [] }
     title: collapse(title) || out[0].title || 'Untitled',
     author: collapse(author),
     chapters: out,
+    coverUrl: coverDataUrl(cover),
     chapterCount: out.length,
     paragraphCount,
     charCount,

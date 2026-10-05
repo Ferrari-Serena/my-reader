@@ -32,6 +32,10 @@ const { createBookStore, normalizeRecord, BookStoreError } = await import('./src
 const idbDriverDefault = await import('./src/storage/bookDb.js')
 const { openBookDb, closeBookDb, BOOK_DB_NAME, BOOK_DB_VERSION, STORE_BOOKS, STORE_SHELF } = idbDriverDefault
 const { useBookShelf } = await import('./src/composables/useBookShelf.js')
+const { COVER_MAX_DATA_URL } = await import('./src/utils/bookCover.js')
+
+/** 一份合法的封面 data URL（第 7 步 7.4 白名单的正样本） */
+const GOOD_COVER = 'data:image/png;base64,aGVsbG8='
 
 // ── 内存驱动（契约见 src/storage/bookDb.js 文件头）──────────────────────
 // put 的做法是「先全部备好、再一次性落盘」：失败时一个字节都不落。
@@ -108,6 +112,13 @@ async function crudSuite(tag, driver) {
   tEq(n('覆盖真的换了内容'), (await store.loadBook('bk_0123456789abcdef')).author, 'Changed')
   tEq(n('列表条目不带正文'), list.some(b => 'chapters' in b), false)
 
+  // 封面（第 7 步 7.4）：书架索引要带得出来，书体记录里也留一份
+  await store.saveBook(sampleBook({ bookId: 'bk_4444444444444444', coverUrl: GOOD_COVER, addedAt: '2026-02-01T00:00:00.000Z' }))
+  tEq(n('封面随书架条目带出来'), (await driver.get(STORE_SHELF, 'bk_4444444444444444')).coverUrl, GOOD_COVER)
+  tEq(n('书体记录里也留着封面'), (await store.loadBook('bk_4444444444444444')).coverUrl, GOOD_COVER)
+  tEq(n('脏封面进不了书架索引'),
+    (await store.saveBook(sampleBook({ bookId: 'bk_5555555555555555', coverUrl: 'http://x/y.png' }))).coverUrl, '')
+
   tEq(n('deleteBook -> true'), await store.deleteBook('bk_0123456789abcdef'), true)
   tEq(n('删除后取不到'), await store.loadBook('bk_0123456789abcdef'), null)
   tEq(n('删除后索引也没了'), await driver.get(STORE_SHELF, 'bk_0123456789abcdef'), undefined)
@@ -154,6 +165,8 @@ console.log('\n[utils/bookShelf.js — 书架聚合口径]')
   tEq('metaOf：用户书默认私有（决策 #9）', [m.rights, m.visibility, m.category], ['private', 'private', ''])
   tEq('metaOf：slug 记录 -> null', metaOf({ id: 'the-giver' }), null)
   tEq('metaOf：无标题 -> Untitled', metaOf({ bookId: 'bk_ffffffffffffffff' }).title, 'Untitled')
+  tEq('metaOf：合法封面带出来', metaOf({ id: 'bk_ffffffffffffffff', coverUrl: GOOD_COVER }).coverUrl, GOOD_COVER)
+  tEq('metaOf：脏封面丢掉', metaOf({ id: 'bk_ffffffffffffffff', coverUrl: 'http://x/y.png' }).coverUrl, '')
 
   const sorted = sortByAddedAtDesc([
     { id: 'a', addedAt: '2026-01-01T00:00:00.000Z' },
@@ -229,7 +242,18 @@ console.log('\n[storage/bookAdapter.js — 入库净化]')
   tEq('顶层未知字段被剪裁', 'junk' in withJunk, false)
   tEq('段上未知字段被剪裁', 'junk' in withJunk.chapters[0].paragraphs[0], false)
   tEq('产出键就是白名单', Object.keys(withJunk).sort(),
-    ['addedAt', 'author', 'bookId', 'chapterCount', 'charCount', 'chapters', 'title', 'updatedAt'].sort())
+    ['addedAt', 'author', 'bookId', 'chapterCount', 'charCount', 'chapters', 'coverUrl', 'title', 'updatedAt'].sort())
+
+  // 封面白名单（第 7 步 7.4）：只认自己产的 image data URL
+  tEq('合法封面原样保留', normalizeRecord(sampleBook({ coverUrl: GOOD_COVER })).coverUrl, GOOD_COVER)
+  tEq('外链封面被丢', normalizeRecord(sampleBook({ coverUrl: 'https://evil.example/x.jpg' })).coverUrl, '')
+  tEq('非图片 data URL 被丢', normalizeRecord(sampleBook({ coverUrl: 'data:text/html;base64,YQ==' })).coverUrl, '')
+  tEq('缺 base64 标记被丢', normalizeRecord(sampleBook({ coverUrl: 'data:image/png,YQ==' })).coverUrl, '')
+  tEq('前后带空白被丢', normalizeRecord(sampleBook({ coverUrl: ' ' + GOOD_COVER })).coverUrl, '')
+  tEq('没有封面 -> 空串', normalizeRecord(sampleBook()).coverUrl, '')
+  tEq('封面非字符串被丢', normalizeRecord(sampleBook({ coverUrl: 42 })).coverUrl, '')
+  tEq('超长封面被丢', normalizeRecord(sampleBook({ coverUrl: 'data:image/png;base64,' + 'A'.repeat(COVER_MAX_DATA_URL + 1) })).coverUrl, '')
+  tEq('净化幂等（合法封面过两遍不变）', normalizeRecord(normalizeRecord(sampleBook({ coverUrl: GOOD_COVER }))).coverUrl, GOOD_COVER)
   t('addedAt / updatedAt 都是 ISO 串',
     /^\d{4}-\d{2}-\d{2}T/.test(dirty.addedAt) && /^\d{4}-\d{2}-\d{2}T/.test(dirty.updatedAt))
   tEq('显式 addedAt 被原样保留', normalizeRecord(sampleBook({ addedAt: '2026-01-01T00:00:00.000Z' })).addedAt, '2026-01-01T00:00:00.000Z')

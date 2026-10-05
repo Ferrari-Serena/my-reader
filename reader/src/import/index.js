@@ -26,7 +26,7 @@ function toBytes(x) {
 /**
  * input：File（浏览器）或 { name, bytes }（测试）。
  * options：{ title, pdfjs, onProgress, signal, format }
- * 返回 makeBook 的产物：{ bookId, title, author, chapters, chapterCount, paragraphCount, charCount }
+ * 返回 makeBook 的产物：{ bookId, title, author, chapters, coverUrl, chapterCount, paragraphCount, charCount }
  */
 export async function importBook(input, options = {}) {
   // 取消口（第 5 步 5.5）：PDF 逐页 await，信号能真打断；TXT / EPUB 是一次同步解码，
@@ -61,5 +61,6 @@ export async function importBook(input, options = {}) {
     title: parsed.title || title,
     author: parsed.author || '',
     chapters: parsed.chapters || [],
+    cover: parsed.cover || null,
   })
 }
