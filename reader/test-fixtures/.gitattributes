@@ -1,0 +1,5 @@
+# 夹具一律按**字节**对待，禁止任何换行/编码转换：
+#   · text-layer.pdf / *.epub 是二进制；
+#   · sample-gbk.txt 是 GBK、sample-utf16.txt 是 UTF-16LE（含 NUL）——
+#     autocrlf 一旦把 LF 换成 CRLF，它们就不再是「原始字节」，编码识别的用例会失真。
+* -text

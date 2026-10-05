@@ -1,0 +1,13 @@
+CHAPTER 1
+
+It was a bright cold day in April, and the clocks were striking thirteen.
+
+Winston Smith, his chin nuzzled into his breast in an effort to escape the vile wind.
+
+这是一段中文正文，用来把编码从 UTF-8 里逼出来。
+
+CHAPTER 2
+
+The second chapter begins here.
+
+And it has one more paragraph.

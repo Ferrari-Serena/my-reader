@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node verify-core.mjs && node verify-sync.mjs && node smoke-test.mjs && node verify-authui.mjs"
+    "test": "node verify-core.mjs && node verify-sync.mjs && node verify-import.mjs && node smoke-test.mjs && node verify-authui.mjs"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
+    "pdfjs-dist": "^6.4.299",
     "ts-fsrs": "^5.4.1",
     "vue": "^3.5.39",
     "vue-router": "^4.6.4"
