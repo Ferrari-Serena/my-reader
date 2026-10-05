@@ -21,7 +21,7 @@ globalThis.localStorage = {
   get length() { return store.size },
 }
 
-const { planMerge, entryTime, computeClockOffset, adjustedNowIso } = await import('./src/sync/merge.js')
+const { planMerge, mergeEntries, entryTime, computeClockOffset, adjustedNowIso } = await import('./src/sync/merge.js')
 const { readingStorageKey, audioStorageKey, collectLocalProgress, applyRemoteProgress } =
   await import('./src/sync/progress.js')
 const { sanitizeEntry } = await import('./src/storage/schema.js')
@@ -108,6 +108,59 @@ console.log('\n[merge.js — 本地未推出去的删除不能被远程存活写
     planMerge({}, { apple: entry('remote', T1) }, {}, { apple: '' }).apply.length === 1)
 }
 
+console.log('\n[merge.js — 字段级合并：各槽按自己的轴取新（方案 4.3）]')
+{
+  const srs = last => ({ due: last, last_review: last, stability: 1, difficulty: 5, state: 2 })
+  const q = n => ({ wrongHistory: [], correctStreak: 0, totalAttempts: n, totalCorrect: n })
+  const we = (ts, extra) => ({ word: 'w', updatedAt: ts, snapshot: { definitions: ['x'] }, srs: null, quiz: null, ...extra })
+
+  // 真实不变量：srs.last_review ≤ 该条 updatedAt（updateSRS 同时写两者）。
+  // 场景 A：A 机 T1 评分；B 机之后 T2 答题（未拿到 A 的评分）→ 纯整条 LWW 会把评分整段丢掉
+  const LA = we(T1, { srs: srs(T1) })
+  const RA = we(T2, { quiz: q(3), srs: srs(T0) })
+  const m = mergeEntries(LA, RA)
+  t('整条取新（远程的答题）', m.entry.quiz === RA.quiz)
+  t('SRS 取 last_review 较新者（本地的评分）', m.entry.srs === LA.srs)
+  t('tookOther=true（合出了两侧都没有的混合体）', m.tookOther === true)
+  t('合出的 updatedAt 严格新于两边', m.entry.updatedAt > T2 && m.entry.updatedAt > T1)
+
+  const pA = planMerge({ w: LA }, { w: RA }, {})
+  t('远程整条更新 → 落成混合体（答题来自远程、SRS 来自本地）',
+    pA.apply.length === 1 && pA.apply[0].entry.quiz.totalAttempts === 3 && pA.apply[0].entry.srs === LA.srs)
+  t('混合体回推', pA.repush.includes('w'))
+
+  // 场景 B：本地 T3 答题、远程 T2 评分（本地 SRS 更旧）→ 并进远程 SRS，还要回推
+  const LB = we(T3, { quiz: q(1), srs: srs(T0) })
+  const RB = we(T2, { srs: srs(T2) })
+  const pB = planMerge({ w: LB }, { w: RB }, {})
+  t('本地整条更新 → 落成混合体（答题来自本地、SRS 来自远程）',
+    pB.apply.length === 1 && pB.apply[0].entry.quiz.totalAttempts === 1 && pB.apply[0].entry.srs === RB.srs)
+  t('混合体回推', pB.repush.includes('w'))
+
+  // 无槽位混入时不得产生多余动作（保持「只推脏词」的省流量姿态）
+  const r3 = planMerge({ w: we(T1) }, { w: we(T2) }, {})
+  t('远程整体更新、无混入 → 原样采纳且不回推', r3.apply.length === 1 && r3.repush.length === 0)
+  const r4 = planMerge({ w: we(T2) }, { w: we(T1) }, {})
+  t('本地整体更新、无混入 → 不动作', r4.apply.length === 0 && r4.repush.length === 0)
+
+  // quiz 轴 = 累计答题数
+  t('quiz 取累计答题数更多者',
+    planMerge({ w: we(T1, { quiz: q(5) }) }, { w: we(T2, { quiz: q(9) }) }, {}).apply[0].entry.quiz.totalAttempts === 9)
+  const rq = planMerge({ w: we(T2, { quiz: q(9) }) }, { w: we(T1, { quiz: q(5) }) }, {})
+  t('quiz：本地更多 → 不换、不回推', rq.apply.length === 0 && rq.repush.length === 0)
+
+  // snapshot 轴 = 完整度：本地更新但空 → 并进远程的释义
+  const mS = mergeEntries(
+    { word: 'w', updatedAt: T2, snapshot: { definitions: [] }, srs: null, quiz: null },
+    { word: 'w', updatedAt: T1, snapshot: { definitions: ['a', 'b'] }, srs: null, quiz: null })
+  t('snapshot：本地更新但空 → 并进远程释义', mS.tookOther === true && mS.entry.snapshot.definitions.length === 2)
+
+  // 空槽不比有值槽新；并列取本地；合并幂等
+  t('一侧无 srs、另一侧有 → 取有值那侧', mergeEntries(we(T2), we(T1, { srs: srs(T1) })).entry.srs.last_review === T1)
+  t('同刻（并列）→ 取本地', mergeEntries(we(T1, { quiz: q(9) }), we(T1, { quiz: q(1) })).tookOther === false)
+  t('合并幂等：合好的再对同一远程合一次不再动', mergeEntries(m.entry, RA).tookOther === false)
+}
+
 console.log('\n[端到端 — mergeAndApply 走真 storage，离线删除不得被复活]')
 {
   store.clear()
@@ -123,6 +176,24 @@ console.log('\n[端到端 — mergeAndApply 走真 storage，离线删除不得�
   t('远程存活写更新 → 正常复活', p2.apply.length === 1 && !!vocab2.words.value.abandon)
   t('复活后台账被清掉', !storage.loadTombstones().abandon)
   // 复位共享状态，别把后面「新增不产生墓碑」那类用例带脏
+  await storage.clearVocabulary()
+  storage.clearTombstones(Object.keys(storage.loadTombstones()))
+}
+
+console.log('\n[端到端 — 字段合并经 mergeAndApply 落盘并回推]')
+{
+  store.clear()
+  await storage.clearVocabulary()
+  const srs = last => ({ due: last, last_review: last, stability: 1, difficulty: 5, state: 2 })
+  const local = { word: 'merge', bookId: null, chapterId: null, addedAt: T1, updatedAt: T2, snapshot: { definitions: ['本地'] }, srs: srs(T0), quiz: null }
+  await storage.addWord(local)
+  const dirty = []
+  const vocab = { words: { value: { merge: local } }, markDirty (...keys) { dirty.push(...keys) } }
+  const remote = { merge: { word: 'merge', addedAt: T1, updatedAt: T1, snapshot: { definitions: ['本地'] }, srs: srs(T3), quiz: null } }
+  const p = await mergeAndApply(vocab, remote, {})
+  t('本地落成混合体：整条本地 + SRS 远程', vocab.words.value.merge.srs.last_review === T3)
+  t('plan：apply 与 repush 各一条', p.apply.length === 1 && p.repush.length === 1)
+  t('回推：markDirty 收到该词', dirty.includes('merge'))
   await storage.clearVocabulary()
   storage.clearTombstones(Object.keys(storage.loadTombstones()))
 }
