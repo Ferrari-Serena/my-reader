@@ -10,6 +10,7 @@ import { parseRange } from './src/range.js'
 import * as syncMod from './src/sync.js'
 import * as corsMod from './src/cors.js'
 import * as rlMod from './src/ratelimit.js'
+import * as monMod from './src/monitor.js'
 
 let pass = 0, fail = 0
 function t(name, cond) {
@@ -162,6 +163,52 @@ console.log('\n[sync.js — 第 3 步：记录通道（kind 白名单 + 命名�
 
   const reserved = syncMod.buildSyncOps({ words: JSON.parse('{"__proto__":{"a":1},"constructor":{"a":1}}') }, now)
   t('保留名不放进词表通道（无原型链污染）', reserved.size === 0)
+}
+
+console.log('\n[monitor.js — 最小监控（第 4 步 4.8）]')
+{
+  t('routeOf: /api/sync/pull → sync', monMod.routeOf('/api/sync/pull') === 'sync')
+  t('routeOf: /api/sync（无尾斜杠）→ sync', monMod.routeOf('/api/sync') === 'sync')
+  t('routeOf: 前缀不越界（/api/syncX 不算 sync）', monMod.routeOf('/api/syncX') === 'other')
+  t('routeOf: dict / audio / auth / metrics / health',
+    monMod.routeOf('/api/dict/go') === 'dict' && monMod.routeOf('/api/audio/b/a.mp3') === 'audio'
+    && monMod.routeOf('/api/auth/login') === 'auth' && monMod.routeOf('/api/metrics') === 'metrics'
+    && monMod.routeOf('/health') === 'health')
+  t('routeOf: 未知/空/非字符串 → other',
+    monMod.routeOf('/') === 'other' && monMod.routeOf('/api/nope') === 'other'
+    && monMod.routeOf(null) === 'other' && monMod.routeOf(undefined) === 'other')
+
+  const line = monMod.buildLogLine({ method: 'get', path: '/api/sync/pull?code=SECRET9', route: 'sync', status: 200, ms: 7, ip: '1.2.3.4' })
+  const parsed = JSON.parse(line)
+  t('buildLogLine: 结构化字段齐全',
+    parsed.t === 'req' && parsed.m === 'GET' && parsed.r === 'sync'
+    && parsed.s === 200 && parsed.ms === 7 && parsed.ip === '1.2.3.4')
+  t('buildLogLine: 查询串被切掉（绝不记同步码/令牌）',
+    parsed.p === '/api/sync/pull' && !line.includes('SECRET9'))
+  t('buildLogLine: 路由缺省时按 path 现算',
+    JSON.parse(monMod.buildLogLine({ path: '/api/dict/go', status: 404 })).r === 'dict')
+  t('buildLogLine: 缺字段不炸',
+    (() => { const o = JSON.parse(monMod.buildLogLine({})); return o.t === 'req' && o.m === 'GET' && o.s === 0 && o.p === '' })())
+
+  const now = Date.UTC(2026, 9, 5, 15, 30)
+  const qs = monMod.metricsQueries(now)
+  t('metricsQueries: 六项计数',
+    JSON.stringify(qs.map(q => q.name)) === JSON.stringify(
+      ['dictLookupsToday', 'dictCached', 'syncCodes', 'syncLiveRows', 'syncTombstones', 'users']))
+  t('metricsQueries: 全是 COUNT（永不 SELECT 业务行）', qs.every(q => /COUNT\(/i.test(q.sql)))
+  const lookup = qs.find(q => q.name === 'dictLookupsToday')
+  t('metricsQueries: 词典调用按 UTC 日切片',
+    JSON.stringify(lookup.binds) === JSON.stringify([rlMod.utcDayStart(now)]))
+
+  const shaped = monMod.shapeMetrics([{ n: 42 }, { n: 1200 }, { n: 3 }, { n: 500 }, { n: 7 }, { n: 9 }], now)
+  t('shapeMetrics: 逐项落值',
+    shaped.dictLookupsToday === 42 && shaped.dictCached === 1200 && shaped.syncCodes === 3
+    && shaped.syncLiveRows === 500 && shaped.syncTombstones === 7 && shaped.users === 9)
+  t('shapeMetrics: ok + serverNow + dayStart',
+    shaped.ok === true && shaped.serverNow === new Date(now).toISOString() && shaped.dayStart === rlMod.utcDayStart(now))
+  const zeros = monMod.shapeMetrics([null, undefined, {}, { n: 'x' }, { n: 0 }, { n: NaN }], now)
+  t('shapeMetrics: 缺行/烂值一律回 0（不抛错、不隐藏）',
+    Object.entries(zeros).filter(([k]) => !['ok', 'serverNow', 'dayStart'].includes(k)).every(([, v]) => v === 0))
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

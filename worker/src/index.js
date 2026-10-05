@@ -10,6 +10,8 @@
  * HEAD /api/audio/<bookId>/<file> → 同上但不回 body（上传校验脚本探活用）
  * POST/GET /api/auth/*  → 账号与会话（见 authapi.js）
  * GET /health           → { status: 'ok' }
+ * GET /api/metrics      → 只读计数（第 4 步 4.8）；需 Authorization: Bearer <METRICS_TOKEN>，
+ *                          未配置 secret 一律 404（见 monitor.js 与 handleMetrics）
  *
  * 绑定：env.DB = D1 数据库（表见 schema.sql）；env.MW_API_KEY = wrangler secret
  */
@@ -19,6 +21,7 @@ import { handleAuth, purgeDeletedAccounts } from './authapi.js'
 import { parseRange } from './range.js'
 import { corsFor } from './cors.js'
 import { takeToken, clientIp } from './ratelimit.js'
+import { routeOf, buildLogLine, metricsQueries, shapeMetrics } from './monitor.js'
 
 const MW_API_BASE = 'https://www.dictionaryapi.com/api/v3/references/collegiate/json/'
 
@@ -30,8 +33,45 @@ function json(cors, data, status = 200, extra = {}) {
 }
 
 export default {
+  /**
+   * 请求入口（第 4 步 4.8「最小监控」）：只做两件事 —— 计时 + 记一行结构化日志，
+   * 真正的分发在下面的 handleRequest。日志失败绝不影响响应。
+   * 计数与错误率可从 CF Workers Logs（wrangler.toml 的 [observability]）与 GET /api/metrics 看。
+   */
   async fetch(request, env) {
     const url = new URL(request.url)
+    const started = Date.now()
+    let res
+    try {
+      res = await handleRequest(request, env, url)
+    } catch (err) {
+      // 兜底：内层没接住的异常一律回 500，并留一条结构化错误日志
+      console.error('unhandled request error:', err && err.message, err && err.stack)
+      res = new Response('Internal error', { status: 500, headers: corsFor(request, env) })
+    }
+    logRequest(request, url, res, started)
+    return res
+  },
+
+  /**
+   * Cron 入口（wrangler.toml 的 [triggers]）：注销冷静期到期真删。
+   * 清理逻辑在 authapi.js 的 purgeDeletedAccounts（与端点共用同一套 SQL 常量）。
+   */
+  async scheduled(event, env, ctx) {
+    try {
+      const r = await purgeDeletedAccounts(env, Date.now())
+      console.log('scheduled purge:', JSON.stringify(r))
+    } catch (e) {
+      console.error('scheduled purge failed:', e && e.message, e && e.stack)
+    }
+  },
+}
+
+/**
+ * 端点分发（= 第 4 步 4.8 之前的 fetch 主体，逐字搬出）。
+ * 抽成独立函数，好让入口统一计时与记日志；路由逻辑一行未改（只多了一个 /api/metrics 分支）。
+ */
+async function handleRequest(request, env, url) {
     // 0.0 止血：CORS 不再用通配，改为按请求回显自家 Origin（见 cors.js）
     const cors = corsFor(request, env)
 
@@ -183,21 +223,52 @@ export default {
       }
     }
 
-    return new Response('Not found', { status: 404, headers: cors })
-  },
-
-  /**
-   * Cron 入口（wrangler.toml 的 [triggers]）：注销冷静期到期真删。
-   * 清理逻辑在 authapi.js 的 purgeDeletedAccounts（与端点共用同一套 SQL 常量）。
-   */
-  async scheduled(event, env, ctx) {
-    try {
-      const r = await purgeDeletedAccounts(env, Date.now())
-      console.log('scheduled purge:', JSON.stringify(r))
-    } catch (e) {
-      console.error('scheduled purge failed:', e && e.message, e && e.stack)
+    // GET /api/metrics —— 只读计数（第 4 步 4.8）。
+    // 未配置 METRICS_TOKEN、或令牌不符，一律 404：既不暴露「存在这个端点」，也不外泄任何数据。
+    if (url.pathname === '/api/metrics' && request.method === 'GET') {
+      return await handleMetrics(request, env, cors)
     }
-  },
+
+    return new Response('Not found', { status: 404, headers: cors })
+}
+
+/**
+ * 只读计数端点：复用现成表算 COUNT（SQL 见 monitor.js 的 metricsQueries），
+ * 永不 SELECT 业务行 —— 监控端点不能变成数据导出。令牌 = env.METRICS_TOKEN（secret）。
+ */
+async function handleMetrics(request, env, cors) {
+  const token = (env.METRICS_TOKEN || '').trim()
+  const auth = request.headers.get('Authorization') || ''
+  if (!token || auth !== `Bearer ${token}`) {
+    return new Response('Not found', { status: 404, headers: cors })
+  }
+  const now = Date.now()
+  try {
+    const qs = metricsQueries(now)
+    const rows = await Promise.all(qs.map(q =>
+      (q.binds.length ? env.DB.prepare(q.sql).bind(...q.binds) : env.DB.prepare(q.sql)).first()
+    ))
+    return json(cors, shapeMetrics(rows, now), 200, { 'Cache-Control': 'no-store' })
+  } catch (e) {
+    console.error('metrics error:', e.message)
+    return json(cors, { error: 'db read failed' }, 500)
+  }
+}
+
+/** 计时 + 记一行结构化请求日志（第 4 步 4.8）；5xx 走 console.error，便于 CF 侧按级别告警 */
+function logRequest(request, url, res, started) {
+  try {
+    const line = buildLogLine({
+      method: request.method,
+      path: url.pathname,
+      route: routeOf(url.pathname),
+      status: res.status,
+      ms: Date.now() - started,
+      ip: clientIp(request),
+    })
+    if (res.status >= 500) console.error(line)
+    else console.log(line)
+  } catch { /* 日志失败绝不影响响应 */ }
 }
 
 /**
