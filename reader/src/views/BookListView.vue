@@ -9,55 +9,104 @@
       Your imported books could not be listed on this device (local storage is unavailable).
     </p>
     <p v-else-if="error" class="shelf-note">
-      Could not load the built-in book list ({{ error }}).
+      Could not load the public catalogue ({{ error }}).
     </p>
 
     <div v-if="loading" class="shelf-loading">Loading...</div>
 
-    <div v-else-if="books.length === 0" class="empty-state">
+    <div v-else-if="isEmpty" class="empty-state">
       <div class="empty-icon">📚</div>
       <h2>No books yet</h2>
       <p>Books you import will appear here.</p>
     </div>
 
-    <div v-else class="book-grid">
-      <router-link
-        v-for="book in books"
-        :key="book.id"
-        :to="`/reader/${book.id}`"
-        class="book-card"
-      >
-        <div class="book-cover" v-if="book.coverUrl">
-          <img :src="book.coverUrl" :alt="book.title" />
+    <!-- 两栏（第 7 步 7.2）：公开书库 / 我的书架。窄屏上下堆叠，宽屏并排。 -->
+    <div v-else class="shelf-columns">
+      <section class="shelf-column">
+        <h2 class="shelf-heading">
+          Public Library
+          <span class="shelf-count">{{ publicBooks.length }}</span>
+        </h2>
+
+        <!-- 分类筛选（第 7 步 7.3）：只有一类时不摆一排只有一个的按钮 -->
+        <div v-if="categories.length > 1" class="category-filters">
+          <button
+            class="chip"
+            :class="{ active: activeCategory === '' }"
+            @click="activeCategory = ''"
+          >All</button>
+          <button
+            v-for="c in categories"
+            :key="c"
+            class="chip"
+            :class="{ active: activeCategory === c }"
+            @click="activeCategory = c"
+          >{{ categoryLabelOf(c) }}</button>
         </div>
-        <div class="book-cover placeholder" v-else>
-          <span>📖</span>
+
+        <p v-if="publicBooks.length === 0" class="shelf-note">
+          The public catalogue is empty.
+        </p>
+
+        <div v-for="group in visibleGroups" :key="group.key" class="category-group">
+          <h3 class="category-title">{{ group.label }}</h3>
+          <div class="book-grid">
+            <BookCard v-for="book in group.books" :key="book.id" :book="book" />
+          </div>
         </div>
-        <div class="book-info">
-          <h3 class="book-title">{{ book.title }}</h3>
-          <p class="book-author" v-if="book.author">{{ book.author }}</p>
-          <!-- 书架上是「内置 ＋ 自带」两来源合一：自带书不给来源提示，用户会以为它上了云 -->
-          <p class="book-kind" v-if="book.kind === 'byo'">Your book</p>
+      </section>
+
+      <section class="shelf-column">
+        <h2 class="shelf-heading">
+          My Books
+          <span class="shelf-count">{{ myBooks.length }}</span>
+        </h2>
+        <p v-if="myBooks.length === 0" class="shelf-note">
+          Books you import stay on this device and appear here.
+        </p>
+        <div v-else class="book-grid">
+          <BookCard v-for="book in myBooks" :key="book.id" :book="book" />
         </div>
-      </router-link>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useBookShelf } from '../composables/useBookShelf'
+import { groupByCategory, categoryKeyOf, categoryLabelOf } from '../utils/bookShelf.js'
+import BookCard from '../components/BookCard.vue'
 
-// 数据源在组合式里：静态 book-index.json（内置）＋ IndexedDB 书库（自带），
+// 数据源在组合式里：静态 book-index.json（公开书库）＋ IndexedDB 书库（我的书架），
 // 合成与排序口径全在 utils/bookShelf.js，这里只负责画。
-const { books, loading, error, byoError, refresh } = useBookShelf()
+const { publicBooks, myBooks, loading, error, byoError, refresh } = useBookShelf()
+
+const activeCategory = ref('')  // '' = 不筛
+
+const isEmpty = computed(() => publicBooks.value.length === 0 && myBooks.value.length === 0)
+
+// 有书才出现的分类（按枚举顺序），筛 chips 用
+const categories = computed(() => {
+  const seen = new Set()
+  for (const book of publicBooks.value) seen.add(categoryKeyOf(book.category))
+  return [...seen]
+})
+
+const groups = computed(() => groupByCategory(publicBooks.value))
+
+const visibleGroups = computed(() => (
+  activeCategory.value === ''
+    ? groups.value
+    : groups.value.filter((g) => g.key === activeCategory.value)
+))
 
 onMounted(refresh)
 </script>
 
 <style scoped>
 .book-list-view {
-  max-width: 760px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 16px;
 }
@@ -114,70 +163,76 @@ onMounted(refresh)
   color: var(--text-primary, #1d1d1f);
 }
 
+.shelf-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 28px;
+}
+
+@media (min-width: 720px) {
+  .shelf-columns {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+}
+
+.shelf-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--text-primary, #1d1d1f);
+  border-bottom: 1px solid var(--border-color, #e5e5e5);
+  padding-bottom: 8px;
+}
+
+.shelf-count {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary, #6e6e73);
+}
+
+.category-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.chip {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-secondary, #6e6e73);
+  cursor: pointer;
+}
+
+.chip.active {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.category-group + .category-group {
+  margin-top: 16px;
+}
+
+.category-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, #6e6e73);
+  margin: 0 0 8px;
+}
+
 .book-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 16px;
-}
-
-.book-card {
-  text-decoration: none;
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--bg-secondary, #f5f5f5);
-  transition: transform 0.2s, box-shadow 0.2s;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-}
-
-.book-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.book-cover {
-  height: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #e8e0d5;
-}
-
-.book-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.book-cover.placeholder span {
-  font-size: 40px;
-}
-
-.book-info {
-  padding: 12px;
-}
-
-.book-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 4px;
-  color: var(--text-primary, #1d1d1f);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.book-author {
-  font-size: 13px;
-  color: var(--text-secondary, #6e6e73);
-  margin: 0;
-}
-
-.book-kind {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--text-secondary, #6e6e73);
 }
 </style>

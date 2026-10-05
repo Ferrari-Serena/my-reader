@@ -27,7 +27,7 @@ async function codeOf(fn) {
   try { await fn(); return null } catch (e) { return (e && e.code) ? e.code : ('threw:' + (e && e.message)) }
 }
 
-const { BOOK_KIND, kindOfBook, builtinEntry, metaOf, sortByAddedAtDesc, shelfOf } = await import('./src/utils/bookShelf.js')
+const { BOOK_KIND, kindOfBook, builtinEntry, metaOf, sortByAddedAtDesc, columnsOf, isPublicBook, groupByCategory, categoryKeyOf, categoryLabelOf } = await import('./src/utils/bookShelf.js')
 const { createBookStore, normalizeRecord, BookStoreError } = await import('./src/storage/bookAdapter.js')
 const idbDriverDefault = await import('./src/storage/bookDb.js')
 const { openBookDb, closeBookDb, BOOK_DB_NAME, BOOK_DB_VERSION, STORE_BOOKS, STORE_SHELF } = idbDriverDefault
@@ -132,10 +132,26 @@ console.log('\n[utils/bookShelf.js — 书架聚合口径]')
   tEq('builtinEntry 无 id -> null', builtinEntry({ title: 'x' }), null)
   tEq('builtinEntry 无标题 -> Untitled', builtinEntry({ id: 'x' }).title, 'Untitled')
 
+  // 四字段（第 7 步 7.1）：原样带上；缺省回落，category 野值归 other
+  const meta = builtinEntry({ id: 'jk', visibility: 'public', rights: 'public-domain', category: 'classic-fiction', license: 'Public Domain' })
+  tEq('builtinEntry 带四字段', [meta.rights, meta.visibility, meta.category, meta.license],
+    ['public-domain', 'public', 'classic-fiction', 'Public Domain'])
+  const bare = builtinEntry({ id: 'x' })
+  tEq('builtinEntry 缺四字段 -> 空 / category 归 other', [bare.rights, bare.visibility, bare.license, bare.category], ['', '', '', 'other'])
+  tEq('builtinEntry 野 category 归 other', builtinEntry({ id: 'x', category: 'Classic Fiction' }).category, 'other')
+
+  // fail-closed：公开目录只列显式 public
+  tEq('visibility 缺 -> 不公开', isPublicBook(bare), false)
+  tEq('visibility=private -> 不公开', isPublicBook({ visibility: 'private' }), false)
+  tEq('visibility=public -> 公开', isPublicBook({ visibility: 'public' }), true)
+  tEq('visibility 大小写不认（非枚举值） -> 不公开', isPublicBook({ visibility: 'Public' }), false)
+  tEq('null 不公开', isPublicBook(null), false)
+
   const rec = sampleBook()
   const m = metaOf(normalizeRecord(rec))
   tEq('metaOf：kind / id / 计数（由净化重算）', [m.kind, m.id, m.chapterCount, m.charCount], ['byo', rec.bookId, 2, 14])
   tEq('metaOf 不夹带正文', 'chapters' in m, false)
+  tEq('metaOf：用户书默认私有（决策 #9）', [m.rights, m.visibility, m.category], ['private', 'private', ''])
   tEq('metaOf：slug 记录 -> null', metaOf({ id: 'the-giver' }), null)
   tEq('metaOf：无标题 -> Untitled', metaOf({ bookId: 'bk_ffffffffffffffff' }).title, 'Untitled')
 
@@ -149,16 +165,40 @@ console.log('\n[utils/bookShelf.js — 书架聚合口径]')
   sortByAddedAtDesc(keep)
   tEq('排序不改原数组（返回副本）', keep.map(x => x.id), ['x', 'y'])
 
-  const merged = shelfOf(
-    [{ id: 'the-giver', title: 'G' }, { id: 'sat-practice', title: 'S' }],
-    [{ bookId: 'bk_aaaaaaaaaaaaaaaa', title: 'B1', addedAt: '2026-01-01T00:00:00.000Z' },
-     { bookId: 'bk_bbbbbbbbbbbbbbbb', title: 'B2', addedAt: '2026-02-01T00:00:00.000Z' }]
+  // 两栏（第 7 步 7.2）
+  const cols = columnsOf(
+    [
+      { id: 'the-giver', title: 'G', visibility: 'private' },   // 下架书：不进公开书库
+      { id: 'sat-practice', title: 'S', visibility: 'public' },
+      { id: 'no-vis', title: 'N' }                              // 缺字段：fail-closed 不公开
+    ],
+    [
+      { bookId: 'bk_aaaaaaaaaaaaaaaa', title: 'B1', addedAt: '2026-01-01T00:00:00.000Z' },
+      { bookId: 'bk_bbbbbbbbbbbbbbbb', title: 'B2', addedAt: '2026-02-01T00:00:00.000Z' }
+    ]
   )
-  tEq('BYO 在前（新的更前）、内置保持原序', merged.map(b => b.id),
-    ['bk_bbbbbbbbbbbbbbbb', 'bk_aaaaaaaaaaaaaaaa', 'the-giver', 'sat-practice'])
-  t('合并后各自 kind 正确', merged[0].kind === 'byo' && merged[2].kind === 'builtin')
-  tEq('非数组输入 -> 空书架', shelfOf(null, undefined), [])
-  tEq('两侧坏条目都被丢掉', shelfOf([{ title: 'no id' }], [{ id: 'the-giver' }]), [])
+  tEq('公开书库：只留 public、保持原序', cols.publicBooks.map(b => b.id), ['sat-practice'])
+  tEq('我的书架：按加入时间倒序', cols.mine.map(b => b.id), ['bk_bbbbbbbbbbbbbbbb', 'bk_aaaaaaaaaaaaaaaa'])
+  tEq('我的书架条目一律标私有', [cols.mine[0].rights, cols.mine[0].visibility], ['private', 'private'])
+  tEq('非数组输入 -> 两栏都空', columnsOf(null, undefined), { publicBooks: [], mine: [] })
+  tEq('两侧坏条目都被丢掉', columnsOf([{ title: 'no id' }], [{ id: 'the-giver' }]), { publicBooks: [], mine: [] })
+
+  // 分类分组（第 7 步 7.3）
+  const groups = groupByCategory([
+    { id: 'a', category: 'poetry' },
+    { id: 'b', category: 'exam-prep' },
+    { id: 'c', category: 'classic-fiction' },
+    { id: 'd', category: 'poetry' },
+    { id: 'e', category: 'weird-unknown' },
+    { id: 'f' }
+  ])
+  tEq('分组按枚举顺序、other 沉底', groups.map(g => g.key), ['classic-fiction', 'exam-prep', 'poetry', 'other'])
+  tEq('同类合并、组内保持传入顺序', groups.find(g => g.key === 'poetry').books.map(b => b.id), ['a', 'd'])
+  tEq('other 收「野值」与「缺字段」', groups.find(g => g.key === 'other').books.map(b => b.id), ['e', 'f'])
+  tEq('组标签可读', groups.map(g => g.label), ['Classic Fiction', 'Exam Prep', 'Poetry', 'Other'])
+  tEq('空输入 -> 空分组', groupByCategory(null), [])
+  tEq('categoryKeyOf / categoryLabelOf', [categoryKeyOf('exam-prep'), categoryKeyOf('nope'), categoryLabelOf('short-stories')],
+    ['exam-prep', 'other', 'Short Stories'])
 }
 
 console.log('\n[storage/bookAdapter.js — 入库净化]')
@@ -264,25 +304,31 @@ await import('fake-indexeddb/auto')
   await wipeIdb()
 }
 
-console.log('\n[composables/useBookShelf.js — 两个来源各自降级]')
+console.log('\n[composables/useBookShelf.js — 两栏 + 各自降级]')
 {
   const store = createBookStore(memoryDriver())
   await store.saveBook(sampleBook({ title: 'Mine', addedAt: '2026-01-01T00:00:00.000Z' }))
 
   const realFetch = globalThis.fetch
-  const INDEX = { books: [{ id: 'the-giver', title: 'The Giver' }] }
+  // 一本 public（该进公开书库）、一本 private（下架书，不该露面）
+  const INDEX = { books: [
+    { id: 'sat-practice', title: 'SAT', visibility: 'public' },
+    { id: 'the-giver', title: 'The Giver', visibility: 'private' }
+  ] }
   globalThis.fetch = async () => ({ ok: true, json: async () => INDEX })
 
   const shelf = useBookShelf({ indexUrl: 'https://example.test/book-index.json', store })
   await shelf.refresh()
-  tEq('合成：BYO 在前、内置在后', shelf.books.value.map(b => b.id), ['bk_0123456789abcdef', 'the-giver'])
+  tEq('公开书库只列 public', shelf.publicBooks.value.map(b => b.id), ['sat-practice'])
+  tEq('我的书架放 BYO', shelf.myBooks.value.map(b => b.id), ['bk_0123456789abcdef'])
   tEq('byoCount', shelf.byoCount.value, 1)
   tEq('两个来源都没报错', [shelf.error.value, shelf.byoError.value], [null, null])
   tEq('refresh 收尾 loading = false', shelf.loading.value, false)
 
   globalThis.fetch = async () => ({ ok: false, status: 503 })
   await shelf.refresh()
-  tEq('静态书目表 503 -> 自带书照常显示', shelf.books.value.map(b => b.id), ['bk_0123456789abcdef'])
+  tEq('静态书目表 503 -> 我的书架照常显示', shelf.myBooks.value.map(b => b.id), ['bk_0123456789abcdef'])
+  tEq('静态书目表 503 -> 公开书库空', shelf.publicBooks.value, [])
   t('error 记下原因', /503/.test(String(shelf.error.value)))
 
   globalThis.fetch = async () => ({ ok: true, json: async () => INDEX })
@@ -291,12 +337,14 @@ console.log('\n[composables/useBookShelf.js — 两个来源各自降级]')
     store: { listByoBooks: async () => { throw new BookStoreError('UNAVAILABLE') } }
   })
   await broken.refresh()
-  tEq('书库打不开 -> 内置书照常显示', broken.books.value.map(b => b.id), ['the-giver'])
+  tEq('书库打不开 -> 公开书库照常显示', broken.publicBooks.value.map(b => b.id), ['sat-practice'])
+  tEq('书库打不开 -> 我的书架空', broken.myBooks.value, [])
   tEq('byoError 记下 code', broken.byoError.value, 'UNAVAILABLE')
   tEq('坏书库的 byoCount 归零（不虚报）', broken.byoCount.value, 0)
 
   await shelf.removeByoBook('bk_0123456789abcdef')
-  tEq('移出后书架只剩内置', shelf.books.value.map(b => b.id), ['the-giver'])
+  tEq('移出后我的书架空了', shelf.myBooks.value, [])
+  tEq('移出后公开书库不受影响', shelf.publicBooks.value.map(b => b.id), ['sat-practice'])
   tEq('移出后 byoCount 归零', shelf.byoCount.value, 0)
 
   globalThis.fetch = realFetch

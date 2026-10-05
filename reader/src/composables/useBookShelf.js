@@ -1,13 +1,13 @@
 /**
- * 书架数据源（第 5 步 5B）：静态书目表 ＋ 本机 BYO 书库 -> 一列书架。
+ * 书架数据源（第 5 步 5B；第 7 步 7.2 拆两栏）：静态书目表 ＋ 本机 BYO 书库 -> 「公开书库 / 我的书架」。
  *
  * 两个来源各自独立降级，一个坏掉不该让另一个也消失：
- *   · 静态 book-index.json 取不到（离线首访）-> 只剩 BYO，书架别空转 -> error 记原因
- *   · IndexedDB 打不开（隐私模式 / 老浏览器）-> 只剩内置书 -> byoError 记原因
- * 组件只认 books（已合成、已排序），不必关心哪一本从哪来；画「Your book」角标时才看 kind。
+ *   · 静态 book-index.json 取不到（离线首访）-> 公开书库空着，我的书架照常 -> error 记原因
+ *   · IndexedDB 打不开（隐私模式 / 老浏览器）-> 只剩公开书库 -> byoError 记原因
+ * 组件只认 publicBooks / myBooks 两个已经分好栏的数组，不必关心哪一本从哪来。
  */
 import { ref } from 'vue'
-import { shelfOf } from '../utils/bookShelf.js'
+import { columnsOf } from '../utils/bookShelf.js'
 import { bookStore } from '../storage/index.js'
 
 /**
@@ -23,10 +23,11 @@ function defaultIndexUrl() {
  *   store 只为测试留缝（内存驱动版书库）；应用侧一律用默认单例。
  */
 export function useBookShelf({ indexUrl, store = bookStore } = {}) {
-  const books = ref([])        // 合成后的书架（BYO 在前、内置在后）
+  const publicBooks = ref([])   // 「公开书库」：book-index.json 里 visibility=public 的书
+  const myBooks = ref([])       // 「我的书架」：本机 BYO 书，按加入时间倒序
   const loading = ref(true)
-  const error = ref(null)      // 静态书目表取不到（内置书缺席）
-  const byoError = ref(null)   // 本机书库打不开（BYO 缺席）
+  const error = ref(null)       // 静态书目表取不到（公开书库缺席）
+  const byoError = ref(null)    // 本机书库打不开（我的书架缺席）
   const byoCount = ref(0)
 
   async function loadBuiltin() {
@@ -56,8 +57,10 @@ export function useBookShelf({ indexUrl, store = bookStore } = {}) {
   async function refresh() {
     loading.value = true
     const [builtin, byo] = await Promise.all([loadBuiltin(), loadByo()])
-    books.value = shelfOf(builtin, byo)
-    byoCount.value = byo.length
+    const { publicBooks: pub, mine } = columnsOf(builtin, byo)
+    publicBooks.value = pub
+    myBooks.value = mine
+    byoCount.value = mine.length
     loading.value = false
   }
 
@@ -70,5 +73,5 @@ export function useBookShelf({ indexUrl, store = bookStore } = {}) {
     await refresh()
   }
 
-  return { books, loading, error, byoError, byoCount, refresh, removeByoBook }
+  return { publicBooks, myBooks, loading, error, byoError, byoCount, refresh, removeByoBook }
 }

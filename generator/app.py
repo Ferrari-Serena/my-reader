@@ -91,7 +91,13 @@ def _register_book(book_id, title, author):
             'title': title or book_id,
             'author': author or '',
             'coverUrl': None,
-            'dataUrl': f'books/{book_id}/'
+            'dataUrl': f'books/{book_id}/',
+            # 元数据四字段（第 7 步 7.1）：生成器不替书本拍板公开与否 ——
+            # 缺字段 / private ＝不公开（reader 侧 fail-closed），要上架得人工核完版权再改。
+            'rights': 'private',
+            'visibility': 'private',
+            'category': '',
+            'license': ''
         })
         _write_json_no_bom(BOOK_INDEX, index)
 

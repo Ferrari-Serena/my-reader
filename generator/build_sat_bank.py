@@ -196,8 +196,12 @@ def build():
             "id": "sat-practice",
             "title": "SAT Vocabulary Practice",
             "author": "Word Lists",
-            "coverUrl": None,
+            "coverUrl": "books/sat-practice/cover.svg",
             "dataUrl": "books/sat-practice/",
+            "rights": "original",
+            "visibility": "public",
+            "category": "exam-prep",
+            "license": "Self-produced (all rights reserved)",
         })
         index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
         print("已注册 sat-practice 到 book-index.json")

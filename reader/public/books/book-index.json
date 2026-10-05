@@ -4,15 +4,23 @@
       "id": "sat-practice",
       "title": "SAT Vocabulary Practice",
       "author": "Word Lists",
-      "coverUrl": null,
-      "dataUrl": "books/sat-practice/"
+      "coverUrl": "books/sat-practice/cover.svg",
+      "dataUrl": "books/sat-practice/",
+      "rights": "original",
+      "visibility": "public",
+      "category": "exam-prep",
+      "license": "Self-produced (all rights reserved)"
     },
     {
       "id": "dr-jekyll-and-mr-hyde",
       "title": "The Strange Case of Dr Jekyll and Mr Hyde",
       "author": "Robert Louis Stevenson",
-      "coverUrl": null,
-      "dataUrl": "books/dr-jekyll-and-mr-hyde/"
+      "coverUrl": "books/dr-jekyll-and-mr-hyde/cover.svg",
+      "dataUrl": "books/dr-jekyll-and-mr-hyde/",
+      "rights": "public-domain",
+      "visibility": "public",
+      "category": "classic-fiction",
+      "license": "Public Domain (Project Gutenberg #43)"
     }
   ]
 }

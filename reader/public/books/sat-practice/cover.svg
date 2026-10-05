@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900" width="600" height="900" role="img" aria-label="SAT Vocabulary Practice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16233f"/>
+      <stop offset="1" stop-color="#2f4b7c"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="900" fill="url(#bg)"/>
+  <rect x="0" y="0" width="600" height="14" fill="#f2b134"/>
+  <text x="60" y="130" font-family="Helvetica, Arial, sans-serif" font-size="24" letter-spacing="7" fill="#f2b134">EXAM PREP</text>
+  <text x="60" y="340" font-family="Georgia, 'Times New Roman', serif" font-size="92" font-weight="700" fill="#ffffff">SAT</text>
+  <text x="60" y="440" font-family="Georgia, 'Times New Roman', serif" font-size="64" font-weight="700" fill="#ffffff">Vocabulary</text>
+  <text x="60" y="516" font-family="Georgia, 'Times New Roman', serif" font-size="64" font-weight="700" fill="#ffffff">Practice</text>
+  <rect x="60" y="562" width="92" height="4" fill="#f2b134"/>
+  <text x="60" y="828" font-family="Helvetica, Arial, sans-serif" font-size="28" fill="#c9d6ea">Word Lists</text>
+</svg>

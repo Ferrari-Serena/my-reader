@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900" width="600" height="900" role="img" aria-label="The Strange Case of Dr Jekyll and Mr Hyde">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#0d1f1c"/>
+      <stop offset="1" stop-color="#1d3a33"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="900" fill="url(#bg)"/>
+  <rect x="0" y="886" width="600" height="14" fill="#c9a227"/>
+  <text x="60" y="130" font-family="Helvetica, Arial, sans-serif" font-size="24" letter-spacing="6" fill="#c9a227">CLASSIC FICTION</text>
+  <text x="60" y="308" font-family="Georgia, 'Times New Roman', serif" font-size="50" fill="#f4f1e8">The Strange Case</text>
+  <text x="60" y="366" font-family="Georgia, 'Times New Roman', serif" font-size="50" fill="#f4f1e8">of</text>
+  <text x="60" y="462" font-family="Georgia, 'Times New Roman', serif" font-size="74" font-weight="700" fill="#ffffff">Dr Jekyll</text>
+  <text x="60" y="538" font-family="Georgia, 'Times New Roman', serif" font-size="50" fill="#f4f1e8">and Mr Hyde</text>
+  <rect x="60" y="586" width="92" height="4" fill="#c9a227"/>
+  <text x="60" y="828" font-family="Helvetica, Arial, sans-serif" font-size="28" fill="#cfd8d2">Robert Louis Stevenson</text>
+</svg>
