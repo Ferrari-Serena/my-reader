@@ -1,5 +1,9 @@
 <template>
   <div class="book-list-view">
+    <div class="shelf-actions">
+      <router-link to="/import" class="add-book">Add a book</router-link>
+    </div>
+
     <!-- 两个来源各自降级：一个坏掉，另一个照常显示，但要说清楚缺了什么 -->
     <p v-if="byoError" class="shelf-note">
       Your imported books could not be listed on this device (local storage is unavailable).
@@ -56,6 +60,26 @@ onMounted(refresh)
   max-width: 760px;
   margin: 0 auto;
   padding: 16px;
+}
+
+.shelf-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.add-book {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.add-book:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
 }
 
 .shelf-note {

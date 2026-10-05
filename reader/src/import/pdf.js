@@ -12,7 +12,7 @@
  * （"hashOriginal.toHex is not a function"，它自己会提示用 legacy 构建）。
  * 所以这里 pdfjs 由调用方注入（测试注入 legacy 版），浏览器侧默认走正式构建。
  */
-import { ImportError } from './errors.js'
+import { ImportError, throwIfAborted } from './errors.js'
 import { collapse } from './book.js'
 
 /** 只取文本时的加载参数；verbosity:0 压掉「缺标准字体」这类与我们无关的告警 */
@@ -32,10 +32,6 @@ async function loadPdfjs(injected) {
     mod.GlobalWorkerOptions.workerSrc = url
   }
   return mod
-}
-
-function throwIfAborted(signal) {
-  if (signal && signal.aborted) throw new ImportError('CANCELLED')
 }
 
 function pdfLoadError(e) {

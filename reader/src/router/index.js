@@ -12,6 +12,11 @@ const routes = [
     component: () => import('../views/BookListView.vue')
   },
   {
+    path: '/import',
+    name: 'Import',
+    component: () => import('../views/ImportView.vue')
+  },
+  {
     path: '/reader/:bookId/:chapterId?',
     name: 'Reader',
     component: ReaderView

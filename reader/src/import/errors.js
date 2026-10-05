@@ -84,6 +84,15 @@ export function toImportError(err) {
   return new ImportError('PDF_INVALID', err && err.message ? err.message : String(err))
 }
 
+/**
+ * AbortSignal 已中止就抛 CANCELLED。
+ * 解析循环里每圈调一次 —— 「可取消」只有真的能在中途打断才有意义（第 5 步 5.5）。
+ * 放在这里是因为 pdf.js 与 index.js 都要用同一份判断，两处各写一个迟早会漂。
+ */
+export function throwIfAborted(signal) {
+  if (signal && signal.aborted) throw new ImportError('CANCELLED')
+}
+
 /** 给 UI 用的形状：{ code, message, hint } */
 export function importErrorText(err) {
   return toImportError(err)

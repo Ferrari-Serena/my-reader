@@ -73,14 +73,16 @@ const showTabbar = computed(() => {
   return ['BookList', 'Vocabulary', 'Flashcards', 'Quiz', 'Account'].includes(route.name)
 })
 const showBack = computed(() => {
-  // 账号页也要一条退路：那里唯一的按钮是「登出」，手快很容易误点
-  return route.name === 'Reader' || route.name === 'Account'
+  // 账号页也要一条退路：那里唯一的按钮是「登出」，手快很容易误点；
+  // 导入页不在 tabbar 白名单里（故意：导入是个要收心的流程），所以也要自己带返回
+  return route.name === 'Reader' || route.name === 'Account' || route.name === 'Import'
 })
 const backLabel = computed(() => 'Home')
 
 const currentTitle = computed(() => {
   const titles = {
     BookList: 'My Books',
+    Import: 'Add a book',
     Reader: '',
     Vocabulary: 'Vocabulary',
     Flashcards: 'Flashcards',
