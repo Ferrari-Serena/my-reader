@@ -4,6 +4,28 @@
     <!-- 认领提示走独立横幅：它是后台异步发生的，不该被表单流程的 notice 盖掉 -->
     <p v-if="auth.claimNotice.value" class="banner notice">{{ auth.claimNotice.value }}</p>
 
+    <!-- 4.4 同步可见：跨设备同步状态（与登录无关 —— 同步码在本机就有，登不登录都在跑） -->
+    <section class="card sync-card">
+      <h2 class="card-title">Sync</h2>
+      <p v-if="sync.paired.value" class="line ok">
+        ✅ Paired · code <strong>{{ sync.code.value }}</strong>
+      </p>
+      <p v-else class="line">
+        Not paired on this device — set it up from the
+        <router-link to="/vocabulary">word list</router-link>.
+      </p>
+      <p v-if="sync.lastSync.value" class="hint">Last sync: {{ sync.lastSync.value.toLocaleString() }}</p>
+      <p v-if="sync.pending.value > 0" class="hint">
+        Waiting to upload: <strong>{{ sync.pending.value }}</strong>
+      </p>
+      <p v-else-if="sync.paired.value" class="hint">Everything is uploaded ✓</p>
+      <p v-if="sync.error.value" class="error">{{ sync.error.value }}</p>
+      <button
+        v-if="sync.paired.value" class="btn" :disabled="sync.pulling.value || sync.pushing.value"
+        @click="sync.syncNow()"
+      >{{ (sync.pulling.value || sync.pushing.value) ? 'Syncing…' : 'Sync now' }}</button>
+    </section>
+
     <!-- 已登录 -->
     <template v-if="auth.user.value">
       <section class="card">
@@ -149,9 +171,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
+import { useSync } from '../composables/useSync.js'
 import { emailProblem, passwordProblem, confirmProblem } from '../utils/authForm.js'
 
 const auth = useAuth()
+const sync = useSync()
 
 const mode = ref('signin') // 'signin' | 'signup' | 'reset'
 const email = ref('')
@@ -310,6 +334,10 @@ function forgetPending() {
   background: #eef6ff;
   color: #14538f;
   border: 1px solid #cfe3fb;
+}
+
+.sync-card {
+  margin-bottom: 16px;
 }
 
 .card {

@@ -26,6 +26,7 @@ const { readingStorageKey, audioStorageKey, collectLocalProgress, applyRemotePro
   await import('./src/sync/progress.js')
 const { sanitizeEntry } = await import('./src/storage/schema.js')
 const storage = await import('./src/storage/localAdapter.js')
+const { nextRetryDelay, RETRY_BASE_MS, RETRY_MAX_MS } = await import('./src/sync/retry.js')
 const { mergeAndApply } = await import('./src/composables/useSync.js')
 const { useVocabulary } = await import('./src/composables/useVocabulary.js')
 
@@ -786,6 +787,72 @@ console.log('\n[第 3 步 — 记录通道端到端：useSync push/pull（fetch 
 
   globalThis.fetch = realFetch
   for (const k of ['reader-records-v1', 'reader-records-tombstones', 'reader-records-dirty', 'reader-sync-code']) store.delete(k)
+}
+
+console.log('\n[第 4 步 M2 — 同步可见：待上传数 + 事件账本（fetch 打桩）]')
+{
+  const realFetch = globalThis.fetch
+  let remote = { records: [], recordTombstones: [] }
+  let pushReply = { accepted: 1, rejected: 0 }
+  const jsonRes = (obj) => ({ ok: true, status: 200, json: async () => obj })
+  globalThis.fetch = async (url) => {
+    const u = String(url)
+    const now = new Date().toISOString()
+    if (u.includes('/pull')) {
+      return jsonRes({ words: {}, tombstones: {}, progress: {}, records: remote.records, recordTombstones: remote.recordTombstones, serverNow: now })
+    }
+    if (u.includes('/push')) return jsonRes({ ...pushReply, serverNow: now })
+    return jsonRes({ serverNow: now })
+  }
+  const tick = (ms) => new Promise(r => setTimeout(r, ms))
+  const keys = ['reader-records-v1', 'reader-records-tombstones', 'reader-records-dirty', 'reader-sync-code', 'reader-sync-conflicts']
+  for (const k of keys) store.delete(k)
+
+  const rs = await import('./src/sync/recordStore.js')
+  const { useSync } = await import('./src/composables/useSync.js?sim=M2')
+  const sync = useSync()
+  await sync.pairCode('M2CODE01')
+  await tick(30)
+
+  sync.clearConflicts()
+  t('清空后事件账本为空', sync.conflicts.value.length === 0)
+  t('Clear 会把盘上的账本也删掉', !store.has('reader-sync-conflicts'))
+
+  await sync.refreshPending()
+  const base = sync.pending.value
+  const rec = rs.putRecord('note', { text: 'pending-me', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' })
+  await sync.refreshPending()
+  t('有脏记录 → 待上传 +1', sync.pending.value === base + 1)
+
+  await sync.push()
+  await sync.refreshPending()
+  t('推送成功后待上传回到基线（账清了）', sync.pending.value === base)
+
+  // 远端墓碑删掉本地记录 → 账本记一笔 remote-delete
+  remote = { records: [], recordTombstones: [{ kind: 'note', id: rec.id, deletedAt: '2026-02-01T00:00:00.000Z' }] }  // 晚于该记录的 2026-01-01
+  await sync.pull()
+  t('远端删除本地记录 → 账本记 remote-delete', sync.conflicts.value.some(c => c.kind === 'remote-delete'))
+
+  // 推送被服务端拒收（本地版本旧了）→ 账本记一笔 rejected，并持久化
+  rs.putRecord('note', { text: 'loser' })
+  pushReply = { accepted: 0, rejected: 1 }
+  await sync.push()
+  t('被服务端拒收 → 账本记 rejected', sync.conflicts.value.some(c => c.kind === 'rejected'))
+  t('事件账本已持久化到盘上', String(store.get('reader-sync-conflicts') || '').includes('rejected'))
+  t('账本只留最近 20 条', sync.conflicts.value.length <= 20)
+
+  globalThis.fetch = realFetch
+  for (const k of keys) store.delete(k)
+}
+
+console.log('\n[retry.js — 离线补推的指数退避（M3 · 4.5）]')
+{
+  t('首次失败（prev=0）→ 基准 5s', nextRetryDelay(0) === RETRY_BASE_MS)
+  t('5s → 10s', nextRetryDelay(5000) === 10000)
+  t('20s → 40s', nextRetryDelay(20000) === 40000)
+  t('封顶 60s（40s→60s、60s→60s）', nextRetryDelay(40000) === RETRY_MAX_MS && nextRetryDelay(60000) === RETRY_MAX_MS)
+  t('非法输入回基准且绝不为 0',
+    nextRetryDelay(-5) === RETRY_BASE_MS && nextRetryDelay(undefined) === RETRY_BASE_MS && nextRetryDelay(NaN) === RETRY_BASE_MS)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

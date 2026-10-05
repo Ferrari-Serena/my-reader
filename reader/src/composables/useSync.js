@@ -14,12 +14,13 @@
  *   只推脏词是因为原来每答一道题就推一次**全量**词表，词表上千时那是上千条 upsert。
  */
 
-import { reactive, computed } from 'vue'
+import { reactive, computed, watch } from 'vue'
 import { useVocabulary } from './useVocabulary.js'
 import { planMerge } from '../sync/merge.js'
 import { syncClock } from '../sync/clock.js'
 import { collectLocalProgress, applyRemoteProgress } from '../sync/progress.js'
 import { budgetKeepaliveParts } from '../sync/budget.js'
+import { nextRetryDelay, RETRY_BASE_MS } from '../sync/retry.js'
 import { planRecordMerge, splitRecordKey } from '../sync/records.js'
 import * as recordStore from '../sync/recordStore.js'
 
@@ -40,20 +41,69 @@ const state = reactive({
   lastSync: null,  // Date
   error: '',
   rejected: 0,     // 上次推送被服务端拒收的条数（0 表示本地都是最新的）
-  progressRev: 0   // 远程进度写回本地的次数（阅读页据此判断要不要跟随过去）
+  progressRev: 0,  // 远程进度写回本地的次数（阅读页据此判断要不要跟随过去）
+  pending: 0,      // 待上传条数（脏词 + 脏记录 + 未确认的删除台账；M2 · 4.4）
+  conflicts: []    // 最近的同步事件（被远端覆盖 / 被远端删除 / 回推合并），面板可查
 })
 
 // 恢复持久化的同步码
 try { state.code = localStorage.getItem(SYNC_CODE_KEY) || '' } catch { state.code = '' }
+
+// ── 同步事件小账本（M2 · 4.4「冲突记录可查」）──
+// 只留最近 MAX_CONFLICTS 条；持久化，关页也不丢（否则「昨天被谁覆盖了」永远查不到）。
+const CONFLICTS_KEY = 'reader-sync-conflicts'
+const MAX_CONFLICTS = 20
+try {
+  const raw = localStorage.getItem(CONFLICTS_KEY)
+  const arr = raw ? JSON.parse(raw) : null
+  if (Array.isArray(arr)) state.conflicts = arr.filter(e => e && typeof e === 'object').slice(0, MAX_CONFLICTS)
+} catch { state.conflicts = [] }
+
+function pushConflict(entry) {
+  state.conflicts = [{ at: new Date().toISOString(), ...entry }, ...state.conflicts].slice(0, MAX_CONFLICTS)
+  try { localStorage.setItem(CONFLICTS_KEY, JSON.stringify(state.conflicts)) } catch { /* quota */ }
+}
+
+/** 清空事件账本（面板上的「Clear」） */
+function clearConflicts() {
+  state.conflicts = []
+  try { localStorage.removeItem(CONFLICTS_KEY) } catch { /* ignore */ }
+}
 
 let _autoPulled = false
 let _pushTimer = null
 let _inFlight = false      // 推送防重入
 let _flushAgain = false    // 推送进行中又来了新变更
 let _flushKeepalive = false // 那次补推是页面卸载触发的（不能靠定时器续跑）
+let _retryDelay = RETRY_BASE_MS // 离线补推的下次等待（M3 · 4.5）；推送成功即复位
 
 async function storage() {
   return import('../storage/index.js')
+}
+
+/**
+ * 重算「待上传」条数（M2 · 4.4 同步可见）。
+ * 三个来源：脏词（生词/评分/答题改了还没推）、脏记录（四类记录通道）、删除台账
+ * （本机删了、还没被服务端确认）。全是**读盘**、不是响应式状态，所以由
+ * vocab.dirtyRevision 的 watcher ＋ 每次推送/拉取结束显式触发重算。
+ */
+async function refreshPending() {
+  const vocab = useVocabulary()
+  vocab.dirtyRevision.value // 建立响应式依赖：脏集合一变，watcher 就会重算
+  let tombs = 0
+  try {
+    const st = await storage()
+    tombs = Object.keys(st.loadTombstones()).length
+  } catch { /* 存储不可用（私有模式）时按 0 算 */ }
+  const words = vocab.pendingDirty().filter(k => vocab.words.value[k]).length
+  const recDirty = recordStore.loadRecordDirty().filter(k => recordStore.loadRecordsMap()[k]).length
+  const recTombs = Object.keys(recordStore.loadRecordTombstones()).length
+  state.pending = words + recDirty + tombs + recTombs
+}
+
+/** fire-and-forget 版：UI 计数不值得让调用方等它 */
+function scheduleRefreshPending() {
+  refreshPending().catch(() => { /* 计数失败不影响同步本身 */ })
 }
 
 async function apiFetch(path, options = {}) {
@@ -153,6 +203,12 @@ async function pullOnce() {
     state.lastSync = new Date()
     state.paired = true
     state.error = ''
+    // 4.4：把「这次拉取发生的冲突」记一笔，面板上可查
+    const removed = plan.remove.length + rplan.remove.length
+    const repushed = plan.repush.length + rplan.repush.length
+    if (removed) pushConflict({ kind: 'remote-delete', n: removed })
+    if (repushed) pushConflict({ kind: 'repush', n: repushed })
+    scheduleRefreshPending()
     if (plan.repush.length || rplan.repush.length) pushSoon()
     return true
   } catch (e) {
@@ -253,7 +309,9 @@ async function pushNow(options = {}) {
       })
       state.lastSync = new Date()
       state.paired = true
+      _retryDelay = RETRY_BASE_MS // 推到服务端了 → 退避复位
       state.rejected = res?.rejected || 0
+      if (state.rejected > 0) pushConflict({ kind: 'rejected', n: state.rejected })
       // 推送成功才清账——失败时脏集合原样留在盘上，下次继续推；被 keepalive 裁掉的排除在外
       doneKeys = dirtyKeys.filter(k => !(droppedSet && droppedSet.has(k)))
       // 推送成功才清台账——失败时要留着，下次继续推
@@ -298,6 +356,13 @@ async function pushNow(options = {}) {
     if (e.status === 404) {
       state.error = '同步码已失效，请重新配对'
       state.paired = false
+    } else if (state.code) {
+      // 4.5 离线队列：网络/5xx 失败不是终点 —— 排一次**有界退避**重试。
+      // 已知离线（navigator.onLine === false）时只等 'online' 事件，不空转定时器。
+      if (!(typeof navigator !== 'undefined' && navigator.onLine === false)) {
+        pushSoon(_retryDelay)
+        _retryDelay = nextRetryDelay(_retryDelay)
+      }
     }
   } finally {
     _inFlight = false
@@ -305,6 +370,7 @@ async function pushNow(options = {}) {
     // 只有拿到「推送成功」这一事实才落账；页面在推送途中被销毁时这里根本不会执行，
     // 脏词因此留在盘上，留给下次冷启动补推（这正是 0.1 要修的场景）
     if (doneKeys) vocab.clearDirty(doneKeys)
+    scheduleRefreshPending()
     if (_flushAgain) {
       _flushAgain = false
       const keepalive = _flushKeepalive
@@ -353,6 +419,7 @@ async function createCode() {
     await vocab.init()
     vocab.markAllDirty()
     markAllRecordsDirty()
+    scheduleRefreshPending()
     pushSoon(0)
     return data.code
   } catch (e) {
@@ -387,6 +454,7 @@ async function pairCode(code) {
     // 时间戳输的那批会被服务端拒收 → 触发一次重新拉取 → 收敛。
     vocab.markAllDirty()
     markAllRecordsDirty()
+    scheduleRefreshPending()
     pushSoon(0)
     return true
   } catch (e) {
@@ -407,6 +475,7 @@ function unpair() {
   state.error = ''
   state.rejected = 0
   try { localStorage.removeItem(SYNC_CODE_KEY) } catch { /* ignore */ }
+  scheduleRefreshPending()
 }
 
 /**
@@ -428,10 +497,21 @@ function autoPullOnce() {
 }
 
 // 页面隐藏/卸载时立刻把待推送的内容发出去（带 keepalive）
+// 脏集合一变（生词本增删改 / 答题 / 评分）就重算待上传数
+if (typeof window !== 'undefined') {
+  watch(() => useVocabulary().dirtyRevision.value, () => scheduleRefreshPending())
+  scheduleRefreshPending()
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => flushNow())
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flushNow()
+  })
+  // 4.5 离线队列：网络一恢复就把断网期间攒下的改动补推一次（不等下次变异）
+  window.addEventListener('online', () => {
+    scheduleRefreshPending()
+    pushSoon(0)
   })
 }
 
@@ -465,6 +545,7 @@ async function adoptCode(rawCode, { stash = true } = {}) {
   await vocab.init()
   vocab.markAllDirty()
   markAllRecordsDirty()
+  scheduleRefreshPending()
   const ok = await pullOnce()
   // 这次已经拉过了；拉失败就别把标志置真，留给 autoPullOnce 下次重试
   _autoPulled = ok
@@ -484,6 +565,10 @@ export function useSync() {
     error: computed(() => state.error),
     rejected: computed(() => state.rejected),
     progressRevision: computed(() => state.progressRev),
+    pending: computed(() => state.pending),
+    conflicts: computed(() => state.conflicts),
+    refreshPending,
+    clearConflicts,
     createCode,
     pairCode,
     adoptCode,

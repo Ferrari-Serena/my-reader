@@ -27,13 +27,29 @@
             <div v-if="sync.paired.value" class="sync-status">
               <p>✅ Paired · code: <strong>{{ sync.code.value }}</strong></p>
               <p class="sync-hint" v-if="sync.lastSync.value">
-                Last sync: {{ sync.lastSync.value.toLocaleTimeString() }}
+                Last sync: {{ sync.lastSync.value.toLocaleString() }}
               </p>
+              <!-- 4.4 同步可见：待上传数 / 拒收 / 冲突账本 -->
+              <p class="sync-hint" v-if="sync.pending.value > 0">
+                Waiting to upload: <strong>{{ sync.pending.value }}</strong>
+              </p>
+              <p v-else class="sync-hint">Everything is uploaded ✓</p>
+              <p class="sync-hint warn" v-if="sync.rejected.value > 0">
+                {{ sync.rejected.value }} change(s) here were older than another device's — the newer copy won.
+              </p>
+              <p v-if="sync.error.value" class="sync-error">{{ sync.error.value }}</p>
               <!-- 拉 + 推都做：只 pull 的话，本机这次的改动要等下一次变异才会上去 -->
               <button class="action-btn primary" @click="sync.syncNow(); showSyncPanel = false" :disabled="sync.pulling.value || sync.pushing.value">
                 {{ (sync.pulling.value || sync.pushing.value) ? 'Syncing...' : 'Sync Now' }}
               </button>
               <button class="action-btn" @click="sync.unpair()">Unpair</button>
+              <details v-if="sync.conflicts.value.length" class="sync-conflicts">
+                <summary>Recent sync events ({{ sync.conflicts.value.length }})</summary>
+                <ul class="sync-conflict-list">
+                  <li v-for="(c, i) in sync.conflicts.value" :key="i">{{ conflictText(c) }}</li>
+                </ul>
+                <button class="action-btn" type="button" @click="sync.clearConflicts()">Clear</button>
+              </details>
             </div>
             <div v-else>
               <div class="sync-section">
@@ -163,6 +179,19 @@ vocab.init()
 const sync = useSync()
 const showSyncPanel = ref(false)
 const pairInput = ref('')
+
+// 4.4 同步可见：把事件账本里的一条翻成一句人话
+const CONFLICT_TEXT = {
+  rejected: n => `${n} change(s) here were older than another device's — the newer copy won`,
+  'remote-delete': n => `${n} item(s) were deleted on another device`,
+  repush: n => `${n} local change(s) were merged with another device and re-uploaded`
+}
+function conflictText(c) {
+  const make = CONFLICT_TEXT[c && c.kind]
+  const what = make ? make((c && c.n) || 0) : ((c && c.kind) || 'sync event')
+  const at = c && c.at ? new Date(c.at).toLocaleString() : ''
+  return at ? `${at} — ${what}` : what
+}
 
 async function doCreateSync() {
   await sync.createCode()
@@ -651,4 +680,13 @@ onUnmounted(() => {
 }
 .sync-status { text-align: center; }
 .sync-error { color: var(--danger-color, #ff3b30); font-size: 13px; margin-top: 8px; text-align: center; }
+.sync-hint.warn { color: #9a6700; }
+.sync-conflicts {
+  margin-top: 14px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-secondary, #6e6e73);
+}
+.sync-conflicts summary { cursor: pointer; }
+.sync-conflict-list { margin: 8px 0; padding-left: 18px; line-height: 1.6; }
 </style>

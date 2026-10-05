@@ -19,7 +19,9 @@ import {
 const state = reactive({
   words: {},   // key: lemma 小写 → WordEntry
   loaded: false,
-  persistFailed: false // localStorage 写失败标记（私有模式等），视图可提示一次
+  persistFailed: false, // localStorage 写失败标记（私有模式等），视图可提示一次
+  // 脏集合是普通 Set（非响应式），但「待上传数」要能实时反映 → 每次变动 +1 给视图当依赖
+  dirtyRev: 0
 })
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024
@@ -44,6 +46,7 @@ function ensureDirtyLoaded() {
   if (_dirtyLoaded) return
   _dirtyLoaded = true
   for (const w of storage.loadDirtyWords()) _dirty.add(w)
+  if (_dirty.size) state.dirtyRev++ // 冷启动也要把盘上欠推的算进「待上传数」
 }
 
 /** 把内存里的脏集合覆盖写回 localStorage */
@@ -60,7 +63,7 @@ function markDirty(...keys) {
     if (!_dirty.has(key)) { _dirty.add(key); added = true }
   }
   // 只在真有新增时落盘：答题连点会反复标同一个词，没必要每次都写一遍
-  if (added) persistDirty()
+  if (added) { persistDirty(); state.dirtyRev++ }
 }
 
 /**
@@ -74,7 +77,7 @@ function clearDirty(keys) {
     if (typeof k !== 'string' || !k) continue
     if (_dirty.delete(k.toLowerCase())) changed = true
   }
-  if (changed) persistDirty()
+  if (changed) { persistDirty(); state.dirtyRev++ }
   return changed
 }
 
@@ -89,6 +92,7 @@ function markAllDirty() {
   ensureDirtyLoaded()
   for (const k of Object.keys(state.words)) _dirty.add(k)
   persistDirty()
+  state.dirtyRev++
 }
 
 async function init() {
@@ -372,6 +376,8 @@ export function useVocabulary() {
     count: computed(() => Object.keys(state.words).length),
     savedSet: computed(() => new Set(Object.keys(state.words))),
     persistFailed: computed(() => state.persistFailed),
+    // 脏集合的变更计数（非数量）：同步面板的「待上传数」靠它当响应式依赖
+    dirtyRevision: computed(() => state.dirtyRev),
     errorPool: computed(() => Object.values(state.words).filter(inErrorPool)),
     has: (word) => !!state.words[(word + '').toLowerCase()],
     init,
