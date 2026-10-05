@@ -22,7 +22,10 @@
         :toc-items="chapters"
         :missing-audio="tocNoAudio"
         :show-settings="!isImageBook"
+        :show-notes="!isImageBook"
+        :notes-count="bookNotes.length"
         @settings="settingsOpen = true"
+        @notes="openNotesPanel"
         @prev="prevChapter"
         @next="nextChapter"
         @jump="jumpToChapter"
@@ -31,6 +34,7 @@
       <article
         class="chapter-content"
         @click="onChapterClick"
+        @mouseup="onTextMouseUp"
         @touchstart.passive="onTouchStart"
         @touchend.passive="onTouchEnd"
       >
@@ -80,7 +84,7 @@
             v-for="para in currentChapter.paragraphs"
             :key="para.id"
             :id="'para-' + para.id"
-            :class="['paragraph', { 'playing-para': para.id === playingParaId }]"
+            :class="['paragraph', { 'playing-para': para.id === playingParaId, 'flash-para': para.id === flashParaId }]"
           >
             <button
               v-if="paraStart(para.id) !== null"
@@ -90,7 +94,7 @@
             >&#x25b6;</button>
             <span
               v-for="(word, wi) in para.text.split(/(\s+)/)" :key="para.id + '-' + wi"
-              :class="['word', Object.fromEntries(
+              :class="['word', noteMarkClass(para.id, wi), Object.fromEntries(
                 [...(paraWordTags[para.id]?.get(wi) || [])].map(t => [t, true])
               )]"
               :data-word="word.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()"
@@ -130,6 +134,45 @@
       />
     </template>
 
+    <!-- 划词浮条（第 9 步 9.1）：选中 -> 选色 -> 划到词边界 -->
+    <div
+      v-if="noteBar.show"
+      class="note-bar"
+      :style="{ left: noteBar.x + 'px', top: noteBar.y + 'px' }"
+      @mousedown.prevent
+    >
+      <span class="note-bar-label">划线</span>
+      <button
+        v-for="c in NOTE_COLORS" :key="c"
+        class="note-color" :class="'c-' + c" :title="c"
+        @click="startNote(c)"
+      ></button>
+      <span class="note-bar-sep"></span>
+      <button class="note-bar-btn" @click="startNote(DEFAULT_NOTE_COLOR)">＋ 笔记</button>
+    </div>
+
+    <NotesPanel
+      :open="notesPanelOpen"
+      :groups="notesPanelGroups"
+      :total="bookNotes.length"
+      @close="closeNotesPanel"
+      @jump="jumpToNote"
+      @edit="onPanelEdit"
+      @remove="onPanelRemove"
+    />
+
+    <NoteEditor
+      :open="noteEditorOpen"
+      :mode="noteDraft?.mode || 'new'"
+      :quote="noteDraft?.quote || ''"
+      :text="noteDraft?.text || ''"
+      :color="noteDraft?.color || DEFAULT_NOTE_COLOR"
+      :status="noteDraft?.status || ''"
+      @save="saveNote"
+      @delete="deleteNote"
+      @close="closeNoteEditor"
+    />
+
     <ReadingSettings
       :open="settingsOpen"
       :settings="readerSettings"
@@ -168,6 +211,10 @@ import { isBookId } from '../utils/bookId.js'
 import { loadBook as loadByoRecord, BookStoreError } from '../storage/index.js'
 import ReadingSettings from '../components/ReadingSettings.vue'
 import { useReaderSettings } from '../composables/useReaderSettings'
+import NoteEditor from '../components/NoteEditor.vue'
+import NotesPanel from '../components/NotesPanel.vue'
+import { useNotes } from '../composables/useNotes'
+import { NOTE_COLORS, DEFAULT_NOTE_COLOR, resolveAnchor, snapToWords, tokenSpans, groupNotesByChapter, noteStatus } from '../utils/notes.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -203,6 +250,182 @@ const {
 } = useReaderSettings()
 function onChangeSetting({ key, value }) { setReaderSetting(key, value) }
 function onResetSettings() { resetReaderSettings() }
+
+// ── 划线笔记（第 9 步 9.1 / 9.2）────────────────────────────────────
+// 锚点 = {paraId, charStart, charEnd}（段内字符偏移），存进 note 记录。
+// 选中先「向外扩到词边界」再存 —— 存的即所见，渲染只需判「这个词与范围相交吗」。
+const notes = useNotes()
+const noteBar = ref({ show: false, x: 0, y: 0 })
+const pendingAnchor = ref(null)
+const noteDraft = ref(null)
+const noteEditorOpen = ref(false)
+
+const chapterNotes = computed(() => notes.forChapter(bookId.value, currentChapter.value?.id || ''))
+
+/** paraId -> Map(tokenIdx -> note)；解析不到位置的（漂移成段落级）这轮不画，留给 9.5 标记 */
+const paraNoteMarks = computed(() => {
+  const out = {}
+  const chapter = currentChapter.value
+  if (!chapter || isImageBook.value) return out
+  const list = chapterNotes.value
+  if (!list.length) return out
+  const byId = new Map(chapter.paragraphs.map(p => [p.id, p]))
+  for (const n of list) {
+    const para = byId.get(n.paraId)
+    if (!para) continue
+    const r = resolveAnchor(para.text, n)
+    if (r.kind === 'lost') continue
+    const spans = tokenSpans(para.text)
+    const map = out[n.paraId] || (out[n.paraId] = new Map())
+    for (let i = 0; i < spans.length; i++) {
+      const sp = spans[i]
+      if (!sp || sp.end <= r.start || sp.start >= r.end) continue
+      if (!map.has(i)) map.set(i, n)
+    }
+  }
+  return out
+})
+
+function noteMarkOf(paraId, tokenIdx) {
+  const map = paraNoteMarks.value[paraId]
+  return (map && map.get(tokenIdx)) || null
+}
+function noteMarkClass(paraId, tokenIdx) {
+  const n = noteMarkOf(paraId, tokenIdx)
+  return n ? 'note-' + n.color : ''
+}
+
+/** 选区一端在段内的字符偏移；段落开头的 ▶ 按钮属于 DOM 但不属于 para.text，要减掉 */
+function boundaryOffset(paraEl, node, offset) {
+  const r = document.createRange()
+  try { r.setStart(paraEl, 0); r.setEnd(node, offset) } catch { return null }
+  const btn = paraEl.querySelector('.para-play')
+  return Math.max(0, r.toString().length - (btn ? btn.textContent.length : 0))
+}
+
+function pickSelection() {
+  if (isImageBook.value) return
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+  const r = sel.getRangeAt(0)
+  const startEl = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement
+  const paraEl = startEl && startEl.closest ? startEl.closest('p.paragraph') : null
+  if (!paraEl || !paraEl.contains(r.endContainer)) return
+  const paraId = String(paraEl.id || '').replace(/^para-/, '')
+  const para = (currentChapter.value?.paragraphs || []).find(p => p.id === paraId)
+  if (!para) return
+  const a = boundaryOffset(paraEl, r.startContainer, r.startOffset)
+  const b = boundaryOffset(paraEl, r.endContainer, r.endOffset)
+  if (a === null || b === null || a >= b) return
+  const snap = snapToWords(para.text, a, b)
+  if (!snap) return
+  pendingAnchor.value = { paraId, charStart: snap.start, charEnd: snap.end, quote: para.text.slice(snap.start, snap.end) }
+  const rect = r.getBoundingClientRect()
+  const barW = 232
+  const x = Math.min(Math.max(8, rect.left + rect.width / 2 - barW / 2), Math.max(8, window.innerWidth - barW - 8))
+  const y = rect.top > 60 ? rect.top - 46 : rect.bottom + 10
+  noteBar.value = { show: true, x, y }
+}
+
+function onTextMouseUp() { setTimeout(pickSelection, 0) }
+function hideNoteBar() { if (noteBar.value.show) noteBar.value = { ...noteBar.value, show: false } }
+
+function onDocClickHideBar(ev) {
+  if (!noteBar.value.show) return
+  if (ev.target && ev.target.closest && ev.target.closest('.note-bar')) return
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed) hideNoteBar()
+}
+
+function startNote(color) {
+  const a = pendingAnchor.value
+  if (!a) return
+  noteDraft.value = {
+    mode: 'new', id: null, quote: a.quote, text: '', color: color || DEFAULT_NOTE_COLOR,
+    status: '新划线：第 ' + a.charStart + '–' + a.charEnd + ' 字（已对齐到词边界）'
+  }
+  noteEditorOpen.value = true
+  hideNoteBar()
+}
+
+function paraOfNote(n) {
+  const ch = chapters.value.find(c => c.id === n.chapterId)
+  return ch ? (ch.paragraphs.find(p => p.id === n.paraId) || null) : null
+}
+
+function openNoteEditor(n) {
+  if (!n) return
+  const para = paraOfNote(n)
+  const r = para ? resolveAnchor(para.text, n) : { kind: 'lost' }
+  noteDraft.value = {
+    mode: 'edit', id: n.id, quote: n.quote, text: n.text, color: n.color,
+    status: r.kind === 'ok' ? '锚点精确' : (r.kind === 'moved' ? '锚点已跟随重解析' : '⚠ 锚点失效（降级为段落级）')
+  }
+  noteEditorOpen.value = true
+}
+
+function closeNoteEditor() { noteEditorOpen.value = false; noteDraft.value = null }
+
+function saveNote({ text, color }) {
+  const d = noteDraft.value
+  if (!d) return
+  if (d.mode === 'edit') {
+    notes.update(d.id, { text, color })
+  } else {
+    const a = pendingAnchor.value
+    if (a) {
+      notes.add({
+        bookId: bookId.value, bookTitle: bookTitle.value, chapterId: currentChapter.value?.id || '',
+        paraId: a.paraId, charStart: a.charStart, charEnd: a.charEnd, quote: a.quote,
+        text, color
+      })
+      pendingAnchor.value = null
+    }
+  }
+  closeNoteEditor()
+}
+
+function deleteNote() {
+  const d = noteDraft.value
+  if (d && d.mode === 'edit') notes.remove(d.id)
+  closeNoteEditor()
+}
+
+// ── 划线笔记列表（第 9 步 9.3）────────────────────────────────────
+const notesPanelOpen = ref(false)
+const flashParaId = ref(null)
+let flashTimer = null
+
+const bookNotes = computed(() => notes.forBook(bookId.value))
+/** 按章序分组，并给每条附上锚点判读（跨章也能算：章表里存着每章的段） */
+const notesPanelGroups = computed(() =>
+  groupNotesByChapter(bookNotes.value, chapters.value).map(g => ({
+    ...g,
+    notes: g.notes.map(n => ({ ...n, status: noteStatus(chapters.value, n).kind }))
+  }))
+)
+
+function openNotesPanel() { notesPanelOpen.value = true }
+function closeNotesPanel() { notesPanelOpen.value = false }
+
+/** 跳转：换到该笔记所属章（若不同章）再滚到那一段并闪一下 */
+function jumpToNote(n) {
+  closeNotesPanel()
+  const idx = chapters.value.findIndex(c => c.id === n.chapterId)
+  if (idx < 0) return
+  if (idx !== currentChapterIndex.value) setChapter(idx)
+  nextTick(() => {
+    const el = document.getElementById('para-' + n.paraId)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    flashParaId.value = n.paraId
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => { flashParaId.value = null }, 1500)
+  })
+}
+
+function onPanelEdit(n) { closeNotesPanel(); openNoteEditor(n) }
+function onPanelRemove(n) { notes.remove(n.id) }
 
 // ---- Image mode ----
 
@@ -503,7 +726,10 @@ function onTouchEnd(e) {
   if (Math.abs(dx) > 80 && Math.abs(dx) > 2 * Math.abs(dy)) {
     if (dx > 0) nextChapter()
     else prevChapter()
+    return
   }
+  // 手机没有 mouseup：长按选中后由这条把浮条带出来（等系统把 selection 定下来）
+  setTimeout(pickSelection, 180)
 }
 
 async function onChapterClick(event) {
@@ -601,6 +827,11 @@ async function onWordClick(event) {
   // 词组信息：点的词若在某个高亮词组范围内，弹窗附带词组释义
   const paraId = event.target.dataset.para
   const tokenIdx = Number(event.target.dataset.idx)
+
+  // 点到划过线的词 -> 开笔记（而不是弹单词框）
+  const marked = noteMarkOf(paraId, tokenIdx)
+  if (marked) { selectedWord.value = null; openNoteEditor(marked); return }
+
   const span = (paraPhraseSpans.value[paraId] || [])
     .find(s => tokenIdx >= s.start && tokenIdx <= s.end)
   selectedPhrase.value = span ? { phrase: span.base, defs: span.defs } : null
@@ -829,6 +1060,8 @@ const TOUCH_EVENTS = ['pointerdown', 'keydown', 'wheel']
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('pagehide', saveCurrentPosition)
+  window.addEventListener('scroll', hideNoteBar, true)
+  document.addEventListener('click', onDocClickHideBar)
   // 用户一动就不再应用远程位置（见上面的 watch）
   for (const ev of TOUCH_EVENTS) {
     window.addEventListener(ev, markTouched, { passive: true, once: true })
@@ -836,10 +1069,13 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (flashTimer) clearTimeout(flashTimer)
   // 离开阅读页（切 tab、返回书架等）→ 保存当前位置
   saveCurrentPosition()
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('pagehide', saveCurrentPosition)
+  window.removeEventListener('scroll', hideNoteBar, true)
+  document.removeEventListener('click', onDocClickHideBar)
   for (const ev of TOUCH_EVENTS) window.removeEventListener(ev, markTouched)
 })
 </script>
@@ -1094,5 +1330,71 @@ onBeforeUnmount(() => {
   .reader-view:has(.image-page) {
     max-width: 900px;
   }
+}
+
+/* ---- 划线笔记（第 9 步）---- */
+
+.paragraph.flash-para {
+  background: rgba(26, 115, 232, 0.14);
+  transition: background 0.25s;
+}
+
+.word.note-yellow { background: #f6d365; }
+.word.note-green { background: #8fd19e; }
+.word.note-blue { background: #8ec5f0; }
+.word.note-pink { background: #f3a7bd; }
+
+@media (prefers-color-scheme: dark) {
+  .word.note-yellow { background: #6d5a1f; }
+  .word.note-green { background: #24502f; }
+  .word.note-blue { background: #1e3f5c; }
+  .word.note-pink { background: #5b2b3a; }
+}
+
+.note-bar {
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, #d2d2d7);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  padding: 6px 10px;
+}
+
+.note-bar-label {
+  font-size: 12px;
+  color: var(--text-secondary, #6e6e73);
+}
+
+.note-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  padding: 0;
+}
+
+.note-color.c-yellow { background: #f6d365; }
+.note-color.c-green { background: #8fd19e; }
+.note-color.c-blue { background: #8ec5f0; }
+.note-color.c-pink { background: #f3a7bd; }
+
+.note-bar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border-color, #d2d2d7);
+}
+
+.note-bar-btn {
+  border: none;
+  background: none;
+  color: var(--accent-color, #1a73e8);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
 }
 </style>

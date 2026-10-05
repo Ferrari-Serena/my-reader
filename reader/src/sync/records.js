@@ -50,7 +50,7 @@ const plainObj = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : nul
 
 /** 各 kind 的字段白名单（方案 3.4 草案）。未列出的字段一律剪掉。 */
 const FIELDS = {
-  note: ['bookId', 'chapterId', 'anchor', 'text', 'color', 'createdAt', 'updatedAt'],
+  note: ['bookId', 'bookTitle', 'chapterId', 'anchor', 'quote', 'text', 'color', 'createdAt', 'updatedAt'],
   wrong: ['type', 'refKey', 'yourAnswer', 'rightAnswer', 'createdAt', 'updatedAt'],
   card: ['refKind', 'refKey', 'srs', 'createdAt', 'updatedAt'],
   setting: ['key', 'value', 'createdAt', 'updatedAt'],

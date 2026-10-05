@@ -304,5 +304,136 @@ console.log('\n[readerSettings.js]')
   t('固定记录 id 与 kind 前缀一致（s_）', RS.READER_SETTING_RECORD_ID === 's_reader' && RS.READER_SETTING_KEY === 'reader')
 }
 
+// ═══ 6. utils/notes.js（第 9 步 9.2 划线笔记：锚点 / 词级对齐 / 漂移判读）═══
+console.log('\n[utils/notes.js]')
+{
+  const N = await import('./src/utils/notes.js')
+
+  // 颜色域
+  t('NOTE_COLORS 恰是四色', N.NOTE_COLORS.join() === 'yellow,green,blue,pink')
+  t('默认色是 yellow', N.DEFAULT_NOTE_COLOR === 'yellow')
+  t('isNoteColor 只认这四色', N.isNoteColor('green') && !N.isNoteColor('red') && !N.isNoteColor(null))
+
+  // 记录键
+  t('noteKey / noteIdFromKey 往返', N.noteKey('n_1') === 'note:n_1' && N.noteIdFromKey('note:n_1') === 'n_1')
+  t('noteIdFromKey 非 note 前缀 -> null', N.noteIdFromKey('card:x') === null && N.noteIdFromKey(null) === null)
+
+  // tokenSpans 与渲染分词严格对齐（渲染用 text.split(/(\s+)/)，标色按 token 下标）
+  const t3 = '  The quick  brown fox '
+  const toks = t3.split(/(\s+)/)
+  const spans = N.tokenSpans(t3)
+  t('tokenSpans 长度与 split 一致', spans.length === toks.length)
+  t('tokenSpans 逐 token 与 split 切出片段一致（含中文/多空格）',
+    spans.every((s, i) => (s ? t3.slice(s.start, s.end) === toks[i] : !/\S/.test(toks[i]))))
+  t('tokenSpans 只把空白位留 null', spans.filter(s => s === null).length === toks.filter(x => !/\S/.test(x)).length)
+  t('tokenSpans 空串 -> [null]', JSON.stringify(N.tokenSpans('')) === '[null]')
+  t('tokenSpans 容忍 null 输入', N.tokenSpans(null).length === 1)
+  t('tokenSpans 对中文整串无空白 -> 命中数 0', N.tokenSpans('中文段落').filter(x => x === null).length === 0)
+
+  // snapToWords 词级对齐
+  const p1 = 'The quick brown fox'
+  t('整词范围 -> 原样', JSON.stringify(N.snapToWords(p1, 4, 9)) === JSON.stringify({ start: 4, end: 9 }))
+  t('词内部分选中 -> 向外扩到整词', JSON.stringify(N.snapToWords(p1, 5, 7)) === JSON.stringify({ start: 4, end: 9 }))
+  t('跨两词 -> 扩到两端词边界',
+    JSON.stringify(N.snapToWords(p1, 5, 12)) === JSON.stringify({ start: 4, end: 15 }))
+  t('只碰到空白 -> null', N.snapToWords(p1, 3, 4) === null)
+  t('起点=终点 -> null', N.snapToWords(p1, 9, 9) === null)
+  t('起点>终点 -> null', N.snapToWords(p1, 9, 4) === null)
+  t('非整数偏移 -> null', N.snapToWords(p1, 1.5, 5) === null)
+  t('非字符串段落 -> null', N.snapToWords(null, 0, 5) === null)
+
+  // overlaps
+  t('overlaps 相交/相邻分离', N.overlaps(0, 5, 4, 9) && !N.overlaps(0, 5, 5, 9))
+
+  // resolveAnchor 三分支
+  const para = 'The quick brown fox'
+  t('精确命中 -> ok',
+    JSON.stringify(N.resolveAnchor(para, { charStart: 4, charEnd: 9, quote: 'quick' })) === JSON.stringify({ kind: 'ok', start: 4, end: 9 }))
+  t('偏移漂了、引文还在 -> moved（自动重锚）',
+    JSON.stringify(N.resolveAnchor(para, { charStart: 99, charEnd: 104, quote: 'quick' })) === JSON.stringify({ kind: 'moved', start: 4, end: 9 }))
+  t('moved 取第一次出现位置', N.resolveAnchor('x a x a', { charStart: 90, charEnd: 91, quote: 'a' }).start === 2)
+  const lost = N.resolveAnchor(para, { charStart: 4, charEnd: 9, quote: 'never' })
+  t('引文没了 -> lost（绝不静默错位）', lost.kind === 'lost' && lost.why === 'quote-gone')
+  t('无引文老记录：界内即信 -> ok', N.resolveAnchor(para, { charStart: 4, charEnd: 9 }).kind === 'ok')
+  t('无引文老记录：越界 -> lost(out-of-bounds)', N.resolveAnchor(para, { charStart: 100, charEnd: 104 }).why === 'out-of-bounds')
+  t('段落缺失 -> lost(no-paragraph)', N.resolveAnchor(null, { charStart: 0, charEnd: 1 }).why === 'no-paragraph')
+  t('段内偏移等于段长（到尾部）仍算界内 ok',
+    N.resolveAnchor('abc', { charStart: 0, charEnd: 3, quote: 'abc' }).kind === 'ok')
+
+  // normalizeNote 净化读法
+  const okNote = N.normalizeNote('n_1', {
+    bookId: 'bk_x', bookTitle: 'The Giver', chapterId: 'ch1',
+    anchor: { paraId: 'p1', charStart: 0, charEnd: 5 },
+    quote: 'hello', text: 'a note', color: 'blue', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z'
+  })
+  t('合法载荷 -> 归一化对象（字段摊平到顶层）',
+    !!okNote && okNote.bookId === 'bk_x' && okNote.paraId === 'p1' && okNote.charStart === 0 && okNote.color === 'blue' && okNote.quote === 'hello')
+  t('缺 bookId -> null', N.normalizeNote('n_1', { chapterId: 'c', anchor: { paraId: 'p', charStart: 0, charEnd: 1 } }) === null)
+  t('缺 chapterId -> null', N.normalizeNote('n_1', { bookId: 'b', anchor: { paraId: 'p', charStart: 0, charEnd: 1 } }) === null)
+  t('缺 paraId -> null', N.normalizeNote('n_1', { bookId: 'b', chapterId: 'c', anchor: { charStart: 0, charEnd: 1 } }) === null)
+  t('charStart >= charEnd -> null', N.normalizeNote('n_1', { bookId: 'b', chapterId: 'c', anchor: { paraId: 'p', charStart: 5, charEnd: 5 } }) === null)
+  t('非整数偏移 -> null', N.normalizeNote('n_1', { bookId: 'b', chapterId: 'c', anchor: { paraId: 'p', charStart: 1.5, charEnd: 3 } }) === null)
+  t('id 非字符串 -> null', N.normalizeNote(null, { bookId: 'b', chapterId: 'c', anchor: { paraId: 'p', charStart: 0, charEnd: 1 } }) === null)
+  t('payload 非对象 -> null（不抛）', N.normalizeNote('n_1', 'nope') === null)
+  t('脏颜色 -> 兜底 yellow', N.normalizeNote('n_1', { bookId: 'b', chapterId: 'c', anchor: { paraId: 'p', charStart: 0, charEnd: 1 }, color: 'red' }).color === 'yellow')
+  t('缺 quote/text -> 空串（不塞 undefined）',
+    N.normalizeNote('n_2', { bookId: 'b', chapterId: 'c', anchor: { paraId: 'p', charStart: 0, charEnd: 1 } }).quote === '' &&
+    N.normalizeNote('n_2', { bookId: 'b', chapterId: 'c', anchor: { paraId: 'p', charStart: 0, charEnd: 1 } }).text === '')
+
+  // toNotePayload 归一化笔记 -> 记录载荷
+  const pl = N.toNotePayload({
+    bookId: 'bk_x', bookTitle: 'T', chapterId: 'ch1',
+    paraId: 'p1', charStart: 2, charEnd: 8, quote: 'quick b', text: 'hi', color: 'pink'
+  })
+  t('载荷字段齐（含 quote / bookTitle）',
+    pl.bookId === 'bk_x' && pl.bookTitle === 'T' && pl.chapterId === 'ch1' && pl.quote === 'quick b' &&
+    pl.text === 'hi' && pl.color === 'pink')
+  t('anchor 子对象字段齐', Object.keys(pl.anchor).sort().join() === 'charEnd,charStart,paraId')
+  t('anchor 值正确', pl.anchor.paraId === 'p1' && pl.anchor.charStart === 2 && pl.anchor.charEnd === 8)
+  t('脏颜色 -> 兜底 yellow', N.toNotePayload({ bookId: 'b', chapterId: 'c', paraId: 'p', charStart: 0, charEnd: 1, color: 'nope' }).color === 'yellow')
+  t('全空输入不抛（给空串/0）', (() => { const z = N.toNotePayload({}); return z.bookId === '' && z.quote === '' && z.anchor.paraId === '' && z.anchor.charStart === 0 })())
+  t('往返：toNotePayload -> normalizeNote 保持一致', (() => {
+    const back = N.normalizeNote('n_rt', N.toNotePayload(okNote))
+    return back && back.bookId === okNote.bookId && back.paraId === okNote.paraId && back.charStart === okNote.charStart && back.charEnd === okNote.charEnd && back.quote === okNote.quote && back.color === okNote.color
+  })())
+  // noteStatus：按章表判读（列表面板用，跨章也能算）
+  const chs = [
+    { id: 'ch1', title: 'Chapter 1', paragraphs: [{ id: 'p1', text: 'The quick brown fox' }] },
+    { id: 'ch2', title: 'Chapter 2', paragraphs: [{ id: 'p9', text: 'Hello world again' }] }
+  ]
+  t('noteStatus：命中本段 -> ok',
+    N.noteStatus(chs, { chapterId: 'ch1', paraId: 'p1', charStart: 4, charEnd: 9, quote: 'quick' }).kind === 'ok')
+  t('noteStatus：引文还在、偏移漂了 -> moved',
+    N.noteStatus(chs, { chapterId: 'ch1', paraId: 'p1', charStart: 90, charEnd: 95, quote: 'quick' }).kind === 'moved')
+  t('noteStatus：引文没了 -> lost',
+    N.noteStatus(chs, { chapterId: 'ch1', paraId: 'p1', charStart: 4, charEnd: 9, quote: 'nope' }).kind === 'lost')
+  t('noteStatus：章不在章表 -> lost(no-chapter)',
+    N.noteStatus(chs, { chapterId: 'chX', paraId: 'p1', charStart: 0, charEnd: 1 }).why === 'no-chapter')
+  t('noteStatus：段不在章里 -> lost(no-paragraph)',
+    N.noteStatus(chs, { chapterId: 'ch1', paraId: 'pZ', charStart: 0, charEnd: 1 }).why === 'no-paragraph')
+  t('noteStatus：null 笔记 -> lost', N.noteStatus(chs, null).kind === 'lost')
+
+  // groupNotesByChapter：按章序分组、组内按位置排
+  const gNotes = [
+    { id: 'a', chapterId: 'ch2', paraId: 'p9', charStart: 6 },
+    { id: 'b', chapterId: 'ch1', paraId: 'p1', charStart: 20 },
+    { id: 'c', chapterId: 'ch1', paraId: 'p1', charStart: 4 },
+    { id: 'd', chapterId: 'ch1', paraId: 'p0', charStart: 0 }
+  ]
+  const grouped = N.groupNotesByChapter(gNotes, chs)
+  t('groupNotesByChapter：章序按章表（ch1 在前）', grouped.map(g => g.chapterId).join() === 'ch1,ch2')
+  t('groupNotesByChapter：组内按 (paraId, charStart) 升序',
+    grouped[0].notes.map(n => n.id).join() === 'd,c,b')
+  t('groupNotesByChapter：用章表里的 title', grouped[0].title === 'Chapter 1')
+  t('groupNotesByChapter：章表里没有的章排最后、title 兜底为 id', (() => {
+    const g = N.groupNotesByChapter([{ id: 'x', chapterId: 'ghost', paraId: 'p', charStart: 0 }], chs)
+    return g.length === 1 && g[0].chapterId === 'ghost' && g[0].title === 'ghost'
+  })())
+  t('groupNotesByChapter：空输入 -> []',
+    N.groupNotesByChapter([], chs).length === 0 && N.groupNotesByChapter(null, null).length === 0)
+  t('groupNotesByChapter：不改入参数组的顺序', gNotes.map(n => n.id).join() === 'a,b,c,d')
+
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

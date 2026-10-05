@@ -31,6 +31,13 @@
         {{ chapterTitle }}
       </div>
       <button
+        v-if="showNotes"
+        class="nav-btn notes-btn"
+        title="划线笔记"
+        aria-haspopup="dialog"
+        @click="$emit('notes')"
+      >Notes <span class="notes-count">{{ notesCount }}</span></button>
+      <button
         v-if="showSettings"
         class="nav-btn aa-btn"
         title="阅读设置"
@@ -81,10 +88,13 @@ const props = defineProps({
   // 章 id → 无音频原因（生成端 audio-index.json）；空对象 = 不标
   missingAudio: { type: Object, default: () => ({}) },
   // 是否显示「Aa」阅读设置入口（只顶部 nav 传 true；底部那个不传）
-  showSettings: { type: Boolean, default: false }
+  showSettings: { type: Boolean, default: false },
+  // 是否显示「Notes」划线笔记入口（同上，只顶部 nav）
+  showNotes: { type: Boolean, default: false },
+  notesCount: { type: Number, default: 0 }
 })
 
-const emit = defineEmits(['prev', 'next', 'jump', 'settings'])
+const emit = defineEmits(['prev', 'next', 'jump', 'settings', 'notes'])
 
 const showToc = ref(false)
 
@@ -154,6 +164,18 @@ function selectChapter(index) {
   padding: 4px 10px;
   font-weight: 700;
   line-height: 1;
+}
+
+.notes-btn {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  line-height: 1;
+}
+
+.notes-count {
+  color: var(--text-secondary, #6e6e73);
+  margin-left: 2px;
 }
 
 .toc-overlay {

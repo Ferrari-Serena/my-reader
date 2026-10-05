@@ -908,5 +908,75 @@ console.log('\n[第 8 步 — useReaderSettings：接线能真跑（computed / �
   rs.removeRecord('setting', RS.READER_SETTING_RECORD_ID, { record: false, dirty: false })
 }
 
+console.log('\n[第 9 步 — note 记录：bookTitle / quote 通过白名单（9.2）]')
+{
+  const RR = await import('./src/sync/records.js')
+  const r = RR.sanitizeRecord('note', 'n_1', {
+    bookId: 'bk_x', bookTitle: 'The Giver', chapterId: 'ch1',
+    anchor: { paraId: 'p1', charStart: 4, charEnd: 9 },
+    quote: 'quick', text: 'note body', color: 'blue', extra: 'drop me'
+  })
+  t('白名单留下 bookTitle / quote / anchor',
+    r.bookTitle === 'The Giver' && r.quote === 'quick' && r.anchor.paraId === 'p1')
+  t('白名单剪掉未列字段', r.extra === undefined)
+  t('字段恰为白名单那几项',
+    Object.keys(r).sort().join() === 'anchor,bookId,bookTitle,chapterId,color,createdAt,quote,schema_version,text,updatedAt')
+}
+
+console.log('\n[第 9 步 — useNotes：接线能真跑（增改删 / 落盘 / 标脏 / 查询）]')
+{
+  const rs = await import('./src/sync/recordStore.js')
+  const { noteKey } = await import('./src/utils/notes.js')
+  const mod = await import('./src/composables/useNotes.js')
+
+  const notes = mod.useNotes()
+  const before = notes.count()
+
+  const n1 = notes.add({
+    bookId: 'bk_giver', bookTitle: 'The Giver', chapterId: 'ch1',
+    paraId: 'p1', charStart: 4, charEnd: 9, quote: 'quick', text: 'first', color: 'green'
+  })
+  t('add 返回归一化笔记（n_ 前缀 id）', !!n1 && n1.id.startsWith('n_') && n1.color === 'green')
+  t('add 计数 +1', notes.count() === before + 1)
+  t('add 落盘到 note:<id>', !!rs.loadRecordsMap()[noteKey(n1.id)])
+  t('add 后该键标脏（会被推上去）', rs.loadRecordDirty().includes(noteKey(n1.id)))
+  t('get 能取回', notes.get(n1.id) && notes.get(n1.id).quote === 'quick')
+  t('bookTitle 一并存下（缺书时占位用）', notes.get(n1.id).bookTitle === 'The Giver')
+
+  notes.add({
+    bookId: 'bk_giver', bookTitle: 'The Giver', chapterId: 'ch1',
+    paraId: 'p1', charStart: 20, charEnd: 25, quote: 'brown', text: '', color: 'pink'
+  })
+  notes.add({
+    bookId: 'bk_giver', bookTitle: 'The Giver', chapterId: 'ch2',
+    paraId: 'p9', charStart: 0, charEnd: 3, quote: 'The', text: '', color: 'yellow'
+  })
+  notes.add({
+    bookId: 'bk_other', bookTitle: 'Other', chapterId: 'c1',
+    paraId: 'p1', charStart: 0, charEnd: 3, quote: 'abc', text: '', color: 'blue'
+  })
+
+  t('forChapter 只回本章两条', notes.forChapter('bk_giver', 'ch1').length === 2)
+  t('forChapter 按段内位置排（charStart 升序）',
+    notes.forChapter('bk_giver', 'ch1').map(n => n.charStart).join() === '4,20')
+  t('forChapter 不跨章', notes.forChapter('bk_giver', 'ch2').length === 1)
+  t('forBook 汇总整本（跨章）', notes.forBook('bk_giver').length === 3)
+
+  const upd = notes.update(n1.id, { text: 'edited', color: 'blue' })
+  t('update 改文本与颜色', upd.text === 'edited' && upd.color === 'blue')
+  t('update 不动锚点', upd.charStart === 4 && upd.charEnd === 9)
+  t('update 落盘', rs.loadRecordsMap()[noteKey(n1.id)].text === 'edited')
+  t('update 重新标脏', rs.loadRecordDirty().includes(noteKey(n1.id)))
+
+  t('remove 返回 true 且本章剩一条',
+    notes.remove(n1.id) === true && notes.forChapter('bk_giver', 'ch1').length === 1)
+  t('remove 后记录消失（留墓碑）', !rs.loadRecordsMap()[noteKey(n1.id)])
+  t('remove 不在的 id -> false', notes.remove('n_nope') === false)
+
+  // 收尾：清干净
+  for (const n of notes.all()) notes.remove(n.id)
+  t('收尾：笔记清空', notes.count() === 0)
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
