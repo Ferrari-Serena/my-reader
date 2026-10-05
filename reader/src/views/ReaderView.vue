@@ -154,6 +154,8 @@ import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictInde
 import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { useSync } from '../composables/useSync'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
+import { isBookId } from '../utils/bookId.js'
+import { loadBook as loadByoRecord, BookStoreError } from '../storage/index.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -618,35 +620,71 @@ async function onWordClick(event) {
   }
 }
 
+/**
+ * 内置书：三份静态 JSON（chapters / dictionary / audio-index）。
+ */
+async function loadBuiltinBook() {
+  const baseUrl = `${import.meta.env.BASE_URL}books/${bookId.value}`
+  const [chaptersRes, dictRes, audioIndexRes] = await Promise.all([
+    fetch(`${baseUrl}/chapters.json`),
+    fetch(`${baseUrl}/dictionary.json`),
+    fetch(`${baseUrl}/audio-index.json`).catch(() => null)
+  ])
+
+  if (!chaptersRes.ok) throw new Error(`Failed to load book: ${chaptersRes.status}`)
+
+  const chaptersData = await chaptersRes.json()
+  bookTitle.value = chaptersData.title
+  chapters.value = chaptersData.chapters
+
+  // 音频清单（可选）：取不到就按「有音频」兜底，不影响阅读
+  audioIndex.value = audioIndexRes && audioIndexRes.ok
+    ? await audioIndexRes.json().catch(() => null)
+    : null
+
+  if (dictRes.ok) {
+    const dictData = await dictRes.json()
+    dictionary.value = dictData.words || {}
+    dictAlias = buildDictAlias(dictionary.value)
+  }
+}
+
+/**
+ * 自带书（BYO）：正文取自本机 IndexedDB（第 5 步 5B）。
+ * 没有 dictionary.json（5.3：不给用户书跑词典管线）-> 点词走联网兜底；
+ * 也没有 audio-index.json（没预生成音频）-> AudioPlayer 在 404 处降级浏览器朗读。
+ * 书体不出设备：别的设备导入的书在这台机器上说不出正文 ——
+ * 这种情形要给可读的原因（而不是白屏 / 报 404）。
+ */
+async function loadByoBook() {
+  const notHere = 'This imported book is not on this device \u2014 imported books stay on the device you added them from.'
+  let record = null
+  try {
+    record = await loadByoRecord(bookId.value)
+  } catch (e) {
+    if (e instanceof BookStoreError && e.code === 'UNAVAILABLE') {
+      throw new Error('This browser is blocking local storage, so imported books cannot be opened.')
+    }
+    throw new Error(notHere)
+  }
+  if (!record) throw new Error(notHere)
+  bookTitle.value = record.title || 'Untitled'
+  chapters.value = record.chapters
+  audioIndex.value = null
+}
+
 async function loadBook() {
   loading.value = true
   error.value = null
   explicitChapterOnLoad = !!chapterId.value
 
   try {
-    const baseUrl = `${import.meta.env.BASE_URL}books/${bookId.value}`
-    const [chaptersRes, dictRes, audioIndexRes] = await Promise.all([
-      fetch(`${baseUrl}/chapters.json`),
-      fetch(`${baseUrl}/dictionary.json`),
-      fetch(`${baseUrl}/audio-index.json`).catch(() => null)
-    ])
+    // 释义层是每本书自己的：不在这里清，换到一本没有词典的书时会残留上一本的表
+    dictionary.value = {}
+    dictAlias = buildDictAlias({})
 
-    if (!chaptersRes.ok) throw new Error(`Failed to load book: ${chaptersRes.status}`)
-
-    const chaptersData = await chaptersRes.json()
-    bookTitle.value = chaptersData.title
-    chapters.value = chaptersData.chapters
-
-    // 音频清单（可选）：取不到就按「有音频」兜底，不影响阅读
-    audioIndex.value = audioIndexRes && audioIndexRes.ok
-      ? await audioIndexRes.json().catch(() => null)
-      : null
-
-    if (dictRes.ok) {
-      const dictData = await dictRes.json()
-      dictionary.value = dictData.words || {}
-      dictAlias = buildDictAlias(dictionary.value)
-    }
+    if (isBookId(bookId.value)) await loadByoBook()
+    else await loadBuiltinBook()
 
     // Navigate: URL chapter param > saved position > first chapter
     let targetIndex = -1

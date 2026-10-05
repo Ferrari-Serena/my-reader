@@ -1,9 +1,19 @@
 <template>
   <div class="book-list-view">
-    <div v-if="books.length === 0" class="empty-state">
+    <!-- 两个来源各自降级：一个坏掉，另一个照常显示，但要说清楚缺了什么 -->
+    <p v-if="byoError" class="shelf-note">
+      Your imported books could not be listed on this device (local storage is unavailable).
+    </p>
+    <p v-else-if="error" class="shelf-note">
+      Could not load the built-in book list ({{ error }}).
+    </p>
+
+    <div v-if="loading" class="shelf-loading">Loading...</div>
+
+    <div v-else-if="books.length === 0" class="empty-state">
       <div class="empty-icon">📚</div>
       <h2>No books yet</h2>
-      <p>Run the generator to add your first book.</p>
+      <p>Books you import will appear here.</p>
     </div>
 
     <div v-else class="book-grid">
@@ -22,6 +32,8 @@
         <div class="book-info">
           <h3 class="book-title">{{ book.title }}</h3>
           <p class="book-author" v-if="book.author">{{ book.author }}</p>
+          <!-- 书架上是「内置 ＋ 自带」两来源合一：自带书不给来源提示，用户会以为它上了云 -->
+          <p class="book-kind" v-if="book.kind === 'byo'">Your book</p>
         </div>
       </router-link>
     </div>
@@ -29,21 +41,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { onMounted } from 'vue'
+import { useBookShelf } from '../composables/useBookShelf'
 
-const books = ref([])
+// 数据源在组合式里：静态 book-index.json（内置）＋ IndexedDB 书库（自带），
+// 合成与排序口径全在 utils/bookShelf.js，这里只负责画。
+const { books, loading, error, byoError, refresh } = useBookShelf()
 
-onMounted(async () => {
-  try {
-    const res = await fetch(`${import.meta.env.BASE_URL}books/book-index.json`)
-    if (res.ok) {
-      const data = await res.json()
-      books.value = data.books || []
-    }
-  } catch {
-    // No books yet — show empty state
-  }
-})
+onMounted(refresh)
 </script>
 
 <style scoped>
@@ -51,6 +56,22 @@ onMounted(async () => {
   max-width: 760px;
   margin: 0 auto;
   padding: 16px;
+}
+
+.shelf-note {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-secondary, #6e6e73);
+  font-size: 13px;
+}
+
+.shelf-loading {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--text-secondary, #6e6e73);
+  font-size: 14px;
 }
 
 .empty-state {
@@ -128,5 +149,11 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--text-secondary, #6e6e73);
   margin: 0;
+}
+
+.book-kind {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary, #6e6e73);
 }
 </style>

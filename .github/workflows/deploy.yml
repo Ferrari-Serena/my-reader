@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 八套测试全部通过才允许部署（reader 457 ＋ worker 462 ＝ 919 条）。都是纯逻辑测试，不依赖浏览器 / 网络 / 线上环境。
+  # 十套测试全部通过才允许部署（reader 523 ＋ worker 462 ＝ 985 条）。都是纯逻辑测试，不依赖浏览器 / 网络 / 线上环境。
   test:
     runs-on: ubuntu-latest
 
@@ -33,7 +33,7 @@ jobs:
         run: npm ci
         working-directory: reader
 
-      - name: Reader tests (verify-core / verify-sync / smoke / verify-authui)
+      - name: Reader tests (verify-core / verify-sync / verify-import / verify-books / smoke / verify-authui)
         run: npm test
         working-directory: reader
 
