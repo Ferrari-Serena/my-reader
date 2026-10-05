@@ -30,20 +30,38 @@ db.exec(readFileSync(new URL('./migrations/0001_sync_tombstones_progress.sql', i
 db.exec(readFileSync(new URL('./migrations/0002_rate_limit.sql', import.meta.url), 'utf8'))
 // 0003 账号 / 会话 / 失败计数 / 邮件令牌（幂等，见 migrations/0003_users_sessions.sql）
 db.exec(readFileSync(new URL('./migrations/0003_users_sessions.sql', import.meta.url), 'utf8'))
+// 0004 sync_data 加 kind 列（一次性 ALTER，见 migrations/0004_sync_data_kind.sql）
+db.exec(readFileSync(new URL('./migrations/0004_sync_data_kind.sql', import.meta.url), 'utf8'))
 
 const CODE = 'TESTCODE'
 const alive = db.prepare(SQL_ALIVE_UPSERT)
 const tomb = db.prepare(SQL_TOMB_UPSERT)
-const read = db.prepare('SELECT payload, updated_at, deleted_at FROM sync_data WHERE code = ? AND word = ?')
+const read = db.prepare('SELECT payload, updated_at, deleted_at, kind FROM sync_data WHERE code = ? AND word = ?')
 
-/** 跑一条写入，返回 changes（D1 的 meta.changes 就是这个） */
-const put = (stmt, code, word, ...rest) => stmt.run(code, word, ...rest).changes
+/** 跑一条词条写入，返回 changes（D1 的 meta.changes 就是这个）；kind 固定 'word' */
+const put = (stmt, code, word, ...rest) => stmt.run(code, word, 'word', ...rest).changes
+/** 记录通道写入（第 3 步）：键是 '<kind>:<id>'，kind 显式给 */
+const putRec = (stmt, code, key, kind, ...rest) => stmt.run(code, key, kind, ...rest).changes
 
 console.log('\n[迁移脚本]')
 t('0001 能跑通且加了 deleted_at 列',
   db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('sync_data') WHERE name = 'deleted_at'").get().n === 1)
 t('0001 建出了 sync_progress',
   db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name='sync_progress'").get().n === 1)
+t('0004 能跑通且加了 kind 列',
+  db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('sync_data') WHERE name = 'kind'").get().n === 1)
+t('0004 建出 (code, kind, updated_at) 索引',
+  db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index' AND name='idx_sync_data_code_kind_updated'").get().n === 1)
+t('0004 新列默认 word（旧行自动归位）', (() => {
+  db.prepare("INSERT INTO sync_data (code, word, payload, updated_at) VALUES ('DEFCODE', 'apple', '{}', '2026-01-01T00:00:00.000Z')").run()
+  const got = db.prepare("SELECT kind FROM sync_data WHERE code = 'DEFCODE' AND word = 'apple'").get().kind
+  db.prepare("DELETE FROM sync_data WHERE code = 'DEFCODE'").run()
+  return got === 'word'
+})())
+t('0004 不幂等：重复执行报 duplicate column（故标注「不要重跑」）', (() => {
+  try { db.exec(readFileSync(new URL('./migrations/0004_sync_data_kind.sql', import.meta.url), 'utf8')); return false }
+  catch (e) { return /duplicate column/i.test(String(e.message)) }
+})())
 
 console.log('\n[条件 upsert — 只有更新的时间戳才覆盖]')
 t('首次写入被收下 (changes=1)', put(alive, CODE, 'apple', '{"v":1}', '2026-01-01T00:00:00.000Z') === 1)
@@ -76,6 +94,25 @@ console.log('\n[多设备交错 — 本轮要修的那个真实场景]')
 put(alive, CODE, 'banana', '{"v":"A-new"}', '2026-02-01T10:00:00.000Z')
 put(alive, CODE, 'banana', '{"v":"B-stale"}', '2026-02-01T09:00:00.000Z')
 t('陈旧快照被拒收，A 的编辑不再丢失', JSON.parse(read.get(CODE, 'banana').payload).v === 'A-new')
+
+console.log('\n[第 3 步 — kind 记录通道：四类记录与词条在同一张表里互不干扰]')
+{
+  t('记录写入（kind=note）被收下',
+    putRec(alive, CODE, 'note:n_1', 'note', '{"text":"hi"}', '2026-03-01T00:00:00.000Z') === 1)
+  const rec = read.get(CODE, 'note:n_1')
+  t('读回 kind=note 且载荷正确', rec.kind === 'note' && JSON.parse(rec.payload).text === 'hi')
+  t('记录与同码的词各占一行（命名空间键不撞车）', read.get(CODE, 'apple') !== undefined)
+  t('陈旧记录写被拒收（时间轴对记录同样成立）',
+    putRec(alive, CODE, 'note:n_1', 'note', '{"text":"stale"}', '2026-02-28T00:00:00.000Z') === 0)
+  t('记录墓碑在更新时生效',
+    putRec(tomb, CODE, 'note:n_1', 'note', '2026-03-02T00:00:00.000Z', '2026-03-02T00:00:00.000Z') === 1)
+  const gone = read.get(CODE, 'note:n_1')
+  t('记录墓碑后 deleted_at 非空、kind 仍保留', gone.deleted_at !== null && gone.kind === 'note')
+  t('陈旧记录写打不过墓碑',
+    putRec(alive, CODE, 'note:n_1', 'note', '{"text":"late"}', '2026-03-01T12:00:00.000Z') === 0)
+  t('四种 kind 各自可写', ['note', 'wrong', 'card', 'setting'].every((k, i) =>
+    putRec(alive, CODE, k + ':x' + i, k, '{"v":1}', '2026-03-03T00:00:00.000Z') === 1))
+}
 
 console.log('\n[0002 迁移 + takeToken 集成（0.0 止血 · 第二半）]')
 {
@@ -204,6 +241,12 @@ console.log('\n[schema.sql 与 0003 一致（新建库直接建出最终形态�
   for (const name of ['idx_users_email', 'idx_users_sync_code', 'idx_sessions_user', 'idx_sessions_expires', 'idx_login_attempts', 'idx_auth_tokens_user']) {
     t(`schema.sql 含索引 ${name}`, schemaSql.includes(name))
   }
+}
+console.log('\n[schema.sql 与 0004 一致（新建库直接建出 kind 列）]')
+{
+  const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
+  t("schema.sql 的 sync_data 含 kind 列（默认 'word'）", /kind\s+TEXT NOT NULL DEFAULT 'word'/.test(schemaSql))
+  t('schema.sql 含 idx_sync_data_code_kind_updated', schemaSql.includes('idx_sync_data_code_kind_updated'))
 }
 console.log('\n[schema.sql 单独建库（权威源：空库直接建出最终形态）]')
 {

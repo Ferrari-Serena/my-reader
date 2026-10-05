@@ -13,18 +13,23 @@ CREATE TABLE IF NOT EXISTS dict_cache (
   fetched_at INTEGER NOT NULL
 );
 
--- 跨设备同步：同步码 → 单词数据快照（code 和 word 复合主键）
+-- 跨设备同步：同步码 → 数据快照（code 和 word 复合主键）
 -- word = '__meta__' 是哨兵行，其 updated_at 即该同步码的「最后活动时刻」，
 -- push / pull 都会刷新它；90 天无活动才整码清除。
--- deleted_at 非空即墓碑：该词已被删除，updated_at = deleted_at = 删除时刻。
+-- deleted_at 非空即墓碑：该行已被删除，updated_at = deleted_at = 删除时刻。
+-- kind = 数据类型（第 3 步「归档」）：'word' 生词 / 'note' 笔记 / 'wrong' 错题 /
+--   'card' 卡片 / 'setting' 设置。非词记录的 word 列存命名空间键 '<kind>:<id>'，
+--   词条永远不含 ':'，故两类永不撞车。加列的增量迁移见 migrations/0004_sync_data_kind.sql。
 CREATE TABLE IF NOT EXISTS sync_data (
   code TEXT NOT NULL,
   word TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'word',
   payload TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT,
   PRIMARY KEY (code, word)
 );
+CREATE INDEX IF NOT EXISTS idx_sync_data_code_kind_updated ON sync_data (code, kind, updated_at);
 
 -- 阅读 / 音频进度（每个 key 一条）
 -- key 形如 'reading:<bookId>' 或 'audio:<bookId>/<chapterId>'

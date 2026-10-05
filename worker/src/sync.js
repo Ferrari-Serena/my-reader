@@ -2,10 +2,14 @@
  * my-reader 跨设备数据同步端点
  *
  * POST /api/sync/create         → 生成 8 位随机同步码 { code, serverNow }
- * POST /api/sync/push           → body: { code, words: {word: entry}, tombstones: {word: ISO} }
+ * POST /api/sync/push           → body: { code,
+ *                                          words: {word: entry}, tombstones: {word: ISO},          // 生词（kind='word'）
+ *                                          records: [{kind,id,payload,updatedAt}],                 // 笔记/错题/卡片/设置
+ *                                          recordTombstones: [{kind,id,deletedAt}] }
  *                                 条件 upsert（只有更新的时间戳才覆盖）→ { accepted, rejected, serverNow }
  * POST /api/sync/progress       → body: { code, entries: {key: {payload, updatedAt}} }
- * GET  /api/sync/pull?code=X    → { words, tombstones, progress, updatedAt, serverNow }
+ * GET  /api/sync/pull?code=X[&since=ISO] → { words, tombstones, records, recordTombstones, progress, updatedAt, serverNow }
+ * GET  /api/sync/status?code=X  → { ok, counts, tombstones, progress, lastActivity, serverNow }
  *
  * 冲突策略：每个词一条时间轴，last-write-wins。
  *   存活行 deleted_at IS NULL，updated_at = entry.updatedAt || entry.addedAt
@@ -37,21 +41,32 @@ const META = '__meta__'
 const RESERVED = new Set([META, '__proto__', 'constructor', 'prototype'])
 
 /**
+ * 第 3 步「归档」：sync_data 一表承载多种数据类型（kind 列）。
+ *   'word'                生词（老通道，键 = 词本身）
+ *   'note'/'wrong'/'card'/'setting'  走「记录通道」，键 = '<kind>:<id>'
+ * 词条永远不含 ':'，故记录与词条在同一张表里永不撞车。
+ */
+export const RECORD_KINDS = new Set(['note', 'wrong', 'card', 'setting'])
+export function recordKey(kind, id) { return kind + ':' + id }
+
+/**
  * 条件 upsert 的两条语句。导出是为了让 verify-sql.mjs 能拿**真**语句在真 SQLite 上跑，
  * 而不是另抄一份（抄一份迟早会和这里漂移，那样的测试没有意义）。
  * 关键在 DO UPDATE 的 WHERE：时间戳不占优时整条写入被丢弃，changes 为 0。
  */
-export const SQL_ALIVE_UPSERT = `INSERT INTO sync_data (code, word, payload, updated_at, deleted_at)
-   VALUES (?, ?, ?, ?, NULL)
+export const SQL_ALIVE_UPSERT = `INSERT INTO sync_data (code, word, kind, payload, updated_at, deleted_at)
+   VALUES (?, ?, ?, ?, ?, NULL)
    ON CONFLICT(code, word) DO UPDATE SET
+     kind = excluded.kind,
      payload = excluded.payload,
      updated_at = excluded.updated_at,
      deleted_at = NULL
    WHERE excluded.updated_at > sync_data.updated_at`
 
-export const SQL_TOMB_UPSERT = `INSERT INTO sync_data (code, word, payload, updated_at, deleted_at)
-   VALUES (?, ?, 'null', ?, ?)
+export const SQL_TOMB_UPSERT = `INSERT INTO sync_data (code, word, kind, payload, updated_at, deleted_at)
+   VALUES (?, ?, ?, 'null', ?, ?)
    ON CONFLICT(code, word) DO UPDATE SET
+     kind = excluded.kind,
      payload = excluded.payload,
      updated_at = excluded.updated_at,
      deleted_at = excluded.deleted_at
@@ -80,6 +95,14 @@ function normTs(raw, nowMs) {
   return new Date(t).toISOString() // 规范化精度，保证字符串比较口径一致
 }
 
+/** pull 的增量游标：合法 ISO 才认，且不许超前（超前 = 什么都不要，防御坏钟） */
+function normSince(raw, nowMs) {
+  if (typeof raw !== 'string' || !raw) return ''
+  const t = Date.parse(raw)
+  if (!Number.isFinite(t)) return ''
+  return new Date(Math.min(t, nowMs)).toISOString()
+}
+
 /**
  * 归一化时间戳，并返回「载荷里的 updatedAt 已对齐到同一个值」的 JSON。
  *
@@ -91,6 +114,68 @@ function normTs(raw, nowMs) {
 export function stampWithTs(obj, rawTs, nowMs) {
   const ts = normTs(rawTs, nowMs)
   return { ts, payload: JSON.stringify({ ...obj, updatedAt: ts }) }
+}
+
+/**
+ * 把一次 push 的入参折成「按 key 去重后的写入集合」（纯函数，便于单测）。
+ *
+ * 两类通道：
+ *   words / tombstones          —— 生词（kind='word'，键 = 裸词）
+ *   records / recordTombstones  —— 笔记/错题/卡片/设置（键 = '<kind>:<id>'）
+ * 同一个 key 在一次 push 里只能有一个状态，按时间戳取新者；墓碑必须严格更新才覆盖存活写。
+ * 未知 kind、空/超长 id、非对象载荷一律静默丢弃 —— 服务端只做白名单 + 透传，读不懂的字段不管。
+ */
+export function buildSyncOps(body, nowMs) {
+  const ops = new Map() // key -> { key, kind, ts, payload, deleted }
+  const { words, tombstones, records, recordTombstones } = body || {}
+
+  for (const [word, entry] of Object.entries(words || {})) {
+    const w = (word + '').toLowerCase()
+    if (RESERVED.has(w) || w.includes(':')) continue
+    if (!entry || typeof entry !== 'object') continue
+    const { ts, payload } = stampWithTs(entry, entry.updatedAt || entry.addedAt, nowMs)
+    ops.set(w, { key: w, kind: 'word', ts, payload, deleted: false })
+  }
+  for (const [word, rawTs] of Object.entries(tombstones || {})) {
+    const w = (word + '').toLowerCase()
+    if (RESERVED.has(w) || w.includes(':')) continue
+    const ts = normTs(rawTs, nowMs)
+    const prev = ops.get(w)
+    if (!prev || ts > prev.ts) ops.set(w, { key: w, kind: 'word', ts, payload: 'null', deleted: true })
+  }
+
+  for (const rec of Array.isArray(records) ? records : []) {
+    const op = recordOp(rec, nowMs, false)
+    if (op) mergeOp(ops, op)
+  }
+  for (const raw of Array.isArray(recordTombstones) ? recordTombstones : []) {
+    const op = recordOp(raw, nowMs, true)
+    if (op) mergeOp(ops, op)
+  }
+  return ops
+}
+
+/** 校验一条记录入参 → 归一化 op；不合法返回 null（静默丢弃） */
+function recordOp(rec, nowMs, isTomb) {
+  if (!rec || typeof rec !== 'object') return null
+  const kind = String(rec.kind || '')
+  if (!RECORD_KINDS.has(kind)) return null
+  const id = String(rec.id || '')
+  if (!id || id.length > 200) return null
+  const key = recordKey(kind, id)
+  if (isTomb) {
+    const ts = normTs(rec.deletedAt || rec.updatedAt, nowMs)
+    return { key, kind, ts, payload: 'null', deleted: true }
+  }
+  const obj = rec.payload
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null
+  const { ts, payload } = stampWithTs(obj, rec.updatedAt || obj.updatedAt, nowMs)
+  return { key, kind, ts, payload, deleted: false }
+}
+
+function mergeOp(ops, op) {
+  const prev = ops.get(op.key)
+  if (!prev || op.ts > prev.ts) ops.set(op.key, op)
 }
 
 /** 同步码是否存在（以 __meta__ 哨兵行为准） */
@@ -202,13 +287,19 @@ export async function handleSync(request, env) {
   if (request.method === 'POST' && url.pathname === '/api/sync/push') {
     let body
     try { body = await request.json() } catch { return json({ error: 'invalid json' }, 400) }
-    const { code, words, tombstones } = body || {}
+    const { code, words, tombstones, records, recordTombstones } = body || {}
     if (!code || typeof code !== 'string') return json({ error: 'missing code' }, 400)
     if (words !== undefined && (typeof words !== 'object' || words === null)) {
       return json({ error: 'invalid words' }, 400)
     }
     if (tombstones !== undefined && (typeof tombstones !== 'object' || tombstones === null)) {
       return json({ error: 'invalid tombstones' }, 400)
+    }
+    if (records !== undefined && !Array.isArray(records)) {
+      return json({ error: 'invalid records' }, 400)
+    }
+    if (recordTombstones !== undefined && !Array.isArray(recordTombstones)) {
+      return json({ error: 'invalid recordTombstones' }, 400)
     }
     // 未知码拒收：否则这是个公开端点，任何人可以灌进永远不会被 GC 的孤儿行
     if (!(await codeExists(env, code))) {
@@ -218,24 +309,8 @@ export async function handleSync(request, env) {
     const nowMs = Date.now()
     const serverNow = new Date(nowMs).toISOString()
 
-    // 同一个词在一次 push 里只能有一个状态：按时间戳取新者（客户端已保证，此处兜底）
-    const ops = new Map()
-    for (const [word, entry] of Object.entries(words || {})) {
-      const w = (word + '').toLowerCase()
-      if (RESERVED.has(w)) continue
-      if (!entry || typeof entry !== 'object') continue
-      const { ts, payload } = stampWithTs(entry, entry.updatedAt || entry.addedAt, nowMs)
-      ops.set(w, { word: w, ts, payload, deleted: false })
-    }
-    for (const [word, rawTs] of Object.entries(tombstones || {})) {
-      const w = (word + '').toLowerCase()
-      if (RESERVED.has(w)) continue
-      const ts = normTs(rawTs, nowMs)
-      const prev = ops.get(w)
-      if (!prev || ts > prev.ts) {
-        ops.set(w, { word: w, ts, payload: 'null', deleted: true })
-      }
-    }
+    // 同一个 key（词或记录）在一次 push 里只能有一个状态：按时间戳取新者
+    const ops = buildSyncOps({ words, tombstones, records, recordTombstones }, nowMs)
 
     if (ops.size === 0) {
       await touchMeta(env, code, serverNow)
@@ -248,8 +323,8 @@ export async function handleSync(request, env) {
     const stmts = []
     for (const op of ops.values()) {
       stmts.push(op.deleted
-        ? tombStmt.bind(code, op.word, op.ts, op.ts)
-        : aliveStmt.bind(code, op.word, op.payload, op.ts))
+        ? tombStmt.bind(code, op.key, op.kind, op.ts, op.ts)
+        : aliveStmt.bind(code, op.key, op.kind, op.payload, op.ts))
     }
 
     let counts
@@ -315,27 +390,50 @@ export async function handleSync(request, env) {
       return json({ error: 'unknown code', serverNow: new Date().toISOString() }, 404)
     }
 
+    // 增量（第 3 步 3.6）：给了合法 since 就只回比它新的行；没给 / 不合法 → 全量（旧客户端不变）
+    const sinceTs = normSince(url.searchParams.get('since'), Date.now())
+
     try {
+      const dataStmt = sinceTs
+        ? env.DB.prepare(
+            'SELECT word, kind, payload, updated_at, deleted_at FROM sync_data WHERE code = ? AND word != ? AND updated_at > ?'
+          ).bind(code, META, sinceTs)
+        : env.DB.prepare(
+            'SELECT word, kind, payload, updated_at, deleted_at FROM sync_data WHERE code = ? AND word != ?'
+          ).bind(code, META)
       const [{ results }, progressRes] = await Promise.all([
-        env.DB.prepare(
-          'SELECT word, payload, updated_at, deleted_at FROM sync_data WHERE code = ? AND word != ?'
-        ).bind(code, META).all(),
+        dataStmt.all(),
         env.DB.prepare(
           'SELECT key, payload FROM sync_progress WHERE code = ?'
         ).bind(code).all(),
       ])
 
-      const words = {}, tombstones = {}
+      const words = {}, tombstones = {}, records = [], recordTombstones = []
       let latest = ''
       for (const row of results) {
         if (row.updated_at > latest) latest = row.updated_at
+        const kind = row.kind || 'word'
+        if (kind === 'word') {
+          if (row.deleted_at) {
+            // 墓碑：只回时间戳。words 里绝不能出现它，否则旧客户端会把已删的词加回去
+            tombstones[row.word] = row.deleted_at
+            continue
+          }
+          try {
+            words[row.word] = JSON.parse(row.payload)
+          } catch { /* 损坏行跳过 */ }
+          continue
+        }
+        // 记录通道：库里的键是 '<kind>:<id>'，回客户端时拆回 { kind, id, payload }
+        const prefix = kind + ':'
+        if (!row.word.startsWith(prefix)) continue // 结构异常行跳过（不该发生）
+        const id = row.word.slice(prefix.length)
         if (row.deleted_at) {
-          // 墓碑：只回时间戳。words 里绝不能出现它，否则旧客户端会把已删的词加回去
-          tombstones[row.word] = row.deleted_at
+          recordTombstones.push({ kind, id, deletedAt: row.deleted_at })
           continue
         }
         try {
-          words[row.word] = JSON.parse(row.payload)
+          records.push({ kind, id, payload: JSON.parse(row.payload) })
         } catch { /* 损坏行跳过 */ }
       }
 
@@ -348,9 +446,50 @@ export async function handleSync(request, env) {
 
       const serverNow = new Date().toISOString()
       await touchMeta(env, code, serverNow) // pull 也算活动
-      return json({ words, tombstones, progress, updatedAt: latest || serverNow, serverNow })
+      return json({ words, tombstones, records, recordTombstones, progress, updatedAt: latest || serverNow, serverNow, since: sinceTs || null })
     } catch (e) {
       console.error('sync pull error:', e.message)
+      return json({ error: 'db read failed' }, 500)
+    }
+  }
+
+  // GET /api/sync/status?code=X —— 该码各 kind 的条数与最后活动时刻（第 3 步 3.6）
+  if (request.method === 'GET' && url.pathname === '/api/sync/status') {
+    const code = (url.searchParams.get('code') || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (!code || code.length !== CODE_LEN) {
+      return json({ error: 'invalid code' }, 400)
+    }
+    try {
+      const meta = await env.DB
+        .prepare('SELECT updated_at FROM sync_data WHERE code = ? AND word = ? LIMIT 1')
+        .bind(code, META).first()
+      if (!meta) return json({ error: 'unknown code', serverNow: new Date().toISOString() }, 404)
+
+      const [{ results }, prog] = await Promise.all([
+        env.DB.prepare(
+          `SELECT kind, (deleted_at IS NOT NULL) AS dead, COUNT(*) AS n
+             FROM sync_data WHERE code = ? AND word != ?
+            GROUP BY kind, dead`
+        ).bind(code, META).all(),
+        env.DB.prepare('SELECT COUNT(*) AS n FROM sync_progress WHERE code = ?').bind(code).first(),
+      ])
+
+      const counts = { word: 0, note: 0, wrong: 0, card: 0, setting: 0 }
+      let tombstones = 0
+      for (const row of results || []) {
+        if (row.dead) { tombstones += row.n; continue }
+        const kind = row.kind || 'word'
+        counts[kind] = (counts[kind] || 0) + row.n // 未知 kind 也如实报，不隐藏
+      }
+
+      return json({
+        ok: true, code, counts, tombstones,
+        progress: prog ? prog.n : 0,
+        lastActivity: meta.updated_at || null,
+        serverNow: new Date().toISOString(),
+      })
+    } catch (e) {
+      console.error('sync status error:', e.message)
       return json({ error: 'db read failed' }, 500)
     }
   }

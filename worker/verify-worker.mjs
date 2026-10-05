@@ -112,5 +112,57 @@ console.log('\n[ratelimit.js — 纯函数（0.0 止血 · 第二半）]')
   t('默认阈值导出（60 / 900）', rlMod.DEFAULT_PER_MIN === 60 && rlMod.DEFAULT_MW_DAILY === 900)
 }
 
+console.log('\n[sync.js — 第 3 步：记录通道（kind 白名单 + 命名空间键）]')
+{
+  t('recordKey 用 <kind>:<id> 命名空间（永不与裸词撞车）', syncMod.recordKey('note', 'n_1') === 'note:n_1')
+  t('RECORD_KINDS 恰是四类',
+    syncMod.RECORD_KINDS.size === 4 && ['note', 'wrong', 'card', 'setting'].every(k => syncMod.RECORD_KINDS.has(k)))
+
+  const now = Date.parse('2026-10-05T12:00:00.000Z')
+  const T = '2026-10-05T11:00:00.000Z'
+  const ops = syncMod.buildSyncOps({
+    words: { apple: { word: 'apple', updatedAt: T } },
+    records: [
+      { kind: 'note', id: 'n_1', payload: { text: 'hi' }, updatedAt: T },
+      { kind: 'word', id: 'x', payload: { v: 1 }, updatedAt: T }, // 'word' 不是记录 kind
+      { kind: 'note', id: '', payload: { v: 1 }, updatedAt: T },  // 空 id
+      { kind: 'note', id: 'n_2', payload: 'not-an-object', updatedAt: T }, // 载荷非对象
+      { kind: 'note', id: 'n_3', updatedAt: T },                  // 缺载荷
+    ],
+  }, now)
+  t('词走裸键、记录走命名空间键', ops.has('apple') && ops.has('note:n_1'))
+  t('词条 kind = word', ops.get('apple').kind === 'word')
+  t('记录 kind 原样保留', ops.get('note:n_1').kind === 'note')
+  t('记录载荷原样透传 + 注入 updatedAt',
+    JSON.parse(ops.get('note:n_1').payload).text === 'hi'
+    && JSON.parse(ops.get('note:n_1').payload).updatedAt === T)
+  t('非法记录被静默丢弃（未知/空 id/非对象载荷/缺载荷）',
+    !ops.has('word:x') && !ops.has('note:') && !ops.has('note:n_2') && !ops.has('note:n_3'))
+  t('op 数 = 2（只有 apple 与 note:n_1）', ops.size === 2)
+
+  const o2 = syncMod.buildSyncOps({
+    records: [{ kind: 'note', id: 'n_1', payload: { text: 'v1' }, updatedAt: T }],
+    recordTombstones: [{ kind: 'note', id: 'n_1', deletedAt: T }],
+  }, now)
+  t('墓碑与存活写同刻 -> 存活写胜（不误删）', o2.get('note:n_1').deleted === false)
+
+  const o3 = syncMod.buildSyncOps({
+    records: [{ kind: 'note', id: 'n_1', payload: { text: 'v1' }, updatedAt: T }],
+    recordTombstones: [{ kind: 'note', id: 'n_1', deletedAt: '2026-10-05T11:30:00.000Z' }],
+  }, now)
+  t('更新的墓碑 -> 删除生效', o3.get('note:n_1').deleted === true && o3.get('note:n_1').payload === 'null')
+
+  const o4 = syncMod.buildSyncOps({
+    records: [
+      { kind: 'card', id: 'c_1', payload: { v: 1 }, updatedAt: T },
+      { kind: 'card', id: 'c_1', payload: { v: 2 }, updatedAt: '2026-10-05T11:45:00.000Z' },
+    ],
+  }, now)
+  t('同一 key 一次 push 内取新者', JSON.parse(o4.get('card:c_1').payload).v === 2)
+
+  const reserved = syncMod.buildSyncOps({ words: JSON.parse('{"__proto__":{"a":1},"constructor":{"a":1}}') }, now)
+  t('保留名不放进词表通道（无原型链污染）', reserved.size === 0)
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

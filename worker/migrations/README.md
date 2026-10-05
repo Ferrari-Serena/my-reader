@@ -9,6 +9,7 @@ cd worker
 npx wrangler d1 execute my-reader-dict --remote --file=migrations/0001_sync_tombstones_progress.sql
 npx wrangler d1 execute my-reader-dict --remote --file=migrations/0002_rate_limit.sql
 npx wrangler d1 execute my-reader-dict --remote --file=migrations/0003_users_sessions.sql
+npx wrangler d1 execute my-reader-dict --remote --file=migrations/0004_sync_data_kind.sql
 # 全部迁移跑完，再跑一次权威源（幂等，无副作用）
 npx wrangler d1 execute my-reader-dict --remote --file=schema.sql
 ```
@@ -22,6 +23,7 @@ npx wrangler d1 execute my-reader-dict --remote --file=schema.sql
 | `0001_sync_tombstones_progress.sql` | `sync_data` 加 `deleted_at`（墓碑）＋ `sync_progress` 表 | ❌ 一次性 `ALTER TABLE`，**不要重跑** |
 | `0002_rate_limit.sql` | `rate_limit_events` 表 ＋ 两个索引 | ✅ `IF NOT EXISTS` |
 | `0003_users_sessions.sql` | `users` / `sessions` / `login_attempts` / `auth_tokens` | ✅ `IF NOT EXISTS` |
+| `0004_sync_data_kind.sql` | `sync_data` 加 `kind` 列（默认 `'word'`）＋ `(code, kind, updated_at)` 索引 | ❌ 一次性 `ALTER TABLE`，**不要重跑** |
 
 ## 规矩
 
