@@ -6,6 +6,20 @@
       <p>Loading book...</p>
     </div>
 
+    <!-- 缺书（第 9 步 9.4）：正文不在本机 / 取不到，但笔记在 —— 排在 error 前，先认这一支 -->
+    <div v-else-if="missingBook" class="missing-state">
+      <p class="missing-title">《{{ missingTitle }}》还不在本机</p>
+      <p class="missing-body">
+        你有 {{ bookNotes.length }} 条划线笔记同步到了这台设备，但书的正文不出设备 ——
+        导入同一本书（同一份文件）后，划线会自动接上，不用重新划。
+      </p>
+      <div class="missing-actions">
+        <button class="missing-btn" @click="openNotesPanel">Notes {{ bookNotes.length }}</button>
+        <router-link class="missing-btn" to="/import" title="导入同一份文件才能接上（靠内容指纹对齐）">去导入</router-link>
+      </div>
+      <p class="missing-why">{{ error }}</p>
+    </div>
+
     <!-- Error -->
     <div v-else-if="error" class="error-state">
       <p>{{ error }}</p>
@@ -84,7 +98,8 @@
             v-for="para in currentChapter.paragraphs"
             :key="para.id"
             :id="'para-' + para.id"
-            :class="['paragraph', { 'playing-para': para.id === playingParaId, 'flash-para': para.id === flashParaId }]"
+            :class="['paragraph', { 'playing-para': para.id === playingParaId, 'flash-para': para.id === flashParaId, 'note-lost': !!paraLostNotes(para.id) }]"
+            :title="paraLostTitle(para.id)"
           >
             <button
               v-if="paraStart(para.id) !== null"
@@ -155,6 +170,8 @@
       :open="notesPanelOpen"
       :groups="notesPanelGroups"
       :total="bookNotes.length"
+      :missing="missingBook"
+      :missing-title="missingTitle"
       @close="closeNotesPanel"
       @jump="jumpToNote"
       @edit="onPanelEdit"
@@ -214,7 +231,7 @@ import { useReaderSettings } from '../composables/useReaderSettings'
 import NoteEditor from '../components/NoteEditor.vue'
 import NotesPanel from '../components/NotesPanel.vue'
 import { useNotes } from '../composables/useNotes'
-import { NOTE_COLORS, DEFAULT_NOTE_COLOR, resolveAnchor, snapToWords, tokenSpans, groupNotesByChapter, noteStatus } from '../utils/notes.js'
+import { NOTE_COLORS, DEFAULT_NOTE_COLOR, resolveAnchor, snapToWords, noteMarksForChapter, groupNotesByChapter, noteStatus } from '../utils/notes.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -262,37 +279,33 @@ const noteEditorOpen = ref(false)
 
 const chapterNotes = computed(() => notes.forChapter(bookId.value, currentChapter.value?.id || ''))
 
-/** paraId -> Map(tokenIdx -> note)；解析不到位置的（漂移成段落级）这轮不画，留给 9.5 标记 */
-const paraNoteMarks = computed(() => {
-  const out = {}
-  const chapter = currentChapter.value
-  if (!chapter || isImageBook.value) return out
-  const list = chapterNotes.value
-  if (!list.length) return out
-  const byId = new Map(chapter.paragraphs.map(p => [p.id, p]))
-  for (const n of list) {
-    const para = byId.get(n.paraId)
-    if (!para) continue
-    const r = resolveAnchor(para.text, n)
-    if (r.kind === 'lost') continue
-    const spans = tokenSpans(para.text)
-    const map = out[n.paraId] || (out[n.paraId] = new Map())
-    for (let i = 0; i < spans.length; i++) {
-      const sp = spans[i]
-      if (!sp || sp.end <= r.start || sp.start >= r.end) continue
-      if (!map.has(i)) map.set(i, n)
-    }
-  }
-  return out
-})
+/**
+ * 本章正文的标注图：能定位的 -> 词级着色（`marks`）；对不上的 -> 段落级降级标记（`lost`，9.5）。
+ * 判读本身在 utils/notes.js（纯逻辑，可单独断言）。
+ */
+const chapterMarks = computed(() => (
+  isImageBook.value
+    ? { marks: {}, lost: {} }
+    : noteMarksForChapter(currentChapter.value?.paragraphs, chapterNotes.value)
+))
 
 function noteMarkOf(paraId, tokenIdx) {
-  const map = paraNoteMarks.value[paraId]
+  const map = chapterMarks.value.marks[paraId]
   return (map && map.get(tokenIdx)) || null
 }
 function noteMarkClass(paraId, tokenIdx) {
   const n = noteMarkOf(paraId, tokenIdx)
   return n ? 'note-' + n.color : ''
+}
+
+/** 该段是否有锚点失效的笔记（有 -> 返回数组，无 -> null）：正文据此打段落级标记 */
+function paraLostNotes(paraId) {
+  const arr = chapterMarks.value.lost[paraId]
+  return (arr && arr.length) ? arr : null
+}
+function paraLostTitle(paraId) {
+  const arr = paraLostNotes(paraId)
+  return arr ? arr.length + ' 条划线笔记锚点失效（已降级为段落级）—— 打开 Notes 查看' : null
 }
 
 /** 选区一端在段内的字符偏移；段落开头的 ▶ 按钮属于 DOM 但不属于 para.text，要减掉 */
@@ -426,6 +439,15 @@ function jumpToNote(n) {
 
 function onPanelEdit(n) { closeNotesPanel(); openNoteEditor(n) }
 function onPanelRemove(n) { notes.remove(n.id) }
+
+// ── 缺书（第 9 步 9.4）─────────────────────────────────────────────
+// 正文不在本机（BYO 书不出设备 / 书目已下架 / 取不到），但笔记跟着账号同步来了。
+// 这时不报「打不开」了事，给一个能看笔记的入口，并标明「本机无法解析」（绝不静默错位）。
+const missingBook = ref(false)
+const missingTitle = computed(() => {
+  const titled = bookNotes.value.find(n => n.bookTitle)
+  return titled ? titled.bookTitle : bookId.value
+})
 
 // ---- Image mode ----
 
@@ -931,6 +953,7 @@ async function loadByoBook() {
 async function loadBook() {
   loading.value = true
   error.value = null
+  missingBook.value = false
   explicitChapterOnLoad = !!chapterId.value
 
   try {
@@ -964,6 +987,8 @@ async function loadBook() {
     }
   } catch (e) {
     error.value = e.message
+    // 这本书下有笔记 -> 给「缺书占位 + 笔记可见」，而不是一句打不开（9.4）
+    if (bookNotes.value.length) missingBook.value = true
   } finally {
     loading.value = false
   }
@@ -1339,6 +1364,16 @@ onBeforeUnmount(() => {
   transition: background 0.25s;
 }
 
+/* 段落级降级标记（9.5）：这一段有笔记锚点失效 —— 绝不静默错位 */
+.paragraph.note-lost {
+  box-shadow: inset 3px 0 0 #c9821f;
+  padding-left: 9px;
+}
+
+.paragraph.note-lost.playing-para {
+  box-shadow: inset 3px 0 0 #c9821f, 0 0 0 6px var(--highlight-bg, #fff3cd);
+}
+
 .word.note-yellow { background: #f6d365; }
 .word.note-green { background: #8fd19e; }
 .word.note-blue { background: #8ec5f0; }
@@ -1396,5 +1431,57 @@ onBeforeUnmount(() => {
   font-size: 13px;
   cursor: pointer;
   padding: 2px 4px;
+}
+
+/* ---- 缺书占位（第 9 步 9.4）---- */
+
+.missing-state {
+  max-width: 560px;
+  margin: 48px auto;
+  padding: 20px 18px;
+  border: 1px solid var(--border-color, #d2d2d7);
+  border-radius: 12px;
+  background: var(--bg-secondary, #f5f5f7);
+  text-align: center;
+}
+
+.missing-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #1d1d1f);
+}
+
+.missing-body {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--text-secondary, #6e6e73);
+}
+
+.missing-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.missing-btn {
+  border: 1px solid var(--border-color, #d2d2d7);
+  background: var(--bg-primary, #ffffff);
+  color: var(--accent-color, #1a73e8);
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: 13.5px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.missing-why {
+  margin: 14px 0 0;
+  font-size: 11.5px;
+  color: var(--text-secondary, #6e6e73);
+  word-break: break-word;
 }
 </style>

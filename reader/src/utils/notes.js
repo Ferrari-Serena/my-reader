@@ -80,6 +80,43 @@ export function resolveAnchor(paraText, note) {
   return inBounds ? { kind: 'ok', start: s, end: e } : { kind: 'lost', why: 'out-of-bounds' }
 }
 
+/**
+ * 一章正文的标注图（第 9 步 9.1 / 9.5）：给正文渲染层用，纯函数。
+ *   marks —— {paraId: Map(tokenIdx -> note)}：定位得到的笔记，按词下标着色；
+ *   lost  —— {paraId: [{note, why}]}：引文/偏移已对不上的笔记，**降级为段落级**标记
+ *            （绝不静默错位）。段落整段不存在的不在此列 —— 正文里没有可标记的段落。
+ * 只判传入的这一章，所以 lost 里的笔记一定属于本章。
+ */
+export function noteMarksForChapter(paragraphs, notes) {
+  const marks = {}
+  const lost = {}
+  const list = Array.isArray(notes) ? notes : []
+  if (!list.length) return { marks, lost }
+  const byId = new Map()
+  for (const p of Array.isArray(paragraphs) ? paragraphs : []) {
+    if (p && typeof p.id === 'string' && typeof p.text === 'string') byId.set(p.id, p)
+  }
+  for (const n of list) {
+    if (!n) continue
+    const para = byId.get(n.paraId)
+    if (!para) continue
+    const r = resolveAnchor(para.text, n)
+    if (r.kind === 'lost') {
+      const bucket = lost[n.paraId] || (lost[n.paraId] = [])
+      bucket.push({ note: n, why: r.why })
+      continue
+    }
+    const spans = tokenSpans(para.text)
+    const map = marks[n.paraId] || (marks[n.paraId] = new Map())
+    for (let i = 0; i < spans.length; i++) {
+      const sp = spans[i]
+      if (!sp || sp.end <= r.start || sp.start >= r.end) continue
+      if (!map.has(i)) map.set(i, n)
+    }
+  }
+  return { marks, lost }
+}
+
 /** 一条 note 记录的净化读法（记录通道已剪过白名单，这里再挡一道脏值）；不合法返回 null */
 export function normalizeNote(id, payload) {
   if (typeof id !== 'string' || !id) return null
@@ -165,4 +202,36 @@ export function groupNotesByChapter(notes, chapters) {
   }
   rows.sort((a, b) => a.idx - b.idx)
   return rows.map(({ chapterId, title, notes: ns }) => ({ chapterId, title, notes: ns }))
+}
+
+/**
+ * 笔记按书分组（第 9 步 9.4 缺书占位用）：[{bookId, bookTitle, count, notes}]。
+ * bookTitle 取组内第一条非空快照（划线的设备记下的书名）；按 bookId 排，稳定可断言。
+ */
+export function groupNotesByBook(notes) {
+  const byBook = new Map()
+  for (const n of Array.isArray(notes) ? notes : []) {
+    if (!n || !n.bookId) continue
+    if (!byBook.has(n.bookId)) byBook.set(n.bookId, [])
+    byBook.get(n.bookId).push(n)
+  }
+  const rows = []
+  for (const [bookId, arr] of byBook) {
+    const titled = arr.find(n => n.bookTitle)
+    rows.push({ bookId, bookTitle: titled ? titled.bookTitle : '', count: arr.length, notes: arr })
+  }
+  rows.sort((a, b) => (a.bookId < b.bookId ? -1 : a.bookId > b.bookId ? 1 : 0))
+  return rows
+}
+
+/**
+ * 「缺书」＝ 有笔记、但这本书不在本机可打开的书里（第 9 步 9.4）。
+ * knownBookIds ＝ 公开书目 id ∪ 本机 BYO 书架 id；调用方任一来源没读上来时就别调用
+ * —— 那时分不清「缺书」和「读不到」，宁可不摆占位行。
+ */
+export function missingBookGroups(notes, knownBookIds) {
+  const known = knownBookIds instanceof Set
+    ? knownBookIds
+    : new Set(Array.isArray(knownBookIds) ? knownBookIds : [])
+  return groupNotesByBook(notes).filter(g => !known.has(g.bookId))
 }

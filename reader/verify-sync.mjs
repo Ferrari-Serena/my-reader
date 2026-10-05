@@ -908,6 +908,28 @@ console.log('\n[第 8 步 — useReaderSettings：接线能真跑（computed / �
   rs.removeRecord('setting', RS.READER_SETTING_RECORD_ID, { record: false, dirty: false })
 }
 
+console.log('\n[第 8 步 — useReaderSettings：首次使用即对齐盘上现状（拉取早于 watcher 的竞态）]')
+{
+  const RS = await import('./src/utils/readerSettings.js')
+  const rs = await import('./src/sync/recordStore.js')
+  rs.removeRecord('setting', RS.READER_SETTING_RECORD_ID, { record: false, dirty: false })
+  t('前置：盘上没有设置记录', !rs.loadRecordsMap()['setting:s_reader'])
+
+  // 全新模块实例 ＝ 刚启动的应用（state 初值取在 import 那一刻、watcher 首次调用才建）；
+  // 拉取把远端设置写进来时正好落在两点之间 —— 首次调用不重读盘就会被吞。
+  const fresh = await import('./src/composables/useReaderSettings.js?race=1')
+  rs.putRecord('setting',
+    { key: RS.READER_SETTING_KEY, value: { fontSize: 23, lineHeight: null, pageWidth: null, fontFamily: 'serif' } },
+    { id: RS.READER_SETTING_RECORD_ID })
+  const st = fresh.useReaderSettings()
+  t('首次 useReaderSettings() 就读到盘上已有设置（不然远端设置会被吞）',
+    st.cssVars.value['--reader-font-size'] === '23px' &&
+    st.cssVars.value['--reader-font'] === "Georgia, 'Times New Roman', serif")
+  rs.removeRecord('setting', RS.READER_SETTING_RECORD_ID, { record: false, dirty: false })
+  rs.clearRecordDirty(['setting:' + RS.READER_SETTING_RECORD_ID])
+  t('收尾：清干净', !rs.loadRecordsMap()['setting:s_reader'])
+}
+
 console.log('\n[第 9 步 — note 记录：bookTitle / quote 通过白名单（9.2）]')
 {
   const RR = await import('./src/sync/records.js')
@@ -976,6 +998,30 @@ console.log('\n[第 9 步 — useNotes：接线能真跑（增改删 / 落盘 / 
   // 收尾：清干净
   for (const n of notes.all()) notes.remove(n.id)
   t('收尾：笔记清空', notes.count() === 0)
+}
+
+console.log('\n[第 9 步 — useNotes：首次使用即对齐盘上现状（拉取早于 watcher 的竞态）]')
+{
+  const RS = await import('./src/sync/recordStore.js')
+  const { noteKey } = await import('./src/utils/notes.js')
+  t('前置：盘上没有笔记', Object.keys(RS.loadRecordsMap()).length === 0)
+
+  // 全新模块实例 ＝ 刚启动的应用：state 初值取在 import 那一刻（此时盘上还空），
+  // watcher 要到首次 useNotes() 才建。启动的自动拉取正好落在这两点之间 ——
+  // 若首次调用不重读盘，这批远端笔记就会被吞掉（书架/阅读页显示「没有笔记」）。
+  const fresh = await import('./src/composables/useNotes.js?race=1')
+  const rec = RS.putRecord('note', {
+    bookId: 'bk_race', bookTitle: 'Race', chapterId: 'ch1',
+    anchor: { paraId: 'p1', charStart: 0, charEnd: 3 }, quote: 'abc', text: '', color: 'blue'
+  })
+  t('前置：拉取把记录写进盘（watcher 尚未建立）',
+    !!rec && !!RS.loadRecordsMap()[noteKey(rec.id)])
+
+  const n2 = fresh.useNotes()
+  t('首次 useNotes() 就读到盘上已有记录（不然远端笔记会被吞）',
+    n2.count() === 1 && n2.all()[0].bookId === 'bk_race')
+  for (const n of n2.all()) n2.remove(n.id)
+  t('收尾：清干净', n2.count() === 0)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

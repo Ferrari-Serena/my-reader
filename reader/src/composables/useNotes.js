@@ -29,6 +29,10 @@ export function useNotes() {
   if (!scope) {
     scope = effectScope(true)
     scope.run(() => {
+      // 首次使用即对齐盘上现状：模块 import 时（state 初值）到这次调用之间，
+      // 启动的自动拉取可能已经把远端笔记写进 recordStore —— 那时还没有 watcher，
+      // 只 watch recordRevision 会漏掉这一批（书架/阅读页会显示「没有笔记」）。
+      state.notes = loadAll()
       watch(useSync().recordRevision, () => { state.notes = loadAll() })
     })
   }

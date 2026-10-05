@@ -433,6 +433,53 @@ console.log('\n[utils/notes.js]')
     N.groupNotesByChapter([], chs).length === 0 && N.groupNotesByChapter(null, null).length === 0)
   t('groupNotesByChapter：不改入参数组的顺序', gNotes.map(n => n.id).join() === 'a,b,c,d')
 
+  // noteMarksForChapter：正文标注图（9.1 词级着色 + 9.5 段落级降级）
+  const mk = N.noteMarksForChapter(
+    [{ id: 'p1', text: 'The quick brown fox' }, { id: 'p2', text: 'Hello world' }],
+    [
+      { id: 'n1', paraId: 'p1', charStart: 4, charEnd: 9, quote: 'quick', color: 'blue' },
+      { id: 'n2', paraId: 'p1', charStart: 90, charEnd: 95, quote: 'brown', color: 'green' },
+      { id: 'n3', paraId: 'p1', charStart: 4, charEnd: 9, quote: 'gone', color: 'pink' },
+      { id: 'n4', paraId: 'pZ', charStart: 0, charEnd: 1, quote: 'x', color: 'yellow' }
+    ]
+  )
+  t('noteMarksForChapter：能定位的进 marks（按词下标）',
+    !!mk.marks.p1 && mk.marks.p1.size === 2 && mk.marks.p1.get(2).id === 'n1')
+  t('noteMarksForChapter：moved 也进 marks（用重锚后的位置）', mk.marks.p1.get(4).id === 'n2')
+  t('noteMarksForChapter：引文没了 -> 落 lost（段落级降级、带 why）',
+    !!mk.lost.p1 && mk.lost.p1.length === 1 && mk.lost.p1[0].note.id === 'n3' && mk.lost.p1[0].why === 'quote-gone')
+  t('noteMarksForChapter：段落整段没了 -> marks/lost 都不放（正文没地方可标）',
+    !mk.marks.pZ && !mk.lost.pZ)
+  t('noteMarksForChapter：lost 的词不着色', (() => {
+    const only = N.noteMarksForChapter([{ id: 'p1', text: 'The quick brown fox' }],
+      [{ id: 'x', paraId: 'p1', charStart: 4, charEnd: 9, quote: 'nope' }])
+    return Object.keys(only.marks).length === 0 && only.lost.p1.length === 1
+  })())
+  t('noteMarksForChapter：空笔记 -> 空图表', (() => {
+    const e = N.noteMarksForChapter([{ id: 'p1', text: 'ab' }], [])
+    return Object.keys(e.marks).length === 0 && Object.keys(e.lost).length === 0
+  })())
+
+  // groupNotesByBook / missingBookGroups：缺书占位（9.4）
+  const bNotes = [
+    { id: 'x1', bookId: 'bk_b', bookTitle: 'B Book' },
+    { id: 'x2', bookId: 'bk_a', bookTitle: '' },
+    { id: 'x3', bookId: 'bk_a', bookTitle: 'A Book' },
+    { id: 'x4', bookId: 'bk_b', bookTitle: 'B Book' }
+  ]
+  const byBook = N.groupNotesByBook(bNotes)
+  t('groupNotesByBook：按书分组、按 bookId 排', byBook.map(g => g.bookId).join() === 'bk_a,bk_b')
+  t('groupNotesByBook：count 与 notes 齐', byBook[0].count === 2 && byBook[0].notes.length === 2)
+  t('groupNotesByBook：bookTitle 取组内第一条非空快照',
+    byBook[0].bookTitle === 'A Book' && byBook[1].bookTitle === 'B Book')
+  t('groupNotesByBook：缺 bookId 的笔记丢掉', N.groupNotesByBook([{ id: 'z' }]).length === 0)
+  t('groupNotesByBook：空输入 -> []', N.groupNotesByBook(null).length === 0)
+  t('missingBookGroups：本机没有的书才留下',
+    N.missingBookGroups(bNotes, ['bk_a']).map(g => g.bookId).join() === 'bk_b')
+  t('missingBookGroups：Set 与数组都收', N.missingBookGroups(bNotes, new Set(['bk_a', 'bk_b'])).length === 0)
+  t('missingBookGroups：全不在本机 -> 全留', N.missingBookGroups(bNotes, []).length === 2)
+  t('missingBookGroups：不改入参', bNotes.map(n => n.id).join() === 'x1,x2,x3,x4')
+
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

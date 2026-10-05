@@ -69,6 +69,27 @@
         </div>
       </section>
     </div>
+
+    <!-- 缺书占位（第 9 步 9.4）：有笔记、但正文不在本机 —— 不给空白，给一条能走的行 -->
+    <section v-if="missingBooks.length" class="missing-column">
+      <h2 class="shelf-heading">
+        待接入
+        <span class="shelf-count">{{ missingBooks.length }}</span>
+      </h2>
+      <p class="shelf-note">
+        这些书你划过线，但正文不在本机 —— 笔记跟着账号同步过来了。在这台机器上导入同一本书，划线会自动接上（不用重新划）。
+      </p>
+      <router-link
+        v-for="g in missingBooks"
+        :key="g.bookId"
+        class="missing-row"
+        :to="'/reader/' + g.bookId"
+      >
+        <span class="missing-row-title">《{{ g.bookTitle || g.bookId }}》</span>
+        <span class="missing-row-meta">{{ g.count }} 条笔记 · 书不在本机</span>
+        <span class="missing-row-go">查看 →</span>
+      </router-link>
+    </section>
   </div>
 </template>
 
@@ -76,6 +97,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useBookShelf } from '../composables/useBookShelf'
 import { groupByCategory, categoryKeyOf, categoryLabelOf } from '../utils/bookShelf.js'
+import { useNotes } from '../composables/useNotes'
+import { missingBookGroups } from '../utils/notes.js'
 import BookCard from '../components/BookCard.vue'
 
 // 数据源在组合式里：静态 book-index.json（公开书库）＋ IndexedDB 书库（我的书架），
@@ -85,6 +108,19 @@ const { publicBooks, myBooks, loading, error, byoError, refresh } = useBookShelf
 const activeCategory = ref('')  // '' = 不筛
 
 const isEmpty = computed(() => publicBooks.value.length === 0 && myBooks.value.length === 0)
+
+// 缺书占位（第 9 步 9.4）：有笔记、但本机没有这本书（别的设备划的线同步过来了）。
+// 任一来源没读上来（error / byoError）就分不清「缺书」和「读不到」→ 不摆这行，别误导。
+const notes = useNotes()
+const knownBookIds = computed(() => [
+  ...publicBooks.value.map(b => b.id),
+  ...myBooks.value.map(b => b.id)
+])
+const missingBooks = computed(() => (
+  (error.value || byoError.value)
+    ? []
+    : missingBookGroups(notes.all(), knownBookIds.value)
+))
 
 // 有书才出现的分类（按枚举顺序），筛 chips 用
 const categories = computed(() => {
@@ -235,4 +271,33 @@ onMounted(refresh)
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 16px;
 }
+
+.missing-column {
+  margin-top: 28px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-color, #e5e5e5);
+}
+
+.missing-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-left: 3px solid #c9821f;
+  border-radius: 8px;
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-primary, #1d1d1f);
+  text-decoration: none;
+}
+
+.missing-row:hover {
+  border-color: var(--accent-color);
+}
+
+.missing-row-title { font-size: 14px; font-weight: 600; }
+.missing-row-meta { font-size: 12.5px; color: var(--text-secondary, #6e6e73); }
+.missing-row-go { margin-left: auto; font-size: 12.5px; color: var(--accent-color); }
 </style>
