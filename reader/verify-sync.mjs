@@ -855,5 +855,58 @@ console.log('\n[retry.js — 离线补推的指数退避（M3 · 4.5）]')
     nextRetryDelay(-5) === RETRY_BASE_MS && nextRetryDelay(undefined) === RETRY_BASE_MS && nextRetryDelay(NaN) === RETRY_BASE_MS)
 }
 
+console.log('\n[第 8 步 — 阅读设置走 setting 记录通道（8.1）]')
+{
+  const rs = await import('./src/sync/recordStore.js')
+  const RS = await import('./src/utils/readerSettings.js')
+  const RR = await import('./src/sync/records.js')
+
+  rs.removeRecord('setting', RS.READER_SETTING_RECORD_ID, { record: false, dirty: false })
+  const put = rs.putRecord('setting',
+    { key: RS.READER_SETTING_KEY, value: RS.toRecordValue({ fontSize: 19, pageWidth: 720 }) },
+    { id: RS.READER_SETTING_RECORD_ID })
+  t('固定 id 写入（s_ 前缀，单例）', !!put && put.id === 's_reader')
+
+  const back = rs.loadRecordsMap()['setting:s_reader']
+  t('字段被白名单剪过（只留 key/value/createdAt/updatedAt）',
+    !!back && Object.keys(back).sort().join() === 'createdAt,key,schema_version,updatedAt,value')
+  t('value 原样保留（任意 JSON）', back.value.fontSize === 19 && back.value.pageWidth === 720)
+  t('自动补 createdAt/updatedAt', typeof back.createdAt === 'string' && typeof back.updatedAt === 'string')
+  t('写一次即标脏（会被推上去）', rs.loadRecordDirty().includes('setting:s_reader'))
+  t('读回能被 fromRecordValue 归一化', RS.fromRecordValue(back.value).fontSize === 19)
+
+  const local = { 'setting:s_reader': back }
+  const newer = [{ kind: 'setting', id: 's_reader', payload: { key: 'reader', value: { fontSize: 23 }, createdAt: '2030-01-01T00:00:00.000Z', updatedAt: '2030-01-01T00:00:00.000Z' } }]
+  const older = [{ kind: 'setting', id: 's_reader', payload: { key: 'reader', value: { fontSize: 15 }, createdAt: '2000-01-01T00:00:00.000Z', updatedAt: '2000-01-01T00:00:00.000Z' } }]
+  t('远程更新的设置 -> apply', (() => { const p = RR.planRecordMerge(local, newer, [], {}); return p.apply.length === 1 && p.apply[0].payload.value.fontSize === 23 })())
+  t('远程更旧的设置 -> 不动作', RR.planRecordMerge(local, older, [], {}).apply.length === 0)
+
+  rs.removeRecord('setting', RS.READER_SETTING_RECORD_ID, { record: false, dirty: false })
+}
+
+console.log('\n[第 8 步 — useReaderSettings：接线能真跑（computed / 写盘 / 复位）]')
+{
+  const mod = await import('./src/composables/useReaderSettings.js')
+  const RS = await import('./src/utils/readerSettings.js')
+  const rs = await import('./src/sync/recordStore.js')
+
+  rs.removeRecord('setting', RS.READER_SETTING_RECORD_ID, { record: false, dirty: false })
+  const st = mod.useReaderSettings()
+
+  t('未设置时 cssVars 为空且不抛（一个变量都不下发）', Object.keys(st.cssVars.value).length === 0)
+  st.set('fontSize', 21)
+  t('set 落盘到 setting:s_reader', rs.loadRecordsMap()['setting:s_reader'].value.fontSize === 21)
+  t('set 后 cssVars 下发字号', st.cssVars.value['--reader-font-size'] === '21px')
+  t('set 是改一项、不是整体覆盖（其余项仍 null）', st.settings.value.pageWidth === null)
+  st.set('pageWidth', 900)
+  t('再改一项，两项同时生效',
+    st.cssVars.value['--reader-width'] === '900px' && st.cssVars.value['--reader-font-size'] === '21px')
+  st.reset()
+  t('reset 后四项回 null、变量清空',
+    Object.keys(st.cssVars.value).length === 0 && st.settings.value.fontSize === null)
+
+  rs.removeRecord('setting', RS.READER_SETTING_RECORD_ID, { record: false, dirty: false })
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

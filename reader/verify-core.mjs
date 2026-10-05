@@ -247,5 +247,62 @@ console.log('\n[utils/bookId.js — BYO 内容指纹]')
     (await bookIdFromBytes(new TextEncoder().encode('abc'))) === (await bookIdFromText('abc')))
 }
 
+// ═══ 5. readerSettings.js（第 8 步 8.1 阅读设置）═══
+console.log('\n[readerSettings.js]')
+{
+  const RS = await import('./src/utils/readerSettings.js')
+
+  t('字号值域由档位表派生',
+    RS.FONT_SIZES.join(',') === RS.FONT_SIZE_OPTIONS.map(o => o.value).join(','))
+  t('行距 / 页宽 / 字体 同理',
+    RS.LINE_HEIGHTS.length === RS.LINE_HEIGHT_OPTIONS.length &&
+    RS.PAGE_WIDTHS.length === RS.PAGE_WIDTH_OPTIONS.length &&
+    RS.FONT_FAMILIES.length === RS.FONT_FAMILY_OPTIONS.length)
+  t('每个档位都有非空标签',
+    [...RS.FONT_SIZE_OPTIONS, ...RS.LINE_HEIGHT_OPTIONS, ...RS.PAGE_WIDTH_OPTIONS, ...RS.FONT_FAMILY_OPTIONS]
+      .every(o => typeof o.label === 'string' && o.label.length > 0))
+
+  t('默认设置四项皆 null（＝不下发任何变量，零视觉回归）', RS.isDefaultSettings(RS.DEFAULT_SETTINGS))
+  t('DEFAULT_SETTINGS 是冻结的', Object.isFrozen(RS.DEFAULT_SETTINGS))
+
+  t('归一化保留合法值',
+    JSON.stringify(RS.normalizeSettings({ fontSize: 19, lineHeight: 1.75, pageWidth: 720, fontFamily: 'serif' }))
+    === JSON.stringify({ fontSize: 19, lineHeight: 1.75, pageWidth: 720, fontFamily: 'serif' }))
+  t('枚举外的字号归 null（18 不在档位表里）', RS.normalizeSettings({ fontSize: 18 }).fontSize === null)
+  t('行距 1.8（非档位）归 null', RS.normalizeSettings({ lineHeight: 1.8 }).lineHeight === null)
+  t('字体只认 sans/serif', RS.normalizeSettings({ fontFamily: 'comic' }).fontFamily === null)
+  t('数字型字符串不当数字用',
+    RS.normalizeSettings({ fontSize: '19', pageWidth: '720' }).fontSize === null &&
+    RS.normalizeSettings({ fontSize: '19', pageWidth: '720' }).pageWidth === null)
+  t('数组 / null / 字符串输入都退化成默认',
+    RS.isDefaultSettings(RS.normalizeSettings([1, 2])) &&
+    RS.isDefaultSettings(RS.normalizeSettings(null)) &&
+    RS.isDefaultSettings(RS.normalizeSettings('19')))
+
+  const base = RS.normalizeSettings({ fontSize: 19 })
+  t('withSetting 改一项、其余保持', (() => { const n = RS.withSetting(base, 'pageWidth', 900); return n.pageWidth === 900 && n.fontSize === 19 })())
+  t('withSetting 不改入参', base.pageWidth === null)
+  t('withSetting 传 null 表示该项回默认', RS.withSetting(base, 'fontSize', null).fontSize === null)
+  t('withSetting 传脏值 -> 该项回默认（不是塞进去）', RS.withSetting(base, 'fontSize', 99).fontSize === null)
+  t('withSetting 未知键原样返回', RS.withSetting(base, 'zoom', 3).pageWidth === null)
+
+  t('未设置 -> 一个变量都不下发', Object.keys(RS.toCssVars(RS.DEFAULT_SETTINGS)).length === 0)
+  const vars = RS.toCssVars({ fontSize: 23, lineHeight: 1.95, pageWidth: 900, fontFamily: 'serif' })
+  t('字号 -> px 变量', vars['--reader-font-size'] === '23px')
+  t('行距 -> 无单位字符串', vars['--reader-line-height'] === '1.95')
+  t('页宽 -> px 变量', vars['--reader-width'] === '900px')
+  t('衬线 -> Georgia 栈', vars['--reader-font'].indexOf('Georgia') === 0)
+  t('无衬线 -> 指回全局 --font-sans', RS.toCssVars({ fontFamily: 'sans' })['--reader-font'] === 'var(--font-sans)')
+  t('只改一项时只出一个变量', Object.keys(RS.toCssVars({ pageWidth: 640 })).join() === '--reader-width')
+  t('toCssVars 容忍脏值（等于没设置）', Object.keys(RS.toCssVars({ fontSize: 18 })).length === 0)
+
+  const rv = RS.toRecordValue({ fontSize: 21, lineHeight: 1.5, pageWidth: 640, fontFamily: 'serif' })
+  t('记录 value 就是四项', Object.keys(rv).sort().join() === 'fontFamily,fontSize,lineHeight,pageWidth')
+  t('记录 value 往返一致',
+    JSON.stringify(RS.fromRecordValue(rv)) === JSON.stringify({ fontSize: 21, lineHeight: 1.5, pageWidth: 640, fontFamily: 'serif' }))
+  t('从脏记录读回退化默认', RS.isDefaultSettings(RS.fromRecordValue({ fontSize: 'big' })))
+  t('固定记录 id 与 kind 前缀一致（s_）', RS.READER_SETTING_RECORD_ID === 's_reader' && RS.READER_SETTING_KEY === 'reader')
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

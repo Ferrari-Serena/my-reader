@@ -25,9 +25,18 @@
       </button>
     </div>
 
-    <!-- Current chapter indicator -->
-    <div class="current-chapter-label">
-      {{ chapterTitle }}
+    <!-- Current chapter indicator（右侧 Aa：阅读设置入口，只有顶部那个 nav 显示） -->
+    <div class="label-row">
+      <div class="current-chapter-label">
+        {{ chapterTitle }}
+      </div>
+      <button
+        v-if="showSettings"
+        class="nav-btn aa-btn"
+        title="阅读设置"
+        aria-haspopup="dialog"
+        @click="$emit('settings')"
+      >Aa</button>
     </div>
 
     <!-- TOC Dropdown -->
@@ -70,10 +79,12 @@ const props = defineProps({
   bookTitle: { type: String, default: '' },
   tocItems: { type: Array, default: () => [] },
   // 章 id → 无音频原因（生成端 audio-index.json）；空对象 = 不标
-  missingAudio: { type: Object, default: () => ({}) }
+  missingAudio: { type: Object, default: () => ({}) },
+  // 是否显示「Aa」阅读设置入口（只顶部 nav 传 true；底部那个不传）
+  showSettings: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['prev', 'next', 'jump'])
+const emit = defineEmits(['prev', 'next', 'jump', 'settings'])
 
 const showToc = ref(false)
 
@@ -121,14 +132,28 @@ function selectChapter(index) {
   min-width: 80px;
 }
 
+.label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
 .current-chapter-label {
+  flex: 1;
   text-align: center;
   font-size: 13px;
   color: var(--text-secondary, #6e6e73);
-  margin-top: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.aa-btn {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .toc-overlay {

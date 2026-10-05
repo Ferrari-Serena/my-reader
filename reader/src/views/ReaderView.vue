@@ -1,5 +1,5 @@
 <template>
-  <div class="reader-view">
+  <div class="reader-view" :style="settingsCssVars">
     <!-- Loading -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -21,6 +21,8 @@
         :book-title="bookTitle"
         :toc-items="chapters"
         :missing-audio="tocNoAudio"
+        :show-settings="!isImageBook"
+        @settings="settingsOpen = true"
         @prev="prevChapter"
         @next="nextChapter"
         @jump="jumpToChapter"
@@ -128,6 +130,14 @@
       />
     </template>
 
+    <ReadingSettings
+      :open="settingsOpen"
+      :settings="readerSettings"
+      @close="settingsOpen = false"
+      @change="onChangeSetting"
+      @reset="onResetSettings"
+    />
+
     <WordPopup
       v-if="selectedWord"
       :word="selectedWord"
@@ -156,6 +166,8 @@ import { useSync } from '../composables/useSync'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
 import { isBookId } from '../utils/bookId.js'
 import { loadBook as loadByoRecord, BookStoreError } from '../storage/index.js'
+import ReadingSettings from '../components/ReadingSettings.vue'
+import { useReaderSettings } from '../composables/useReaderSettings'
 
 const route = useRoute()
 const router = useRouter()
@@ -179,6 +191,18 @@ const audioIndex = ref(null) // audio-index.json；null = 清单未知（按「�
 const selectedWord = ref(null)
 const dictEntry = ref(null)
 const dictLoading = ref(false)
+
+// 阅读设置（第 8 步 8.1）：字号 / 行距 / 页宽 / 字体。
+// 值 → .reader-view 的内联 CSS 变量；落盘与同步都在 useReaderSettings 里。
+const settingsOpen = ref(false)
+const {
+  settings: readerSettings,
+  cssVars: settingsCssVars,
+  set: setReaderSetting,
+  reset: resetReaderSettings,
+} = useReaderSettings()
+function onChangeSetting({ key, value }) { setReaderSetting(key, value) }
+function onResetSettings() { resetReaderSettings() }
 
 // ---- Image mode ----
 
@@ -822,7 +846,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .reader-view {
-  max-width: 760px;
+  max-width: var(--reader-width, 760px);
   margin: 0 auto;
   padding: 0 16px 88px;
 }
@@ -860,10 +884,11 @@ onBeforeUnmount(() => {
 
 .chapter-content {
   margin: 24px 0;
+  font-family: var(--reader-font, var(--font-sans));
 }
 
 .chapter-title {
-  font-size: 22px;
+  font-size: calc(var(--reader-font-size, 17px) + 5px);
   font-weight: 700;
   line-height: 1.3;
   margin-bottom: 24px;
@@ -871,8 +896,8 @@ onBeforeUnmount(() => {
 }
 
 .paragraph {
-  font-size: 17px;
-  line-height: 1.75;
+  font-size: var(--reader-font-size, 17px);
+  line-height: var(--reader-line-height, 1.75);
   margin-bottom: 16px;
   color: var(--text-primary, #1d1d1f);
   text-align: justify;
@@ -935,11 +960,11 @@ onBeforeUnmount(() => {
     padding: 0 12px 72px;
   }
   .paragraph {
-    font-size: 16px;
-    line-height: 1.7;
+    font-size: var(--reader-font-size, 16px);
+    line-height: var(--reader-line-height, 1.7);
   }
   .chapter-title {
-    font-size: 20px;
+    font-size: calc(var(--reader-font-size, 16px) + 4px);
   }
 }
 
@@ -947,7 +972,7 @@ onBeforeUnmount(() => {
 @media (min-width: 768px) {
   .reader-view {
     padding: 0 24px 88px;
-    max-width: 720px;
+    max-width: var(--reader-width, 720px);
   }
 }
 
@@ -955,7 +980,7 @@ onBeforeUnmount(() => {
 @media (min-width: 1024px) {
   .reader-view {
     padding: 0 32px 88px;
-    max-width: 760px;
+    max-width: var(--reader-width, 760px);
   }
 }
 

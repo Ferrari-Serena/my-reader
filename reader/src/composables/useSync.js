@@ -42,6 +42,7 @@ const state = reactive({
   error: '',
   rejected: 0,     // 上次推送被服务端拒收的条数（0 表示本地都是最新的）
   progressRev: 0,  // 远程进度写回本地的次数（阅读页据此判断要不要跟随过去）
+  recordRev: 0,    // 远程记录（笔记/错题/卡片/设置）写回本地的次数（阅读设置据此重读）
   pending: 0,      // 待上传条数（脏词 + 脏记录 + 未确认的删除台账；M2 · 4.4）
   conflicts: []    // 最近的同步事件（被远端覆盖 / 被远端删除 / 回推合并），面板可查
 })
@@ -179,6 +180,8 @@ function mergeRecords(remoteRecords, remoteTombstones) {
     recordStore.clearRecordTombstones(plan.repush)
     recordStore.markRecordDirty(plan.repush)
   }
+  // 远程真动了本地记录表才自增（合并空转时不惊动订阅方）
+  if (plan.apply.length || plan.remove.length) state.recordRev++
   return plan
 }
 
@@ -565,6 +568,7 @@ export function useSync() {
     error: computed(() => state.error),
     rejected: computed(() => state.rejected),
     progressRevision: computed(() => state.progressRev),
+    recordRevision: computed(() => state.recordRev),
     pending: computed(() => state.pending),
     conflicts: computed(() => state.conflicts),
     refreshPending,
