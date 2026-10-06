@@ -7,7 +7,7 @@
  * 组件只认 publicBooks / myBooks 两个已经分好栏的数组，不必关心哪一本从哪来。
  *
  * 第 16 步块 3 起多一份数据源：**账号里的书**（记录通道 kind='book'）。账号有、本机没有的
- * 列进 cloudBooks（书架把「待接入」区升级成可直接下载）；云书落盘后 bookSyncState.revision
+ * 列进 cloudBooks（书架把「待加载」区升级成可直接加载）；云书落盘后 bookSyncState.revision
  * 自增，这里 watch 它重列 —— 与 useNotes / useReaderSettings 同一套「远程写盘 -> 重读」姿态。
  */
 import { computed, ref, watch } from 'vue'
@@ -48,6 +48,9 @@ export function useBookShelf({ indexUrl, store = bookStore, auth = null } = {}) 
   const downloading = ref([])     // 正在下载的 bookId（点了「下载」的那几本）
   const downloadFailed = ref([])  // 上一次没下来的（按钮改成「重试」，不弹错误框）
   const prefetching = computed(() => bookSyncState.prefetching)
+  // 上一趟对账**没拉下来**的那几本（第 16.6 步）：书架据此把缺书行画成「重试 →」，
+  // 不再让「拉失败」和「根本没拉过」长得一模一样。
+  const failedIds = computed(() => (Array.isArray(bookSyncState.failedIds) ? bookSyncState.failedIds : []))
 
   async function loadBuiltin() {
     try {
@@ -80,7 +83,7 @@ export function useBookShelf({ indexUrl, store = bookStore, auth = null } = {}) 
   function loadCloud(localIds) {
     if (!authRef.user.value) return []
     const metas = cloudBookMetas(loadRecordsMap(), loadRecordTombstones())
-    // 退役名单上的书不再自动列进「待接入」/ 不再自动预取（删过的不许回来）；显式导入 / 下载不受影响
+    // 退役名单上的书不再自动列进「待加载」/ 不再自动预取（删过的不许回来）；显式导入 / 下载不受影响
     return sortByAddedAtDesc(planPrefetch(metas, localIds, loadRetiredBooks()))
   }
 
@@ -124,13 +127,16 @@ export function useBookShelf({ indexUrl, store = bookStore, auth = null } = {}) 
     return r
   }
 
-  // 远程同步过来了（recordRevision）／账号里的书刚落盘（revision）→ 重列
-  watch(bookSyncState.revision, () => { refresh() })
+  // 远程同步过来了（recordRevision）／账号里的书刚落盘（revision）→ 重列。
+  // ⚠️ 左边那条**必须**写成 getter：`watch(bookSyncState.revision, ...)` 传进去的是个数字，
+  // Vue 只 warn（Invalid watch source）不报错，监听是**死的** —— 预取落盘后书架不会自己重列，
+  // 得等下一次进页面（第 16.6 步实测到的这条）。
+  watch(() => bookSyncState.revision, () => { refresh() })
   watch(() => sync.recordRevision.value, () => { refresh() })
 
   return {
     publicBooks, myBooks, cloudBooks, loading, error, byoError, byoCount,
-    downloading, downloadFailed, prefetching,
+    downloading, downloadFailed, prefetching, failedIds,
     refresh, removeByoBook, fetchCloudBook
   }
 }

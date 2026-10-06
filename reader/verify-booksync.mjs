@@ -515,5 +515,43 @@ console.log('\n[第 16.5 步块 4 — 预取 / 列「待接入」跳过退役]')
   })
   tEq('prefetchCloudBooks 也跳过退役的那本', [r.saved, saved], [[OTHER], [OTHER]])
 }
+console.log('\n[第 16.6 步 — 对账漏拍：单飞 ＋ 补跑（createSingleFlight）]')
+{
+  const tick = (ms) => new Promise((r) => setTimeout(r, ms))
+  // 一趟「跑不完」的活：每个调用方各自拿一个 resolve 句柄，好精确控制先后
+  const gates = []
+  const sf = B.createSingleFlight(() => new Promise((res) => { gates.push(res) }))
+
+  const p1 = sf()
+  const p2 = sf()                        // 同一 tick 里又来一次 -> 撞车
+  t('🔴 撞车不另起一趟（在飞时只记补跑标记）', gates.length === 1)
+  t('撞车的调用方拿到**同一趟**（同一个 promise）', p1 === p2)
+
+  gates[0]('first')
+  await tick(0)                          // 让 do/while 看到补跑标记
+  t('🔴 补跑：第一趟收尾后自动再跑一趟', gates.length === 2)
+  if (gates.length === 2) gates[1]('second')
+  tEq('两趟串完才 resolve（await 它的人等到的是最后一趟）', await p1, 'second')
+  await tick(0)
+  t('没有新的撞车 -> 不再空转', gates.length === 2)
+
+  let n = 0
+  const sf2 = B.createSingleFlight(async () => { n++; return n })
+  tEq('没撞车时只跑一趟', [await sf2(), n], [1, 1])
+
+  const gates2 = []
+  const sf3 = B.createSingleFlight(() => new Promise((res) => { gates2.push(res) }))
+  const q1 = sf3()
+  gates2[0]('a')
+  await tick(0)
+  tEq('上一趟彻底跑完后，再来一次是**新的一趟**（不算撞车）', [gates2.length, await q1], [1, 'a'])
+  const q2 = sf3()
+  t('新的一趟照样起得来', gates2.length === 2)
+  gates2[1]('b')
+  tEq('返回值跟着各自那一趟走', await q2, 'b')
+
+  tEq('bookSyncState 的失败位是**点名**（failedIds）而不是计数 —— 界面才能把这几行画成「重试」',
+    [typeof B.bookSyncState.queued, B.bookSyncState.failedIds], ['number', []])
+}
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

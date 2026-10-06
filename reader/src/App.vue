@@ -17,7 +17,7 @@
     <nav class="app-tabbar" v-if="showTabbar">
       <router-link to="/books" class="tab-item">
         <span class="tab-icon">📚</span>
-        <span class="tab-label">Books</span>
+        <span class="tab-label">Library</span>
       </router-link>
       <router-link to="/vocabulary" class="tab-item">
         <span class="tab-icon">📝</span>
@@ -81,7 +81,7 @@ const backLabel = computed(() => 'Home')
 
 const currentTitle = computed(() => {
   const titles = {
-    BookList: 'My Books',
+    BookList: 'Library',
     Import: 'Add a book',
     Reader: '',
     Vocabulary: 'Vocabulary',

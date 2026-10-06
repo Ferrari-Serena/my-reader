@@ -20,14 +20,28 @@
       <p>Books you import will appear here.</p>
     </div>
 
-    <!-- 两栏（第 7 步 7.2）：公开书库 / 我的书架。窄屏上下堆叠，宽屏并排。 -->
-    <div v-else class="shelf-columns">
-      <section class="shelf-column">
-        <h2 class="shelf-heading">
-          Public Library
-          <span class="shelf-count">{{ publicBooks.length }}</span>
-        </h2>
+    <!-- 两个**平级**的切换标签（第 7 步 7.2 的两栏 → 2026-10-06 Ferrari 裁 A）：
+         Public Books ｜ My Books。同一行、同一套按钮样式，一次只显示一栏 —— 窄屏不用长滚动。
+         分类筛选（第 7 步 7.3）跟着 Public Books 那一栏走；顺序按现状，Public 在左。 -->
+    <div v-else class="shelf-tabs">
+      <div class="shelf-tabbar" role="tablist">
+        <button
+          role="tab"
+          class="shelf-tab"
+          :class="{ active: activeShelf === 'public' }"
+          :aria-selected="activeShelf === 'public'"
+          @click="activeShelf = 'public'"
+        >Public Books <span class="shelf-count">{{ publicBooks.length }}</span></button>
+        <button
+          role="tab"
+          class="shelf-tab"
+          :class="{ active: activeShelf === 'mine' }"
+          :aria-selected="activeShelf === 'mine'"
+          @click="activeShelf = 'mine'"
+        >My Books <span class="shelf-count">{{ myBooks.length }}</span></button>
+      </div>
 
+      <section v-if="activeShelf === 'public'" class="shelf-pane" role="tabpanel">
         <!-- 分类筛选（第 7 步 7.3）：只有一类时不摆一排只有一个的按钮 -->
         <div v-if="categories.length > 1" class="category-filters">
           <button
@@ -56,11 +70,7 @@
         </div>
       </section>
 
-      <section class="shelf-column">
-        <h2 class="shelf-heading">
-          My Books
-          <span class="shelf-count">{{ myBooks.length }}</span>
-        </h2>
+      <section v-else class="shelf-pane" role="tabpanel">
         <p v-if="myBooks.length === 0" class="shelf-note">
           Books you import stay on this device and appear here.
         </p>
@@ -76,15 +86,16 @@
       </section>
     </div>
 
-    <!-- 缺书区（第 9 步 9.4 ＋ 第 16 步块 3）：正文不在本机的书 —— 不给空白，给一条能走的行。
-         账号里有正文的可以直接下载（下载完划线自动接上）；只有笔记的，还得自己导入那一本。 -->
+    <!-- 缺书区（第 9 步 9.4 ＋ 第 16 步块 3 ＋ 第 16.6 步）：正文不在本机的书 —— 不给空白，给一条能走的行。
+         正常路径是**同步后自动加载**（对账里的预取）；这一区是不自动下来时的兜底，手点一下即可。
+         账号里只有笔记、没有正文的，还得自己导入那一本。 -->
     <section v-if="missingRows.length" class="missing-column">
       <h2 class="shelf-heading">
-        待接入
+        待加载
         <span class="shelf-count">{{ missingRows.length }}</span>
       </h2>
       <p class="shelf-note">
-        这些书的正文不在本机。账号里有正文的直接下载即可（划线会自动接上）；只有笔记的，在这台机器上导入同一本书就能接上。
+        账号里有、这台设备还没有的书。同步（Sync）后会自动加载到本机；万一没自动下来，点右边的按钮手动加载 —— 划过线的笔记会自动接上。只有笔记、账号里没有正文的，需要在这台机器上导入同一本书。
       </p>
       <div v-for="row in missingRows" :key="row.bookId" class="missing-row">
         <span class="missing-row-title">《{{ row.title || row.bookId }}》</span>
@@ -94,7 +105,7 @@
           class="missing-row-go as-button"
           :disabled="row.downloading"
           @click="download(row.bookId)"
-        >{{ row.downloading ? '下载中…' : (row.failed ? '重试 →' : '下载 →') }}</button>
+        >{{ row.downloading ? '加载中…' : (row.failed ? '重试 →' : '加载 →') }}</button>
         <router-link v-else class="missing-row-go" :to="'/reader/' + row.bookId">查看 →</router-link>
       </div>
     </section>
@@ -113,12 +124,14 @@ import BookCard from '../components/BookCard.vue'
 // 合成与排序口径全在 utils/bookShelf.js，这里只负责画。
 const {
   publicBooks, myBooks, cloudBooks, loading, error, byoError,
-  downloading, downloadFailed, prefetching, refresh, fetchCloudBook, removeByoBook
+  downloading, downloadFailed, prefetching, failedIds, refresh, fetchCloudBook, removeByoBook
 } = useBookShelf()
 
 const activeCategory = ref('')  // '' = 不筛
+// 两栏改成两个平级的标签（2026-10-06 Ferrari 裁 A）：'public' | 'mine'，默认按现状 Public 在左
+const activeShelf = ref('public')
 
-// 「空」要连账号里的书一起算：本机没有、但账号里有 —— 那不是空书架，是一条能点的「下载」
+// 「空」要连账号里的书一起算：本机没有、但账号里有 —— 那不是空书架，是一条能点的「加载」
 const isEmpty = computed(() =>
   publicBooks.value.length === 0 && myBooks.value.length === 0 && cloudBooks.value.length === 0)
 
@@ -129,7 +142,7 @@ const knownBookIds = computed(() => [
   ...publicBooks.value.map(b => b.id),
   ...myBooks.value.map(b => b.id)
 ])
-// 整批预取在飞时，云书那几行也算「下载中」（后端正在拉，按钮别催）
+// 整批预取在飞时，云书那几行也算「加载中」（后台正在拉，按钮别催）
 const busyIds = computed(() => (
   prefetching.value ? [...downloading.value, ...cloudBooks.value.map((b) => b.bookId)] : downloading.value
 ))
@@ -141,14 +154,15 @@ const missingRows = computed(() => (
       missingBookGroups(notes.all(), knownBookIds.value),
       cloudBooks.value,
       busyIds.value,
-      downloadFailed.value
+      // 手动重试失败的 ∪ 上一趟对账没拉下来的：两种都画成「重试 →」
+      [...downloadFailed.value, ...failedIds.value]
     )
 ))
 
 /** 一行说清「为什么它不在本机，以及下一步该干什么」 */
 function rowMeta(row) {
   const notes = row.noteCount ? `${row.noteCount} 条笔记 · ` : ''
-  if (row.failed) return `${notes}下载没成功，稍后再试`
+  if (row.failed) return `${notes}上次没加载成功，点「重试 →」`
   return notes + (row.cloud ? '在你的账号里 · 本机没有' : '书不在本机')
 }
 
@@ -244,19 +258,41 @@ onMounted(refresh)
   color: var(--text-primary, #1d1d1f);
 }
 
-.shelf-columns {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 28px;
+/* 两个平级的切换标签（原来这里是 1fr/1fr 两栏网格）：按钮同一套样式、同一行，
+   选中态用下划线 ＋ 强调色，跟分类 chips 不抢视觉。 */
+.shelf-tabbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-color, #e5e5e5);
 }
 
-@media (min-width: 720px) {
-  .shelf-columns {
-    grid-template-columns: 1fr 1fr;
-    gap: 32px;
-    align-items: start;
-  }
+.shelf-tab {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 14px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary, #6e6e73);
+  cursor: pointer;
 }
+
+.shelf-tab:hover { color: var(--text-primary, #1d1d1f); }
+
+.shelf-tab.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+  background: var(--bg-secondary, #f5f5f5);
+}
+
+.shelf-pane { min-height: 1px; }
 
 .shelf-heading {
   display: flex;

@@ -18,11 +18,16 @@
         Waiting to upload: <strong>{{ sync.pending.value }}</strong>
       </p>
       <p v-else-if="auth.user.value" class="hint">All changes uploaded ✓</p>
+      <!-- 另一个方向：账号里有、这台设备还没有的书（第 16.6 步）。上传侧数不到它们，
+           「All changes uploaded ✓」也不代表书架已经齐了 —— 这一行补的就是这个歧义。 -->
+      <p v-if="bookSyncState.prefetching" class="hint">
+        Loading books from your account: <strong>{{ bookSyncState.queued }}</strong>
+      </p>
       <p v-if="sync.error.value" class="error">{{ sync.error.value }}</p>
       <button
-        v-if="auth.user.value" class="btn" :disabled="sync.pulling.value || sync.pushing.value"
+        v-if="auth.user.value" class="btn" :disabled="syncing"
         @click="sync.syncNow()"
-      >{{ (sync.pulling.value || sync.pushing.value) ? 'Syncing…' : 'Sync now' }}</button>
+      >{{ syncing ? 'Syncing…' : 'Sync now' }}</button>
     </section>
 
     <!-- 已登录 -->
@@ -171,10 +176,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
 import { useSync } from '../composables/useSync.js'
+import { bookSyncState } from '../sync/bookSync.js'
 import { emailProblem, passwordProblem, confirmProblem } from '../utils/authForm.js'
 
 const auth = useAuth()
 const sync = useSync()
+// 「Sync now」这一趟包含书体对账（useSync.syncNow 里 await 了它），所以按钮的忙态要把
+// bookSyncState.prefetching 一起算 —— 否则正文还在拉、按钮已经变回「Sync now」了。
+const syncing = computed(() => sync.pulling.value || sync.pushing.value || bookSyncState.prefetching)
 
 const mode = ref('signin') // 'signin' | 'signup' | 'reset'
 const email = ref('')

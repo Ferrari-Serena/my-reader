@@ -24,7 +24,7 @@ import { budgetKeepaliveParts } from '../sync/budget.js'
 import { nextRetryDelay, RETRY_BASE_MS } from '../sync/retry.js'
 import { planRecordMerge, splitRecordKey } from '../sync/records.js'
 import * as recordStore from '../sync/recordStore.js'
-import { loadPendingPublish } from '../sync/bookSync.js'
+import { loadPendingPublish, reconcileBooksNow } from '../sync/bookSync.js'
 
 const SYNC_BASE = '/api/sync'
 const SYNC_CODE_KEY = 'reader-sync-code'
@@ -87,7 +87,7 @@ async function storage() {
  * 四个来源：脏词（生词/评分/答题改了还没推）、脏记录（五类记录通道 —— **含 BYO 书的元信息**）、
  * 删除台账（本机删了、还没被服务端确认）、**书体上传台账**（第 16.5 步块 4：正文 8 MB 走的是
  * 另一条路，PUT 失败/当时没登录的那几本记在 `reader-books-to-publish`，原来不计，
- * 于是「Everything is uploaded ✓」会在书没上去时撒谎）。全是**读盘**、不是响应式状态，所以由
+ * 于是「All changes uploaded ✓」会在书没上去时撒谎）。全是**读盘**、不是响应式状态，所以由
  * vocab.dirtyRevision 的 watcher ＋ 每次推送/拉取结束显式触发重算。
  */
 async function refreshPending() {
@@ -389,12 +389,16 @@ async function pushNow(options = {}) {
 }
 
 /**
- * 手动「立即同步」：先拉（拿到远程状态并合并）再推。
+ * 手动「立即同步」：先拉（拿到远程状态并合并）再推，最后**对一次书**。
  * 只拉不推的话，本机这次会话里的改动要等到下一次变异或防抖触发才会上去。
+ * 书体走的是另一条路（R2，见 sync/bookSync.js）—— pull 只搬「账号里有这本书」的元信息，
+ * 正文得靠对账里的预取去拉。第 16.6 步之前这一步不在，「点 Sync 后新书自动上架」就看运气：
+ * 那一趟对账要是正好在飞（书架刚打开 / 上一趟还在收尾），新书就永远轮不到。
  */
 async function syncNow() {
   await pullOnce()
   await pushNow()
+  await reconcileBooksNow().catch(() => { /* 书体那半趟失败不该弹给用户：脏集合留在盘上，下次自愈 */ })
 }
 
 /** 防抖安排一次推送 */

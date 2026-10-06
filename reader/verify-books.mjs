@@ -374,6 +374,34 @@ console.log('\n[composables/useBookShelf.js — 两栏 + 各自降级]')
   globalThis.fetch = realFetch
 }
 
+console.log('\n[composables/useBookShelf.js — 对账收尾要自己反映到书架上（第 16.6 步）]')
+{
+  const B = await import('./src/sync/bookSync.js')
+  const { nextTick } = await import('vue')
+  const store = createBookStore(memoryDriver())
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ books: [] }) })
+  const shelf = useBookShelf({ indexUrl: 'https://example.test/book-index.json', store })
+  await shelf.refresh()
+
+  tEq('没有失败时给空数组（书架不用再防 undefined）', shelf.failedIds.value, [])
+  B.bookSyncState.failedIds = ['bk_cccccccccccccccc']
+  tEq('对账拉失败的 id 原样透出（缺书行据此画「重试 →」）',
+    shelf.failedIds.value, ['bk_cccccccccccccccc'])
+  B.bookSyncState.failedIds = []
+
+  // 🔴 预取落盘后书架得**自己**重列。原来这里是 `watch(bookSyncState.revision, …)`：
+  // 传进去的是个数字，Vue 只 warn（Invalid watch source）不报错，监听是死的 —— 书拉下来了，
+  // 书架却要等下一次进页面才认（第 16.6 步实测）。
+  await store.saveBook(sampleBook({ title: 'From cloud' }))
+  B.bookSyncState.revision++
+  await nextTick()
+  await new Promise((r) => setTimeout(r, 20)) // 监听回调里的 refresh() 是异步的
+  tEq('🔴 revision++ 后书架自己重列（不必等下一次进页面）',
+    shelf.myBooks.value.map((b) => b.title), ['From cloud'])
+
+  globalThis.fetch = realFetch
+}
 console.log('\n[utils/bookShelf.js — 「正文不在本机」的行（第 9 步 9.4 ＋ 第 16 步块 3）]')
 {
   const NOTE_ONLY = 'bk_aaaaaaaaaaaaaaaa'

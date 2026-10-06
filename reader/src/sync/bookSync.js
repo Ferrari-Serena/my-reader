@@ -187,13 +187,14 @@ export function publishByoBookInBackground(bookId) {
 // ── 块 3：账号 → 本机（预取整本）＋ 本机 → 账号（补登记）────────────────────
 
 /**
- * 云书对账的**可见**状态（书架据此画「下载中」并在落盘后重列）。
+ * 云书对账的**可见**状态（书架据此画「加载中」并在落盘后重列）。
  * 与 useSync 的 state 同姿态：模块级 reactive，跨组件共享同一份。
  */
 export const bookSyncState = reactive({
-  prefetching: false, // 有一趟对账在飞
+  prefetching: false, // 这一趟正在拉书（有活才为真 —— 书架据此把云书那几行画成「加载中」）
+  queued: 0,          // 这一趟要拉的本数（账号里有、本机没有的）—— 同步卡据此显示「正在加载」
   revision: 0,        // 每往本机落盘一本 +1 —— 书架 watch 它重列
-  failed: 0           // 上一趟里没拉下来的本数（诊断用，不弹给用户）
+  failedIds: []       // 上一趟没拉下来的 bookId（书架把这几行画成「重试」，不再和「没拉」同形）
 })
 
 /** 记录通道里属于账号的书（kind='book'）：跳过墓碑、跳过形状坏的 —— 纯函数 */
@@ -298,84 +299,123 @@ export async function downloadCloudBook(bookId, { getBody = fetchBookBody, save 
   return { ok: true, bookId }
 }
 
-let _reconciling = false
+/**
+ * 「一趟只能有一个」的排队器（第 16.6 步 · 修「对账漏拍」）。
+ *
+ * 病：对账原来拿一个 `_reconciling` 布尔去重，撞上正在飞的一趟就**直接 return**，没有补跑
+ * 机制 —— 点 Sync 那一瞬正好有趟在对账（书架刚打开、或上一趟还在收尾），新合并进来的那本书
+ * 就永远轮不到，界面一直停在「在你的账号里 · 本机没有」，只能手点「加载」。
+ * 药：撞车时记一个补跑标记，跑完**自动补一趟**。对账本身就是「以账号与本机的差集为准」，
+ * 天然幂等，多跑一趟的代价只是几次空转的读盘。
+ *
+ * 抽成独立函数是为了能**单测**：真对账要会话 ＋ IndexedDB，跑不起来；这里只认 `run`，
+ * 注入一个计数替身就能钉住「撞车会补跑」。
+ */
+export function createSingleFlight(run) {
+  let current = null
+  let rerun = false
+  return function kick() {
+    if (current) { rerun = true; return current } // 撞车：不丢这次请求，等它跑完再补一趟
+    current = (async () => {
+      try {
+        let out
+        do { rerun = false; out = await run() } while (rerun)
+        return out
+      } finally { current = null }
+    })()
+    return current
+  }
+}
+
+/** 可 await 的对账入口：「Sync now」用它 —— 书体走另一条路，也得跟着对一次账 */
+export function reconcileBooksNow() { return _reconcileFlight() }
+
+/** 后台版（不 await、不抛）：登录 / 打开书架用 */
+export function reconcileBooksInBackground() {
+  reconcileBooksNow().catch(() => { /* 对账失败不影响本机阅读：下次登录 / 下次开书架再来 */ })
+}
 
 /**
- * 登录 / 打开书架时对账一次，**三个方向都走**：
+ * 对账一趟，**三个方向都走**：
  *   ② 本机 → 账号：补发 —— 台账欠着的 ∪ 本机有、账号没有的（功能上线前导入的书），
  *      减退役名单（判据见 planLocalPublish）。上传成功一定会留下 meta，所以天然幂等，
  *      **不会**每次登录把整本重传一遍；
  *   ① 账号 → 本机：预取整本（D14-a「登录后自动后台预取」），退役名单上的不拉；
  *   ③ 收尾：墓碑/退役名单上的书，再删一次云端对象（幂等，补「删书那次 R2 没删掉」的残留）。
- * **不 await、不抛、同时只跑一趟**；失败静默（书体同步是附加动作，不该卡住登录或书架）。
+ * **不抛、同时只跑一趟**（撞车的那次由 createSingleFlight 补跑）；失败静默
+ * （书体同步是附加动作，不该卡住登录或书架）。
  */
-export function reconcileBooksInBackground() {
-  void (async () => {
-    if (_reconciling) return
-    _reconciling = true
-    bookSyncState.prefetching = true
-    try {
-      const [{ useAuth }, { useSync }, storage] = await Promise.all([
-        import('../composables/useAuth.js'),
-        import('../composables/useSync.js'),
-        import('../storage/index.js')
-      ])
-      const { loadBook, listByoBooks, saveBook } = storage
-      const auth = useAuth()
-      const sync = useSync()
-      const user = auth.user.value
-      if (!user) return // 边界＝账号（D14-b）：没登录就没有「账号里的书」
-      const accountCode = user.syncCode
-      const localCode = sync.code.value
+const _reconcileFlight = createSingleFlight(async () => {
+  try {
+    const [{ useAuth }, { useSync }, storage] = await Promise.all([
+      import('../composables/useAuth.js'),
+      import('../composables/useSync.js'),
+      import('../storage/index.js')
+    ])
+    const { loadBook, listByoBooks, saveBook } = storage
+    const auth = useAuth()
+    const sync = useSync()
+    const user = auth.user.value
+    if (!user) return // 边界＝账号（D14-b）：没登录就没有「账号里的书」
+    const accountCode = user.syncCode
+    const localCode = sync.code.value
 
-      const localIds = (await listByoBooks()).map((m) => m.id)
+    const localIds = (await listByoBooks()).map((m) => m.id)
 
-      // ② 本机 → 账号：补发。候选 = 台账欠着的 ∪ 本机有、账号没有的（功能上线前导入的书），
-      //    减退役名单（删过的书不许复活）。判据见 planLocalPublish —— 单看「记录通道里没有
-      //    meta」不够：删除只留墓碑、不留 meta，那会把已删的书又发回账号（删了又活）。
-      let published = 0
-      for (const bookId of planLocalPublish({
-        localIds,
-        recordsMap: loadRecordsMap(),
-        tombstones: loadRecordTombstones(),
-        pending: loadPendingPublish(),
-        retired: loadRetiredBooks()
-      })) {
-        const record = await loadBook(bookId)
-        if (!record) { clearPendingPublish(bookId); continue } // 本机也没了 -> 台账清掉
-        const r = await publishByoBook(record, { accountCode, localCode })
-        if (r.ok) published++
-      }
-      if (published) sync.pushSoon()
-
-      // ① 账号 → 本机：用刚刷新过的两张表（上面那批 meta 刚写进去）；退役名单上的不拉
-      const metas = cloudBookMetas(loadRecordsMap(), loadRecordTombstones())
-      const r = await prefetchCloudBooks({
-        metas,
-        localIds,
-        retired: loadRetiredBooks(),
-        save: (rec) => saveBook(rec),
-        onSaved: () => { bookSyncState.revision++ }
-      })
-      bookSyncState.failed = r.failed.length
-
-      // ③ 收尾：墓碑上的书 ＋ 退役名单上的书，再删一次云端对象（幂等）。覆盖「上次删的时候
-      //    离线、或 R2 打了个嗝」—— 那些正文会变成账号目录里看不见的残留；墓碑推成功后会被
-      //    清掉，所以只靠墓碑会漏掉残留，退役名单这条正是补它（D14-c 的收尾）。
-      //    本地记录表里还有 meta 的（别处重新建回来了）跳过：宁可留着数据，不删别人刚建的书。
-      const recsNow = loadRecordsMap()
-      const wipe = new Set(loadRetiredBooks().filter((id) => !recsNow['book:' + id]))
-      for (const key of Object.keys(loadRecordTombstones())) {
-        const sp = splitRecordKey(key)
-        if (sp && sp.kind === 'book' && isByoBookId(sp.id)) wipe.add(sp.id)
-      }
-      for (const id of wipe) await deleteCloudBookBody(id)
-    } catch { /* 对账失败不影响本机阅读：下次登录 / 下次开书架再来 */ } finally {
-      _reconciling = false
-      bookSyncState.prefetching = false
+    // ② 本机 → 账号：补发。候选 = 台账欠着的 ∪ 本机有、账号没有的（功能上线前导入的书），
+    //    减退役名单（删过的书不许复活）。判据见 planLocalPublish —— 单看「记录通道里没有
+    //    meta」不够：删除只留墓碑、不留 meta，那会把已删的书又发回账号（删了又活）。
+    let published = 0
+    for (const bookId of planLocalPublish({
+      localIds,
+      recordsMap: loadRecordsMap(),
+      tombstones: loadRecordTombstones(),
+      pending: loadPendingPublish(),
+      retired: loadRetiredBooks()
+    })) {
+      const record = await loadBook(bookId)
+      if (!record) { clearPendingPublish(bookId); continue } // 本机也没了 -> 台账清掉
+      const r = await publishByoBook(record, { accountCode, localCode })
+      if (r.ok) published++
     }
-  })()
-}
+    if (published) sync.pushSoon()
+
+    // ① 账号 → 本机：预取整本（D14-a）。候选先算出来 —— 同步卡要显示「正在加载几本」，书架
+    //    要据此把这几行画成「加载中」；退役名单上的不拉（判据见 planPrefetch）。
+    const metas = cloudBookMetas(loadRecordsMap(), loadRecordTombstones())
+    const retiredNow = loadRetiredBooks()
+    const candidates = planPrefetch(metas, localIds, retiredNow)
+    bookSyncState.queued = candidates.length
+    bookSyncState.prefetching = candidates.length > 0
+    const r = await prefetchCloudBooks({
+      metas: candidates,
+      localIds,
+      retired: retiredNow,
+      save: (rec) => saveBook(rec),
+      onSaved: () => { bookSyncState.revision++ }
+    })
+    bookSyncState.failedIds = r.failed // 把没拉下来的**点名**记下来：界面据此画「重试」，不再和「没拉」同形
+    bookSyncState.queued = 0
+    bookSyncState.prefetching = false
+
+    // ③ 收尾：墓碑/退役名单上的书，再删一次云端对象（幂等）。覆盖「上次删的时候离线、或 R2
+    //    打了个嗝」—— 那些正文会变成账号目录里看不见的残留；墓碑推成功后会被清掉，所以只靠
+    //    墓碑会漏掉残留，退役名单这条正是补它（D14-c 的收尾）。本地记录表里还有 meta 的
+    //    （别处重新建回来了）跳过：宁可留着数据，不删别人刚建的书。
+    //    并发发出去、不逐本串等 —— 每本一个 DELETE，串等会把「一趟在对账」的窗口拉长，
+    //    窗口越长，点 Sync 时撞车的机会越多（第 16.6 步修的就是这个）。
+    const recsNow = loadRecordsMap()
+    const wipe = new Set(loadRetiredBooks().filter((id) => !recsNow['book:' + id]))
+    for (const key of Object.keys(loadRecordTombstones())) {
+      const sp = splitRecordKey(key)
+      if (sp && sp.kind === 'book' && isByoBookId(sp.id)) wipe.add(sp.id)
+    }
+    await Promise.all([...wipe].map((id) => deleteCloudBookBody(id)))
+  } catch { /* 对账失败不影响本机阅读：下次登录 / 下次开书架再来 */ } finally {
+    bookSyncState.prefetching = false
+    bookSyncState.queued = 0
+  }
+})
 
 /** DELETE 云端书体（第 16 步块 4）。恒不抛；URL 里同样不带 code。 */
 export async function deleteCloudBookBody(bookId, {
