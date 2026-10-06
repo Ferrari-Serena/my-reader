@@ -116,8 +116,8 @@ console.log('\n[ratelimit.js — 纯函数（0.0 止血 · 第二半）]')
 console.log('\n[sync.js — 第 3 步：记录通道（kind 白名单 + 命名空间键）]')
 {
   t('recordKey 用 <kind>:<id> 命名空间（永不与裸词撞车）', syncMod.recordKey('note', 'n_1') === 'note:n_1')
-  t('RECORD_KINDS 恰是四类',
-    syncMod.RECORD_KINDS.size === 4 && ['note', 'wrong', 'card', 'setting'].every(k => syncMod.RECORD_KINDS.has(k)))
+  t('RECORD_KINDS 恰是五类（第 16 步加 book）',
+    syncMod.RECORD_KINDS.size === 5 && ['note', 'wrong', 'card', 'setting', 'book'].every(k => syncMod.RECORD_KINDS.has(k)))
 
   const now = Date.parse('2026-10-05T12:00:00.000Z')
   const T = '2026-10-05T11:00:00.000Z'

@@ -138,6 +138,46 @@ export function groupByCategory(books) {
     .map((key) => ({ key, label: CATEGORY_LABELS[key], books: buckets.get(key) }))
 }
 
+/**
+ * 「正文不在本机」的行（第 9 步 9.4 的缺书占位 ＋ 第 16 步块 3 的云端可下载）。
+ *
+ * 两个来源按 bookId 取并集，一个 id 只出一行：
+ *   · 有笔记但本机没正文的（别的设备划过线，笔记同步过来了）；
+ *   · 账号里有正文的（别的设备导入了书，书体同步过来了）。
+ * 账号里有 → `cloud: true`，这一行给「下载」；只有笔记 → 只能自己去导入那一本。
+ * 并集而不是相加，是因为同一本书常常两边都有 —— 相加会让它出现两行。
+ */
+export function notOnDeviceRows(noteGroups, cloudMetas, downloadingIds = [], failedIds = []) {
+  const blank = (id) => ({ bookId: id, title: '', noteCount: 0, cloud: false })
+  const byId = new Map()
+
+  for (const g of Array.isArray(noteGroups) ? noteGroups : []) {
+    const id = String((g && (g.bookId || g.id)) || '').trim()
+    if (!id) continue
+    const row = byId.get(id) || blank(id)
+    row.title = row.title || String(g.bookTitle || g.title || '')
+    row.noteCount += Number(g.count) || 0
+    byId.set(id, row)
+  }
+
+  for (const m of Array.isArray(cloudMetas) ? cloudMetas : []) {
+    const id = String((m && (m.bookId || m.id)) || '').trim()
+    if (!id) continue
+    const row = byId.get(id) || blank(id)
+    row.cloud = true                       // 账号里有正文 → 这一行可以直接下载
+    row.title = row.title || String(m.title || '')
+    byId.set(id, row)
+  }
+
+  const downloading = new Set(downloadingIds || [])
+  const failed = new Set(failedIds || [])
+  return [...byId.values()].map((r) => ({
+    ...r,
+    downloading: downloading.has(r.bookId),
+    failed: failed.has(r.bookId)
+  }))
+}
+
 /** 两个来源 -> 两栏书架（第 7 步 7.2）：公开书库 / 我的书架 */
 export function columnsOf(builtinBooks, byoMetas) {
   const mine = sortByAddedAtDesc(

@@ -657,10 +657,10 @@ console.log('\n[第 3 步 — reconcileTenant：把「认领」与「换键」�
   await tick(5)
 }
 
-console.log('\n[第 3 步 — 记录通道：四类形状净化（纯逻辑）]')
+console.log('\n[第 3 步 — 记录通道：五类形状净化（纯逻辑；第 16 步加 book）]')
 {
   const R = await import('./src/sync/records.js')
-  t('RECORD_KINDS 恰是四类', JSON.stringify(R.RECORD_KINDS) === JSON.stringify(['note', 'wrong', 'card', 'setting']))
+  t('RECORD_KINDS 恰是五类（第 16 步加 book）', JSON.stringify(R.RECORD_KINDS) === JSON.stringify(['note', 'wrong', 'card', 'setting', 'book']))
   t('schema_version = 1', R.RECORD_SCHEMA_VERSION === 1)
   t('recordKey / splitRecordKey 往返', (() => {
     const k = R.recordKey('note', 'n_1')
@@ -678,6 +678,9 @@ console.log('\n[第 3 步 — 记录通道：四类形状净化（纯逻辑）]'
   t('note 保留时间戳', note.updatedAt === 'B' && note.createdAt === 'A')
   t('note anchor 被归一化', note.anchor.paraId === 'p-1' && note.anchor.charStart === 3 && note.anchor.charEnd === 9)
   t('未知 kind -> null', R.sanitizeRecord('bogus', 'x_1', {}) === null)
+  // 第 16 步：book 的 id 是内容指纹（永不由 newRecordId 铸），isRecordKind 是唯一判据
+  t('book kind 被认（ID_PREFIX 里有 bk_）', R.isRecordKind('book'))
+  t('公开书 slug 不是记录 kind', !R.isRecordKind('the-giver'))
   t('空 id -> null', R.sanitizeRecord('note', '', {}) === null)
 
   const c = R.sanitizeRecord('card', 'card_1', { refKind: 'phrase', refKey: 'turn out', srs: { due: 'D', stability: 2, junk: 1 } })

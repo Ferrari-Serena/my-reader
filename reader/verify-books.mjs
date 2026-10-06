@@ -27,7 +27,7 @@ async function codeOf(fn) {
   try { await fn(); return null } catch (e) { return (e && e.code) ? e.code : ('threw:' + (e && e.message)) }
 }
 
-const { BOOK_KIND, kindOfBook, builtinEntry, metaOf, sortByAddedAtDesc, columnsOf, isPublicBook, groupByCategory, categoryKeyOf, categoryLabelOf } = await import('./src/utils/bookShelf.js')
+const { BOOK_KIND, kindOfBook, builtinEntry, metaOf, sortByAddedAtDesc, columnsOf, isPublicBook, groupByCategory, categoryKeyOf, categoryLabelOf, notOnDeviceRows } = await import('./src/utils/bookShelf.js')
 const { createBookStore, normalizeRecord, BookStoreError } = await import('./src/storage/bookAdapter.js')
 const idbDriverDefault = await import('./src/storage/bookDb.js')
 const { openBookDb, closeBookDb, BOOK_DB_NAME, BOOK_DB_VERSION, STORE_BOOKS, STORE_SHELF } = idbDriverDefault
@@ -372,6 +372,37 @@ console.log('\n[composables/useBookShelf.js — 两栏 + 各自降级]')
   tEq('移出后 byoCount 归零', shelf.byoCount.value, 0)
 
   globalThis.fetch = realFetch
+}
+
+console.log('\n[utils/bookShelf.js — 「正文不在本机」的行（第 9 步 9.4 ＋ 第 16 步块 3）]')
+{
+  const NOTE_ONLY = 'bk_aaaaaaaaaaaaaaaa'
+  const FROM_CLOUD = 'bk_bbbbbbbbbbbbbbbb'
+  const FAILED = 'bk_cccccccccccccccc'
+
+  const rows = notOnDeviceRows(
+    [{ bookId: NOTE_ONLY, bookTitle: 'Notes only', count: 3 }],
+    [{ bookId: NOTE_ONLY, title: 'Notes only' }, { bookId: FROM_CLOUD, title: 'From account' }],
+    [FROM_CLOUD],
+    [FAILED]
+  )
+  tEq('两个来源取并集：一个 id 一行（同一本两边都有也只出一行）',
+    rows.map(r => r.bookId), [NOTE_ONLY, FROM_CLOUD])
+  tEq('两边都有的那本：笔记数保留、且标成可下载（账号里有正文）',
+    [rows[0].noteCount, rows[0].cloud], [3, true])
+  tEq('只有账号的那本：0 条笔记、可下载、书名取账号那条',
+    [rows[1].noteCount, rows[1].cloud, rows[1].title], [0, true, 'From account'])
+  tEq('正在下载的那本被标出来', [rows[1].downloading, rows[0].downloading], [true, false])
+
+  const only = notOnDeviceRows([{ bookId: NOTE_ONLY, bookTitle: 'N', count: 2 }], [], [], [])
+  tEq('只有笔记 -> 不能下载（还得自己导入那一本）', [only.length, only[0].cloud, only[0].noteCount], [1, false, 2])
+
+  tEq('空输入 -> 空（不抛）', notOnDeviceRows(null, null), [])
+  tEq('没有 id 的坏条目丢掉', notOnDeviceRows([{ bookTitle: 'x' }], [{ title: 'y' }]), [])
+  tEq('下载失败的标记按 id 对上',
+    notOnDeviceRows([], [{ bookId: FAILED }], [], [FAILED])[0].failed, true)
+  tEq('被标下载中的那本，失败标记互不干扰',
+    notOnDeviceRows([], [{ bookId: FROM_CLOUD }], [FROM_CLOUD], [FAILED])[0].failed, false)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

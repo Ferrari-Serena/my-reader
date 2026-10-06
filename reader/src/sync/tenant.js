@@ -43,12 +43,20 @@ export async function reconcileTenant(auth) {
   const sync = useSync()
   const local = sync.code.value
   const action = tenantAction({ accountCode: user.syncCode || '', localCode: local })
-  if (action === 'none') return { action }
+
+  // 第 16 步块 3（D14-a）：租户键一对齐就把**书**也对一遍 —— 账号里的拉到本机、本机还没上云的
+  // 补登记。后台、不 await、失败静默（书体同步是附加动作，不该卡住登录这一步）。
+  const kickBooks = () => {
+    import('./bookSync.js').then((m) => m.reconcileBooksInBackground()).catch(() => {})
+  }
+
+  if (action === 'none') { kickBooks(); return { action } }
 
   _running = true
   try {
     if (action === 'adopt') {
       await sync.adoptCode(user.syncCode)
+      kickBooks()
       return { action, code: user.syncCode }
     }
 
@@ -60,6 +68,7 @@ export async function reconcileTenant(auth) {
     if (r.data.claimed) {
       auth.noteClaim('Your words and progress on this device are now part of this account.')
     }
+    kickBooks()
     return { action, code, claimed: !!r.data.claimed }
   } finally {
     _running = false

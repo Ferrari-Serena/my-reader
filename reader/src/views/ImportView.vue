@@ -4,7 +4,7 @@
     <section class="card" v-if="step !== IMPORT_STEP.DONE">
       <h2>Add your own book</h2>
       <p class="lead">
-        EPUB, PDF (with a text layer), or TXT. The file is read on this device and is never uploaded.
+        {{ copy.lead }}
       </p>
 
       <label class="consent">
@@ -21,7 +21,7 @@
       </div>
 
       <p class="hint" v-if="!consent">
-        Tick the box above to continue. Imported books stay on this device.
+        Tick the box above to continue. {{ copy.deviceHint }}
       </p>
 
       <div class="picked" v-if="file">
@@ -58,10 +58,7 @@
         <router-link class="btn primary" :to="`/reader/${result.id}`">Read it</router-link>
         <button class="btn ghost" @click="resetAll">Add another</button>
       </div>
-      <p class="hint">
-        This book lives on this device only. There is no recorded audio &mdash; the player falls back to
-        your browser&rsquo;s voice.
-      </p>
+      <p class="hint">{{ copy.outcomeHint }}</p>
     </section>
 
     <!-- 失败 -->
@@ -92,10 +89,17 @@ import {
   isHeavy,
   preflightFile,
   progressPercent,
+  importCopy,
   recordFromBook,
   stepText,
   stripExt
 } from '../utils/importFlow.js'
+import { publishByoBookInBackground } from '../sync/bookSync.js'
+import { useAuth } from '../composables/useAuth.js'
+
+// 文案按登录态分叉（第 16 步块 2）：登录 → 会上云；未登录 → 只在本机（行为与承诺一致）
+const auth = useAuth()
+const copy = computed(() => importCopy(!!auth.user.value))
 
 const fileInput = ref(null)
 const consent = ref(false)
@@ -182,12 +186,17 @@ async function start() {
     if (existing) {
       result.value = { ...metaOf(book), existed: true }
       step.value = IMPORT_STEP.DONE
+      // 第 16 步块 2：本机已有也补一次上云（当初导入时可能还没登录）——幂等，后台做
+      publishByoBookInBackground(existing.bookId)
       return
     }
 
     const meta = await saveBook(recordFromBook(book))
     result.value = { ...meta, existed: false }
     step.value = IMPORT_STEP.DONE
+    // 第 16 步块 2：导入即后台上云。不 await、失败不报错（§12.6）—— 书已经在本机了，
+    // 上云只是让它能被同账号的别的设备看见
+    publishByoBookInBackground(book.bookId)
   } catch (e) {
     // 取消不是失败：安静回到「选好了等着导」的状态
     if (isCancelled(e)) { resetOutcome(); return }

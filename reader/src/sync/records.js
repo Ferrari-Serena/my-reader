@@ -1,5 +1,5 @@
 /**
- * 第 3 步「归档」：四类新数据（笔记 / 错题 / 卡片 / 设置）的模型与合并判据。
+ * 第 3 步「归档」：五类记录（笔记 / 错题 / 卡片 / 设置 ＋ 第 16 步的 BYO 书元信息）的模型与合并判据。
  *
  * 与服务端 worker/src/sync.js 的「记录通道」对齐：记录用命名空间键 '<kind>:<id>'，
  * 走 /api/sync 的 push `records` / `recordTombstones` 与 pull 的两个数组，
@@ -9,11 +9,18 @@
  * schema_version 放在 payload 内（服务端只透传、读不懂的字段忽略）。
  */
 
-export const RECORD_KINDS = ['note', 'wrong', 'card', 'setting']
+export const RECORD_KINDS = ['note', 'wrong', 'card', 'setting', 'book']
 export const RECORD_SCHEMA_VERSION = 1
 
-/** id 前缀：note -> n_ / wrong -> w_ / card -> card_ / setting -> s_ */
-const ID_PREFIX = { note: 'n_', wrong: 'w_', card: 'card_', setting: 's_' }
+/**
+ * id 前缀：note -> n_ / wrong -> w_ / card -> card_ / setting -> s_ / book -> bk_
+ *
+ * ⚠️ book 这一项**不是**给 newRecordId 用的（书的 id 来自内容指纹，见 utils/bookId.js，
+ * 永不新铸）；它在这儿只为让 isRecordKind('book') 为真 —— isRecordKind 的实现就是
+ * 「ID_PREFIX 里有没有这个键」。漏了它，sanitizeRecord('book', …) 直接返回 null，
+ * 书体元信息会被**静默丢光**（不报错、不落盘、也没有任何日志）。
+ */
+const ID_PREFIX = { note: 'n_', wrong: 'w_', card: 'card_', setting: 's_', book: 'bk_' }
 
 export function isRecordKind(kind) {
   return typeof kind === 'string' && Object.prototype.hasOwnProperty.call(ID_PREFIX, kind)
@@ -46,6 +53,12 @@ export function recordTime(payload) {
 
 const asStr = v => (typeof v === 'string' ? v : '')
 const asNum = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+/** 正数计数（非数 / 负数 / NaN -> 0，小数取整）；与 worker/src/sync.js 的 shapeFields 同口径 */
+const asCount = v => {
+  const n = typeof v === 'number' ? v
+    : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
 const plainObj = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : null)
 
 /** 各 kind 的字段白名单（方案 3.4 草案）。未列出的字段一律剪掉。 */
@@ -54,6 +67,11 @@ const FIELDS = {
   wrong: ['type', 'refKey', 'yourAnswer', 'rightAnswer', 'createdAt', 'updatedAt'],
   card: ['refKind', 'refKey', 'srs', 'createdAt', 'updatedAt'],
   setting: ['key', 'value', 'createdAt', 'updatedAt'],
+  // 第 16 步 D14：BYO 书体元信息（正文走 R2，不在这条通道上）。这份名单与
+  // worker/src/sync.js 的 FIELDS.book 是**同一份** —— 服务端照它剪，本机多一个少一个
+  // 都会让「本地 ≠ 服务端」。没有 chapters/coverUrl（正文不上记录通道），也没有
+  // createdAt（书的时间轴是 addedAt + updatedAt）。
+  book: ['bookId', 'title', 'author', 'chapterCount', 'charCount', 'addedAt', 'updatedAt'],
 }
 
 function cleanField(field, v) {
@@ -70,6 +88,10 @@ function cleanField(field, v) {
     }
   }
   if (field === 'value') return v === undefined ? null : v // 设置值可以是任意 JSON 值
+  // 计数字段（book 的章节数 / 字数）：与 worker 的 shapeFields 同一条口径 ——
+  // 数字或能当数字看的字符串都收，非数 / 负数 / NaN 归 0，小数取整。
+  // 不这么干就会落到 asStr：本地出 '12'、服务端归一成 12，两边类型不一致。
+  if (field === 'chapterCount' || field === 'charCount') return asCount(v)
   return asStr(v)
 }
 
@@ -82,9 +104,17 @@ export function sanitizeRecord(kind, id, payload) {
   if (!isRecordKind(kind) || typeof id !== 'string' || !id) return null
   const src = plainObj(payload) || {}
   const out = { schema_version: RECORD_SCHEMA_VERSION }
-  for (const f of FIELDS[kind]) out[f] = cleanField(f, src[f])
-  out.createdAt = asStr(out.createdAt) || asStr(out.updatedAt) || new Date().toISOString()
-  out.updatedAt = asStr(out.updatedAt) || out.createdAt
+  const fields = FIELDS[kind]
+  for (const f of fields) out[f] = cleanField(f, src[f])
+  // 时间戳按白名单**条件注入**：book 的名单里没有 createdAt（它的时间轴是 addedAt +
+  // updatedAt），硬写进去等于多产一个服务端必剪的字段 —— 每次 pull 回来又重注入一遍，
+  // 本地与远端就永远对不齐。
+  if (fields.includes('createdAt')) {
+    out.createdAt = asStr(out.createdAt) || asStr(out.updatedAt) || new Date().toISOString()
+  }
+  if (fields.includes('updatedAt')) {
+    out.updatedAt = asStr(out.updatedAt) || asStr(out.createdAt)
+  }
   return out
 }
 

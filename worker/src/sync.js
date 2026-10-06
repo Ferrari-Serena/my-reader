@@ -46,8 +46,52 @@ const RESERVED = new Set([META, '__proto__', 'constructor', 'prototype'])
  *   'note'/'wrong'/'card'/'setting'  走「记录通道」，键 = '<kind>:<id>'
  * 词条永远不含 ':'，故记录与词条在同一张表里永不撞车。
  */
-export const RECORD_KINDS = new Set(['note', 'wrong', 'card', 'setting'])
+export const RECORD_KINDS = new Set(['note', 'wrong', 'card', 'setting', 'book'])
 export function recordKey(kind, id) { return kind + ':' + id }
+
+/**
+ * BYO 书 id 的形状（第 16 步 D14）：`bk_` + sha256 前 16 个 hex。
+ * 与 `reader/src/utils/bookId.js` 的 isBookId 是**同一条正则**（两侧各留一份，
+ * 判据一字不差）。公开书的 slug（dr-jekyll…）在此一律不合格 —— D14-d
+ * 「公开书库不参与同步」由此在服务端**结构性**成立，不靠调用方自觉。
+ */
+const BOOK_ID_RE = /^bk_[0-9a-f]{16}$/
+export function isBookId(v) { return typeof v === 'string' && BOOK_ID_RE.test(v) }
+
+/**
+ * 服务端字段白名单（第 16 步 D14）：**只对列在白名单里的 kind 生效**，其余 kind
+ * 维持「只挡非法形状、字段透传」的老口径（剪字段是客户端 sanitizeRecord 的活，
+ * 服务端不重复剪一遍，免得两边口径打架）。
+ * book 为什么必须剪：D6 是**开放注册**，book 元信息走记录通道 = 给每个账号一格
+ * 免费 JSON 存储（审查 R9 的滥用向量）→ 字段与 §12.2 定案一字对齐，多余字段一律丢。
+ */
+const FIELDS = {
+  book: ['bookId', 'title', 'author', 'chapterCount', 'charCount', 'addedAt', 'updatedAt'],
+}
+
+/**
+ * 按白名单重建载荷（该 kind 没列白名单 → 原样透传，连对象本身都不动）。
+ * `updatedAt` 随后由 stampWithTs 归一，这里不必管。
+ */
+function shapeFields(kind, id, obj) {
+  const fields = FIELDS[kind]
+  if (!fields) return obj
+  const out = {}
+  for (const f of fields) {
+    if (f === 'chapterCount' || f === 'charCount') {
+      // 数字，或能当数字看的字符串（'12'）—— 客户端 sanitizeRecord 出的是 number，
+      // 这里宽容一点；但非数 / 负数 / NaN 一律归 0（宁可少记，不写脏值）
+      const raw = obj[f]
+      const n = typeof raw === 'number' ? raw
+        : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN
+      out[f] = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+    } else {
+      out[f] = typeof obj[f] === 'string' ? obj[f] : ''
+    }
+  }
+  out.bookId = id // 键即权威：`<kind>:<id>` 里的 id 就是内容指纹，载荷不许另说一个
+  return out
+}
 
 /**
  * 条件 upsert 的两条语句。导出是为了让 verify-sql.mjs 能拿**真**语句在真 SQLite 上跑，
@@ -162,6 +206,8 @@ function recordOp(rec, nowMs, isTomb) {
   if (!RECORD_KINDS.has(kind)) return null
   const id = String(rec.id || '')
   if (!id || id.length > 200) return null
+  // BYO 书：id 必须是内容指纹形状（公开书的 slug 不走这条通道 —— D14-d）
+  if (kind === 'book' && !isBookId(id)) return null
   const key = recordKey(kind, id)
   if (isTomb) {
     const ts = normTs(rec.deletedAt || rec.updatedAt, nowMs)
@@ -169,7 +215,7 @@ function recordOp(rec, nowMs, isTomb) {
   }
   const obj = rec.payload
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null
-  const { ts, payload } = stampWithTs(obj, rec.updatedAt || obj.updatedAt, nowMs)
+  const { ts, payload } = stampWithTs(shapeFields(kind, id, obj), rec.updatedAt || obj.updatedAt, nowMs)
   return { key, kind, ts, payload, deleted: false }
 }
 
@@ -474,7 +520,7 @@ export async function handleSync(request, env) {
         env.DB.prepare('SELECT COUNT(*) AS n FROM sync_progress WHERE code = ?').bind(code).first(),
       ])
 
-      const counts = { word: 0, note: 0, wrong: 0, card: 0, setting: 0 }
+      const counts = { word: 0, note: 0, wrong: 0, card: 0, setting: 0, book: 0 }
       let tombstones = 0
       for (const row of results || []) {
         if (row.dead) { tombstones += row.n; continue }

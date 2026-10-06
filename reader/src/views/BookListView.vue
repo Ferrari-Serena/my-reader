@@ -65,30 +65,38 @@
           Books you import stay on this device and appear here.
         </p>
         <div v-else class="book-grid">
-          <BookCard v-for="book in myBooks" :key="book.id" :book="book" />
+          <BookCard
+            v-for="book in myBooks"
+            :key="book.id"
+            :book="book"
+            removable
+            @remove="removeBook"
+          />
         </div>
       </section>
     </div>
 
-    <!-- 缺书占位（第 9 步 9.4）：有笔记、但正文不在本机 —— 不给空白，给一条能走的行 -->
-    <section v-if="missingBooks.length" class="missing-column">
+    <!-- 缺书区（第 9 步 9.4 ＋ 第 16 步块 3）：正文不在本机的书 —— 不给空白，给一条能走的行。
+         账号里有正文的可以直接下载（下载完划线自动接上）；只有笔记的，还得自己导入那一本。 -->
+    <section v-if="missingRows.length" class="missing-column">
       <h2 class="shelf-heading">
         待接入
-        <span class="shelf-count">{{ missingBooks.length }}</span>
+        <span class="shelf-count">{{ missingRows.length }}</span>
       </h2>
       <p class="shelf-note">
-        这些书你划过线，但正文不在本机 —— 笔记跟着账号同步过来了。在这台机器上导入同一本书，划线会自动接上（不用重新划）。
+        这些书的正文不在本机。账号里有正文的直接下载即可（划线会自动接上）；只有笔记的，在这台机器上导入同一本书就能接上。
       </p>
-      <router-link
-        v-for="g in missingBooks"
-        :key="g.bookId"
-        class="missing-row"
-        :to="'/reader/' + g.bookId"
-      >
-        <span class="missing-row-title">《{{ g.bookTitle || g.bookId }}》</span>
-        <span class="missing-row-meta">{{ g.count }} 条笔记 · 书不在本机</span>
-        <span class="missing-row-go">查看 →</span>
-      </router-link>
+      <div v-for="row in missingRows" :key="row.bookId" class="missing-row">
+        <span class="missing-row-title">《{{ row.title || row.bookId }}》</span>
+        <span class="missing-row-meta">{{ rowMeta(row) }}</span>
+        <button
+          v-if="row.cloud"
+          class="missing-row-go as-button"
+          :disabled="row.downloading"
+          @click="download(row.bookId)"
+        >{{ row.downloading ? '下载中…' : (row.failed ? '重试 →' : '下载 →') }}</button>
+        <router-link v-else class="missing-row-go" :to="'/reader/' + row.bookId">查看 →</router-link>
+      </div>
     </section>
   </div>
 </template>
@@ -96,18 +104,23 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useBookShelf } from '../composables/useBookShelf'
-import { groupByCategory, categoryKeyOf, categoryLabelOf } from '../utils/bookShelf.js'
+import { groupByCategory, categoryKeyOf, categoryLabelOf, notOnDeviceRows } from '../utils/bookShelf.js'
 import { useNotes } from '../composables/useNotes'
 import { missingBookGroups } from '../utils/notes.js'
 import BookCard from '../components/BookCard.vue'
 
 // 数据源在组合式里：静态 book-index.json（公开书库）＋ IndexedDB 书库（我的书架），
 // 合成与排序口径全在 utils/bookShelf.js，这里只负责画。
-const { publicBooks, myBooks, loading, error, byoError, refresh } = useBookShelf()
+const {
+  publicBooks, myBooks, cloudBooks, loading, error, byoError,
+  downloading, downloadFailed, prefetching, refresh, fetchCloudBook, removeByoBook
+} = useBookShelf()
 
 const activeCategory = ref('')  // '' = 不筛
 
-const isEmpty = computed(() => publicBooks.value.length === 0 && myBooks.value.length === 0)
+// 「空」要连账号里的书一起算：本机没有、但账号里有 —— 那不是空书架，是一条能点的「下载」
+const isEmpty = computed(() =>
+  publicBooks.value.length === 0 && myBooks.value.length === 0 && cloudBooks.value.length === 0)
 
 // 缺书占位（第 9 步 9.4）：有笔记、但本机没有这本书（别的设备划的线同步过来了）。
 // 任一来源没读上来（error / byoError）就分不清「缺书」和「读不到」→ 不摆这行，别误导。
@@ -116,11 +129,43 @@ const knownBookIds = computed(() => [
   ...publicBooks.value.map(b => b.id),
   ...myBooks.value.map(b => b.id)
 ])
-const missingBooks = computed(() => (
+// 整批预取在飞时，云书那几行也算「下载中」（后端正在拉，按钮别催）
+const busyIds = computed(() => (
+  prefetching.value ? [...downloading.value, ...cloudBooks.value.map((b) => b.bookId)] : downloading.value
+))
+
+const missingRows = computed(() => (
   (error.value || byoError.value)
     ? []
-    : missingBookGroups(notes.all(), knownBookIds.value)
+    : notOnDeviceRows(
+      missingBookGroups(notes.all(), knownBookIds.value),
+      cloudBooks.value,
+      busyIds.value,
+      downloadFailed.value
+    )
 ))
+
+/** 一行说清「为什么它不在本机，以及下一步该干什么」 */
+function rowMeta(row) {
+  const notes = row.noteCount ? `${row.noteCount} 条笔记 · ` : ''
+  if (row.failed) return `${notes}下载没成功，稍后再试`
+  return notes + (row.cloud ? '在你的账号里 · 本机没有' : '书不在本机')
+}
+
+function download(bookId) { fetchCloudBook(bookId) }
+
+/**
+ * 删一本自带书（第 16 步块 4 / D14-c）：本机 ＋ 账号一起删。**不可逆** —— 删完这台机器与
+ * 账号里都没了（别的设备是各自那份的主人，不跟着删），所以先问一句再动手，与词表页「全清」
+ * 同一姿态；用户点了取消就什么都不做。
+ */
+function removeBook(book) {
+  const name = (book && (book.title || book.id)) || ''
+  const ok = window.confirm(
+    `Remove "${name}" from your shelf?\n\nThe copy in your account is deleted too. This cannot be undone.`
+  )
+  if (ok) removeByoBook(book.id)
+}
 
 // 有书才出现的分类（按枚举顺序），筛 chips 用
 const categories = computed(() => {
@@ -300,4 +345,18 @@ onMounted(refresh)
 .missing-row-title { font-size: 14px; font-weight: 600; }
 .missing-row-meta { font-size: 12.5px; color: var(--text-secondary, #6e6e73); }
 .missing-row-go { margin-left: auto; font-size: 12.5px; color: var(--accent-color); }
+
+/* 同一个位置有时是「查看」链接、有时是「下载」按钮（账号里有正文）——按钮要清掉默认外观 */
+.missing-row-go.as-button {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  background: var(--bg-primary, #fff);
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--accent-color);
+  cursor: pointer;
+}
+
+.missing-row-go.as-button:disabled { opacity: 0.6; cursor: default; }
 </style>

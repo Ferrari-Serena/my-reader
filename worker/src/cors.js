@@ -44,7 +44,8 @@ export function isAllowedOrigin(origin, env = {}) {
 export function corsFor(request, env = {}) {
   const origin = (request && request.headers && request.headers.get('Origin')) || ''
   const headers = {
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    // PUT/DELETE：第 16 步 BYO 书体（/api/sync/book）要用；预检答的是「允许的动词集合」
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     // X-CSRF-Token：CSRF 第二层的自定义头（见 authapi.js）。同源请求根本不走 CORS，
     // 这里放行只为「白名单内的跨源页面（本地开发 / 同站子域）也能发对请求」。
     'Access-Control-Allow-Headers': 'Content-Type, Range, X-CSRF-Token',

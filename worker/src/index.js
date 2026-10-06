@@ -11,6 +11,7 @@
  *   · BYO 别名 id → **需登录会话**，映射到归档音频（见 audioalias.js）
  * HEAD /api/audio/<bookId>/<file> → 同上但不回 body（上传校验脚本探活用）
  * POST/GET /api/auth/*  → 账号与会话（见 authapi.js）
+ * PUT/GET/DELETE /api/sync/book/<bookId> → 账号级 BYO 书体（书体走 R2，需有效会话；见 booksync.js）
  * GET /health           → { status: 'ok' }
  * GET /api/metrics      → 只读计数（第 4 步 4.8）；需 Authorization: Bearer <METRICS_TOKEN>，
  *                          未配置 secret 一律 404（见 monitor.js 与 handleMetrics）
@@ -19,6 +20,7 @@
  */
 
 import { handleSync } from './sync.js'
+import { handleBookSync } from './booksync.js'
 import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
 import { parseRange } from './range.js'
 import { audioRequestPlan } from './audioalias.js'
@@ -85,6 +87,11 @@ async function handleRequest(request, env, url) {
     // 同步端点分发（匹配 /api/sync/*）
     const syncRes = await handleSync(request, env)
     if (syncRes !== null) return syncRes
+
+    // BYO 书体分发（第 16 步 D14）：/api/sync/book/<bookId>
+    // OPTIONS 已在最上面答掉（预检落不到下面任何方法判定），且 path 里不含 code（由会话反推）
+    const bookRes = await handleBookSync(request, env)
+    if (bookRes !== null) return bookRes
 
     // 账号端点分发（匹配 /api/auth/*）
     const authRes = await handleAuth(request, env)

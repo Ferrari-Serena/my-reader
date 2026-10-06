@@ -161,3 +161,24 @@ export function recordFromBook(book) {
 export function canStart({ consent, file, busy } = {}) {
   return !!consent && !!file && !busy
 }
+
+/**
+ * 上云口径的文案（第 16 步块 2）。**中文口径**：登录 → 书体进自己的账号、别的设备能读；
+ * 未登录 → 只在本机、一个字都不上传。所以这些话**必须按登录态分叉** ——
+ * 行为改了话不改，就成了假的隐私承诺（用户是照着这句话点「导入」的）。
+ * 放纯模块里（而不是组件模板里）才有断言咬得住，与 errorText 同一套做法。
+ */
+export function importCopy(signedIn) {
+  if (signedIn) {
+    return {
+      lead: 'EPUB, PDF (with a text layer), or TXT. The file is read on this device and kept in your account, so your other signed-in devices can read it.',
+      deviceHint: 'Imported books are kept in your account, not just this device.',
+      outcomeHint: 'This book is in your account. Open My Books on another device you are signed in on to read it there too.'
+    }
+  }
+  return {
+    lead: 'EPUB, PDF (with a text layer), or TXT. The file is read on this device and never uploaded.',
+    deviceHint: 'Imported books stay on this device. Sign in to have them follow your account.',
+    outcomeHint: 'This book lives on this device only. There is no recorded audio \u2014 the player falls back to your browser\u2019s voice.'
+  }
+}
