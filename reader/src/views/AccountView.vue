@@ -4,24 +4,23 @@
     <!-- 认领提示走独立横幅：它是后台异步发生的，不该被表单流程的 notice 盖掉 -->
     <p v-if="auth.claimNotice.value" class="banner notice">{{ auth.claimNotice.value }}</p>
 
-    <!-- 4.4 同步可见：跨设备同步状态（与登录无关 —— 同步码在本机就有，登不登录都在跑） -->
+    <!-- 4.4 同步可见：跨设备同步状态。D16 起同步**跟着登录走** —— 同一个账号＝同一份数据，本机不再有同步码这回事；未登录就不同步。 -->
     <section class="card sync-card">
       <h2 class="card-title">Sync</h2>
-      <p v-if="sync.paired.value" class="line ok">
-        ✅ Paired · code <strong>{{ sync.code.value }}</strong>
+      <p v-if="auth.user.value" class="line ok">
+        ✅ Synced to <strong>{{ auth.user.value.email }}</strong>
       </p>
       <p v-else class="line">
-        Not paired on this device — set it up from the
-        <router-link to="/vocabulary">word list</router-link>.
+        Sign in below to sync your words, notes, books and progress across devices.
       </p>
       <p v-if="sync.lastSync.value" class="hint">Last sync: {{ sync.lastSync.value.toLocaleString() }}</p>
       <p v-if="sync.pending.value > 0" class="hint">
         Waiting to upload: <strong>{{ sync.pending.value }}</strong>
       </p>
-      <p v-else-if="sync.paired.value" class="hint">Everything is uploaded ✓</p>
+      <p v-else-if="auth.user.value" class="hint">All changes uploaded ✓</p>
       <p v-if="sync.error.value" class="error">{{ sync.error.value }}</p>
       <button
-        v-if="sync.paired.value" class="btn" :disabled="sync.pulling.value || sync.pushing.value"
+        v-if="auth.user.value" class="btn" :disabled="sync.pulling.value || sync.pushing.value"
         @click="sync.syncNow()"
       >{{ (sync.pulling.value || sync.pushing.value) ? 'Syncing…' : 'Sync now' }}</button>
     </section>

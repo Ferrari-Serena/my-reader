@@ -1,15 +1,18 @@
 /**
  * my-reader 跨设备数据同步端点
  *
- * POST /api/sync/create         → 生成 8 位随机同步码 { code, serverNow }
- * POST /api/sync/push           → body: { code,
- *                                          words: {word: entry}, tombstones: {word: ISO},          // 生词（kind='word'）
- *                                          records: [{kind,id,payload,updatedAt}],                 // 笔记/错题/卡片/设置
+ * ── 以下四条一律**会话反推租户码**（第 16.5 步 D16：客户端永不传码）──
+ *    租户 ＝ 会话账号的 users.sync_code。**未登录 401／账号还没认领主码 403／
+ *    URL 或 body 里出现 code → 400**（三档判定在 syncgate.js，与 /api/sync/book 同一套）。
+ * POST /api/sync/create         → **410 Gone（D16 退役）**：码不再由设备铸，
+ *                                 账号主码在首次登录认领时由 /api/auth/claim 铸出
+ * POST /api/sync/push           → body: { words: {word: entry}, tombstones: {word: ISO},   // 生词（kind='word'）
+ *                                          records: [{kind,id,payload,updatedAt}],          // 笔记/错题/卡片/设置/book
  *                                          recordTombstones: [{kind,id,deletedAt}] }
  *                                 条件 upsert（只有更新的时间戳才覆盖）→ { accepted, rejected, serverNow }
- * POST /api/sync/progress       → body: { code, entries: {key: {payload, updatedAt}} }
- * GET  /api/sync/pull?code=X[&since=ISO] → { words, tombstones, records, recordTombstones, progress, updatedAt, serverNow }
- * GET  /api/sync/status?code=X  → { ok, counts, tombstones, progress, lastActivity, serverNow }
+ * POST /api/sync/progress       → body: { entries: {key: {payload, updatedAt}} }
+ * GET  /api/sync/pull[?since=ISO]   → { words, tombstones, records, recordTombstones, progress, updatedAt, serverNow }
+ * GET  /api/sync/status         → { ok, counts, tombstones, progress, lastActivity, serverNow }
  *
  * 冲突策略：每个词一条时间轴，last-write-wins。
  *   存活行 deleted_at IS NULL，updated_at = entry.updatedAt || entry.addedAt
@@ -28,11 +31,14 @@
  */
 
 import { corsFor } from './cors.js'
+import { CODE_LEN, randCode, normalizeCode } from './code.js'
+import { sessionTenant } from './syncgate.js'
 
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // 去掉了容易混淆的 0/O/1/I
-export const CODE_LEN = 8
+// 同步码的格式与生成已搬到叶子模块 code.js（第 16.5 步 D16 剪环用）：
+// authapi 要用它们，而 authapi 又反过来被这里用 —— 放同一文件就成环。
+// 这里原样 re-export，保持本模块对外旧面不变（调用点一行不用改）。
+export { CODE_LEN, randCode, normalizeCode }
 
-const CODE_TTL_MS = 90 * 86400000 // 90 天无活动即废弃
 const CLOCK_SLACK_MS = 5 * 60 * 1000 // 容许 5 分钟的未来偏差
 const BATCH_CHUNK = 200 // D1 batch 分批，避免单次语句过多
 
@@ -115,12 +121,6 @@ export const SQL_TOMB_UPSERT = `INSERT INTO sync_data (code, word, kind, payload
      updated_at = excluded.updated_at,
      deleted_at = excluded.deleted_at
    WHERE excluded.updated_at > sync_data.updated_at`
-
-export function randCode() {
-  const buf = new Uint8Array(CODE_LEN)
-  crypto.getRandomValues(buf)
-  return Array.from(buf, n => CODE_CHARS[n % CODE_CHARS.length]).join('')
-}
 
 function jsonResponse(cors, data, status = 200, extra = {}) {
   return new Response(JSON.stringify(data), {
@@ -224,14 +224,6 @@ function mergeOp(ops, op) {
   if (!prev || op.ts > prev.ts) ops.set(op.key, op)
 }
 
-/** 同步码是否存在（以 __meta__ 哨兵行为准） */
-async function codeExists(env, code) {
-  const row = await env.DB
-    .prepare('SELECT 1 AS ok FROM sync_data WHERE code = ? AND word = ? LIMIT 1')
-    .bind(code, META).first()
-  return !!row
-}
-
 /** 无条件刷新哨兵行的 updated_at（活动心跳）。注意不能走条件 upsert */
 async function touchMeta(env, code, nowIso) {
   await env.DB.prepare(
@@ -241,42 +233,12 @@ async function touchMeta(env, code, nowIso) {
   ).bind(code, META, JSON.stringify({ created: nowIso }), nowIso).run()
 }
 
-/**
- * 最佳努力清理：90 天无活动的同步码 + 孤儿行。任何失败都不阻塞主流程。
- * 刻意「先查后删」而不是写成 DELETE ... WHERE code IN (子查询同表)：
- * 后者的求值时机在 SQLite 里有歧义，而这张表很小，多几次查询买确定性是划算的。
- * 孤儿 = 有普通行却没有哨兵行的 code——判据必须是「不在哨兵码集合里」，
- * 写成 word != '__meta__' 会把正常码也选中，等于清空全表。
- */
-async function runGc(env, nowMs) {
-  const cutoff = new Date(nowMs - CODE_TTL_MS).toISOString()
-  try {
-    const [staleRes, metaRes, dataRes, progRes] = await Promise.all([
-      env.DB.prepare('SELECT code FROM sync_data WHERE word = ? AND updated_at < ?')
-        .bind(META, cutoff).all(),
-      env.DB.prepare('SELECT DISTINCT code FROM sync_data WHERE word = ?').bind(META).all(),
-      env.DB.prepare('SELECT DISTINCT code FROM sync_data').all(),
-      env.DB.prepare('SELECT DISTINCT code FROM sync_progress').all(),
-    ])
+// ⚠️ 旧此处的「90 天无活动即清码」GC（runGc）随 D16 一并撤掉：它的触发点是
+// 「有人铸出新码」，而铸码已移到登录认领那一步；更要紧的是，码现在就是账号的云数据，
+// 按「码 90 天没动」去删等于**静默销毁休眠账号的数据**。「休眠账号的云数据要不要自动清」
+// 是产品裁量（§15.6 已挂账），在裁之前一律不删。清账号数据的正路仍是
+// authapi 的 purgeDeletedAccounts（注销 ＋ 冷静期到期）。
 
-    const live = new Set((metaRes.results || []).map(r => r.code))
-    const doomed = new Set((staleRes.results || []).map(r => r.code))
-    for (const r of dataRes.results || []) if (!live.has(r.code)) doomed.add(r.code)
-
-    for (const code of doomed) {
-      await env.DB.prepare('DELETE FROM sync_data WHERE code = ?').bind(code).run()
-      await env.DB.prepare('DELETE FROM sync_progress WHERE code = ?').bind(code).run()
-    }
-    // sync_progress 里可能还有完全不在 sync_data 中的码
-    for (const r of progRes.results || []) {
-      if (!live.has(r.code) && !doomed.has(r.code)) {
-        await env.DB.prepare('DELETE FROM sync_progress WHERE code = ?').bind(r.code).run()
-      }
-    }
-  } catch (e) {
-    console.error('sync gc error:', e.message)
-  }
-}
 
 /** 分批执行并统计「收下 / 拒收（时间戳不占优）」 */
 async function runBatch(env, stmts) {
@@ -308,33 +270,26 @@ export async function handleSync(request, env) {
     return new Response(null, { status: 204, headers: cors })
   }
 
-  // POST /api/sync/create
+  // POST /api/sync/create —— **已退役（D16，410 Gone）**
+  // 码不再由设备铸：账号的主码在**首次登录认领**时由 /api/auth/claim 铸出
+  // （本机码非空则改名搬行、为空则新铸）。留着这个端点等于留一条「谁都能占一行码」的
+  // 未认证入口，还会把「换设备还要码」的旧心智放回来。
   if (request.method === 'POST' && url.pathname === '/api/sync/create') {
-    const nowMs = Date.now()
-    const now = new Date(nowMs).toISOString()
-    // 随机码可能撞上已存在的码（32^8 ≈ 1.1e12，概率极低但不是零）。撞上时
-    // INSERT OR IGNORE 会静默「成功」并把**别人的**码发出去，两个陌生人的生词本就此配对。
-    // 所以以 changes 为准重试，直到真的占到一行。
-    let code = ''
-    let claimed = false
-    for (let i = 0; i < 5 && !claimed; i++) {
-      code = randCode()
-      const res = await env.DB.prepare(
-        'INSERT OR IGNORE INTO sync_data (code, word, payload, updated_at, deleted_at) VALUES (?, ?, ?, ?, NULL)'
-      ).bind(code, META, JSON.stringify({ created: now }), now).run()
-      claimed = !!res?.meta?.changes
-    }
-    if (!claimed) return json({ error: 'could not allocate code' }, 503)
-    await runGc(env, nowMs)
-    return json({ code, serverNow: now })
+    return json({ error: 'gone', reason: 'sync codes are managed by your account' }, 410)
   }
 
   // POST /api/sync/push
   if (request.method === 'POST' && url.pathname === '/api/sync/push') {
+    // 会话闸（D16）：租户码只由会话反推 —— 未登录 401／没认领主码 403／URL 带码 400
+    const g = await sessionTenant(request, env, url)
+    if (!g.acct) return json({ error: g.error }, g.status)
+    const code = g.acct.code
     let body
     try { body = await request.json() } catch { return json({ error: 'invalid json' }, 400) }
-    const { code, words, tombstones, records, recordTombstones } = body || {}
-    if (!code || typeof code !== 'string') return json({ error: 'missing code' }, 400)
+    const { words, tombstones, records, recordTombstones } = body || {}
+    // 码不该出现在请求里（D16）：出现即契约违规 —— 刻意不忽略，
+    // 免得「前端还在带码」这种错悄悄活下来（租户只由会话决定）
+    if (body && body.code !== undefined) return json({ error: 'code must not be in body' }, 400)
     if (words !== undefined && (typeof words !== 'object' || words === null)) {
       return json({ error: 'invalid words' }, 400)
     }
@@ -347,11 +302,6 @@ export async function handleSync(request, env) {
     if (recordTombstones !== undefined && !Array.isArray(recordTombstones)) {
       return json({ error: 'invalid recordTombstones' }, 400)
     }
-    // 未知码拒收：否则这是个公开端点，任何人可以灌进永远不会被 GC 的孤儿行
-    if (!(await codeExists(env, code))) {
-      return json({ error: 'unknown code', serverNow: new Date().toISOString() }, 404)
-    }
-
     const nowMs = Date.now()
     const serverNow = new Date(nowMs).toISOString()
 
@@ -386,14 +336,15 @@ export async function handleSync(request, env) {
 
   // POST /api/sync/progress
   if (request.method === 'POST' && url.pathname === '/api/sync/progress') {
+    // 会话闸（D16）：同上 —— 码由会话反推，请求里不许出现
+    const g = await sessionTenant(request, env, url)
+    if (!g.acct) return json({ error: g.error }, g.status)
+    const code = g.acct.code
     let body
     try { body = await request.json() } catch { return json({ error: 'invalid json' }, 400) }
-    const { code, entries } = body || {}
-    if (!code || typeof code !== 'string') return json({ error: 'missing code' }, 400)
+    const { entries } = body || {}
+    if (body && body.code !== undefined) return json({ error: 'code must not be in body' }, 400)
     if (!entries || typeof entries !== 'object') return json({ error: 'missing entries' }, 400)
-    if (!(await codeExists(env, code))) {
-      return json({ error: 'unknown code', serverNow: new Date().toISOString() }, 404)
-    }
 
     const nowMs = Date.now()
     const serverNow = new Date(nowMs).toISOString()
@@ -426,15 +377,11 @@ export async function handleSync(request, env) {
     return json({ ...counts, serverNow })
   }
 
-  // GET /api/sync/pull?code=X
+  // GET /api/sync/pull —— 租户由会话反推（D16：URL 里不许出现 code）
   if (request.method === 'GET' && url.pathname === '/api/sync/pull') {
-    const code = (url.searchParams.get('code') || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-    if (!code || code.length !== CODE_LEN) {
-      return json({ error: 'invalid code' }, 400)
-    }
-    if (!(await codeExists(env, code))) {
-      return json({ error: 'unknown code', serverNow: new Date().toISOString() }, 404)
-    }
+    const g = await sessionTenant(request, env, url)
+    if (!g.acct) return json({ error: g.error }, g.status)
+    const code = g.acct.code
 
     // 增量（第 3 步 3.6）：给了合法 since 就只回比它新的行；没给 / 不合法 → 全量（旧客户端不变）
     const sinceTs = normSince(url.searchParams.get('since'), Date.now())
@@ -499,17 +446,16 @@ export async function handleSync(request, env) {
     }
   }
 
-  // GET /api/sync/status?code=X —— 该码各 kind 的条数与最后活动时刻（第 3 步 3.6）
+  // GET /api/sync/status —— 账号各 kind 的条数与最后活动时刻（第 3 步 3.6；D16 改会话反推）
   if (request.method === 'GET' && url.pathname === '/api/sync/status') {
-    const code = (url.searchParams.get('code') || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-    if (!code || code.length !== CODE_LEN) {
-      return json({ error: 'invalid code' }, 400)
-    }
+    const g = await sessionTenant(request, env, url)
+    if (!g.acct) return json({ error: g.error }, g.status)
+    const code = g.acct.code
     try {
+      // 哨兵行可能还没有（账号刚认领、一次都没推过）—— 那不是错误，如实回 0 行即可
       const meta = await env.DB
         .prepare('SELECT updated_at FROM sync_data WHERE code = ? AND word = ? LIMIT 1')
         .bind(code, META).first()
-      if (!meta) return json({ error: 'unknown code', serverNow: new Date().toISOString() }, 404)
 
       const [{ results }, prog] = await Promise.all([
         env.DB.prepare(
@@ -531,7 +477,7 @@ export async function handleSync(request, env) {
       return json({
         ok: true, code, counts, tombstones,
         progress: prog ? prog.n : 0,
-        lastActivity: meta.updated_at || null,
+        lastActivity: (meta && meta.updated_at) || null,
         serverNow: new Date().toISOString(),
       })
     } catch (e) {

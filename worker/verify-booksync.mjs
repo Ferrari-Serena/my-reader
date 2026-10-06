@@ -109,7 +109,8 @@ async function newEnv() {
   // 滚动窗口已过的会话（expires_at 在过去）
   db.prepare(insertSession).run(await tokenHash('tok-stale'), USER_A, NOW - 90 * 86400000, NOW - 90 * 86400000, NOW - 86400000)
 
-  // 记录通道认码靠 __meta__ 哨兵行（同 sync.js 的 codeExists）
+  // 记录通道的哨兵行（D16 起不再用于「认码」——push/pull 一律 touchMeta 自带创建；
+  // 这里留着是给 /api/sync/status 的 lastActivity 与 metrics 的 syncCodes 用）
   db.prepare(`INSERT INTO sync_data (code, word, payload, updated_at, deleted_at)
      VALUES (?, '__meta__', '{"created":"x"}', ?, NULL)`).run(CODE_A, new Date(NOW).toISOString())
 
@@ -351,8 +352,8 @@ console.log("\n[sync.js — kind='book' 真 SQL 往返（push → pull → statu
   const { env } = await newEnv()
   const T = new Date(NOW).toISOString()
   const push = await handleSync(req('POST', '/api/sync/push', {
+    cookie: TOKEN_A,
     body: JSON.stringify({
-      code: CODE_A,
       records: [{
         kind: 'book', id: BID, updatedAt: T,
         payload: {
@@ -365,7 +366,7 @@ console.log("\n[sync.js — kind='book' 真 SQL 往返（push → pull → statu
   const pushJson = await push.json()
   t('push 收下 1 条', push.status === 200 && pushJson.accepted === 1)
 
-  const pull = await handleSync(req('GET', '/api/sync/pull?code=' + CODE_A), env)
+  const pull = await handleSync(req('GET', '/api/sync/pull', { cookie: TOKEN_A }), env)
   const pj = await pull.json()
   t('pull 回在 records 数组里（kind=book、id=指纹）',
     pj.records.length === 1 && pj.records[0].kind === 'book' && pj.records[0].id === BID)
@@ -373,8 +374,65 @@ console.log("\n[sync.js — kind='book' 真 SQL 往返（push → pull → statu
     pj.records[0].payload.chapters === undefined && pj.records[0].payload.coverUrl === undefined)
   t('pull 不把它混进 words 通道', Object.keys(pj.words).length === 0)
 
-  const status = await (await handleSync(req('GET', '/api/sync/status?code=' + CODE_A), env)).json()
+  const status = await (await handleSync(req('GET', '/api/sync/status', { cookie: TOKEN_A }), env)).json()
   t('status 的 counts 多了 book 这一格', status.counts.book === 1)
+}
+
+console.log('\n[第 16.5 步 D16 — 同步通道：租户只由会话反推（客户端永不传码）]')
+{
+  const { db, env } = await newEnv()
+  const T = new Date(NOW).toISOString()
+  const body = o => JSON.stringify(o)
+
+  // ── 401：没会话（含只持 8 位码的未登录设备）──
+  t('push 无会话 -> 401', (await handleSync(req('POST', '/api/sync/push', { body: body({ words: {} }) }), env)).status === 401)
+  t('pull 无会话 -> 401', (await handleSync(req('GET', '/api/sync/pull'), env)).status === 401)
+  t('status 无会话 -> 401', (await handleSync(req('GET', '/api/sync/status'), env)).status === 401)
+  t('滚动窗口已过的死会话 -> 401', (await handleSync(req('GET', '/api/sync/pull', { cookie: 'tok-stale' }), env)).status === 401)
+  t('已注销账号的会话 -> 401', (await handleSync(req('GET', '/api/sync/pull', { cookie: 'tok-deleted' }), env)).status === 401)
+
+  // ── 400：码不许出现在 URL / body（带自己的主码也一样）──
+  t('URL 带 code（哪怕自己账号的主码）-> 400',
+    (await handleSync(req('GET', '/api/sync/pull?code=' + CODE_A, { cookie: TOKEN_A }), env)).status === 400)
+  t('status URL 带 code -> 400',
+    (await handleSync(req('GET', '/api/sync/status?code=' + CODE_A, { cookie: TOKEN_A }), env)).status === 400)
+  t('push body 里带 code -> 400',
+    (await handleSync(req('POST', '/api/sync/push', { cookie: TOKEN_A, body: body({ code: CODE_A, words: {} }) }), env)).status === 400)
+  t('401 排在 400 前面：未登录 + 带码 -> 401（先问「你是谁」）',
+    (await handleSync(req('GET', '/api/sync/pull?code=' + CODE_A), env)).status === 401)
+
+  // ── 403：有会话，但账号还没认领主码 ──
+  t('账号还没认领主码 -> 403（不是 401、也不是 404）',
+    (await handleSync(req('GET', '/api/sync/pull', { cookie: 'tok-nocode' }), env)).status === 403)
+  t('push 同样 403', (await handleSync(req('POST', '/api/sync/push', { cookie: 'tok-nocode', body: body({ words: {} }) }), env)).status === 403)
+
+  // ── /create 退役 ──
+  const gone = await handleSync(req('POST', '/api/sync/create'), env)
+  t('/create -> 410 Gone（码不再由设备铸）', gone.status === 410 && (await gone.json()).error === 'gone')
+
+  // ── 带上会话就正常，而且**落进会话账号自己的分区**（客户端一个字都没提码）──
+  const p = await handleSync(req('POST', '/api/sync/push', {
+    cookie: TOKEN_A, body: body({ words: { alpha: { word: 'alpha', updatedAt: T } } }),
+  }), env)
+  t('带会话 push -> 200', p.status === 200 && (await p.json()).accepted === 1)
+  t('落进会话账号的主码（不是客户端能指定的任何码）',
+    db.prepare('SELECT code FROM sync_data WHERE word = ?').get('alpha').code === CODE_A)
+
+  const pb = await handleSync(req('POST', '/api/sync/push', {
+    cookie: TOKEN_B, body: body({ words: { beta: { word: 'beta', updatedAt: T } } }),
+  }), env)
+  t('换 B 的会话 -> 写进 B 的分区（隔离由会话定）',
+    pb.status === 200 && db.prepare('SELECT code FROM sync_data WHERE word = ?').get('beta').code === CODE_B)
+
+  const pa = await (await handleSync(req('GET', '/api/sync/pull', { cookie: TOKEN_A }), env)).json()
+  t('A 拉不到 B 的词（同一个 URL、不同会话）', ('beta' in pa.words) === false && ('alpha' in pa.words) === true)
+
+  // ── 刚认领、一次都没推过的账号：status 不是 404，如实回 0 行 + lastActivity null ──
+  //    （要一口**干净**环境：上面 B 已经推过一次、哨兵行已由 touchMeta 建出来了）──
+  const fresh = await newEnv()
+  const zero = await (await handleSync(req('GET', '/api/sync/status', { cookie: TOKEN_B }), fresh.env)).json()
+  t('status 对「还没活动过」的账号回 0 行而不是 404',
+    zero.ok === true && zero.lastActivity === null && zero.counts.word === 0)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

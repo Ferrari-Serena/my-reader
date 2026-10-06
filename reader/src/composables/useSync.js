@@ -1,7 +1,8 @@
 /**
  * 跨设备数据同步单例（module-level reactive，仿 useVocabulary）。
  *
- * 同步码存储在 localStorage key 'reader-sync-code'。
+ * 租户码缓存在 localStorage key 'reader-sync-code'（D16 起**只是离线缓存** —— 客户端不再传码：
+ * push／pull／progress 的租户一律由服务端按会话反推 `users.sync_code`；未登录 401、账号没主码 403）。
  * 所有网络操作异步、超时 8s、失败静默——离线/弱网不影响本地使用。
  *
  * 冲突策略与服务端 worker/src/sync.js 对齐：每个词一条时间轴，last-write-wins。
@@ -23,11 +24,10 @@ import { budgetKeepaliveParts } from '../sync/budget.js'
 import { nextRetryDelay, RETRY_BASE_MS } from '../sync/retry.js'
 import { planRecordMerge, splitRecordKey } from '../sync/records.js'
 import * as recordStore from '../sync/recordStore.js'
+import { loadPendingPublish } from '../sync/bookSync.js'
 
 const SYNC_BASE = '/api/sync'
 const SYNC_CODE_KEY = 'reader-sync-code'
-/** 换租户键时，旧码挪到这里（不删）—— 万一要人工回退，用户还能把它抄回来重新配对 */
-const SYNC_CODE_STASH_KEY = 'reader-sync-code-previous'
 const CODE_LEN = 8
 const TIMEOUT = 8000
 const PUSH_DEBOUNCE_MS = 1500 // 尾随防抖：答题连点不再是一次一推
@@ -35,7 +35,7 @@ const KEEPALIVE_RETRY_MS = 1500 // keepalive 载荷被裁后的补发间隔
 
 const state = reactive({
   code: '',        // 当前同步码（从 localStorage 恢复）
-  paired: false,   // 是否已与远程配对（成功拉取/推送过一次）
+  paired: false,   // 是否已与账号同步过（成功拉取/推送过一次）
   pushing: false,
   pulling: false,
   lastSync: null,  // Date
@@ -84,8 +84,10 @@ async function storage() {
 
 /**
  * 重算「待上传」条数（M2 · 4.4 同步可见）。
- * 三个来源：脏词（生词/评分/答题改了还没推）、脏记录（四类记录通道）、删除台账
- * （本机删了、还没被服务端确认）。全是**读盘**、不是响应式状态，所以由
+ * 四个来源：脏词（生词/评分/答题改了还没推）、脏记录（五类记录通道 —— **含 BYO 书的元信息**）、
+ * 删除台账（本机删了、还没被服务端确认）、**书体上传台账**（第 16.5 步块 4：正文 8 MB 走的是
+ * 另一条路，PUT 失败/当时没登录的那几本记在 `reader-books-to-publish`，原来不计，
+ * 于是「Everything is uploaded ✓」会在书没上去时撒谎）。全是**读盘**、不是响应式状态，所以由
  * vocab.dirtyRevision 的 watcher ＋ 每次推送/拉取结束显式触发重算。
  */
 async function refreshPending() {
@@ -99,7 +101,8 @@ async function refreshPending() {
   const words = vocab.pendingDirty().filter(k => vocab.words.value[k]).length
   const recDirty = recordStore.loadRecordDirty().filter(k => recordStore.loadRecordsMap()[k]).length
   const recTombs = Object.keys(recordStore.loadRecordTombstones()).length
-  state.pending = words + recDirty + tombs + recTombs
+  const books = loadPendingPublish().length
+  state.pending = words + recDirty + tombs + recTombs + books
 }
 
 /** fire-and-forget 版：UI 计数不值得让调用方等它 */
@@ -185,7 +188,7 @@ function mergeRecords(remoteRecords, remoteTombstones) {
   return plan
 }
 
-/** 把所有本地记录整体标脏（新建同步码 / 配对 / 换租户键时用，与 vocab.markAllDirty 对称） */
+/** 把所有本地记录整体标脏（登录认领 / 换租户缓存时用，与 vocab.markAllDirty 对称） */
 function markAllRecordsDirty() {
   const keys = Object.keys(recordStore.loadRecordsMap())
   if (keys.length) recordStore.markRecordDirty(keys)
@@ -196,7 +199,7 @@ async function pullOnce() {
   if (!state.code) return false
   state.pulling = true
   try {
-    const data = await apiFetch(`/pull?code=${state.code}`)
+    const data = await apiFetch('/pull')
     if (!data) return false
     const vocab = useVocabulary()
     await vocab.init()
@@ -215,11 +218,11 @@ async function pullOnce() {
     if (plan.repush.length || rplan.repush.length) pushSoon()
     return true
   } catch (e) {
-    if (e.status === 404) {
-      state.error = '同步码已失效，请重新配对'
-      state.paired = false
-    }
-    return false // 其余静默——离线/弱网时本地数据不受影响
+    // D16（第 16.5 步）：租户改由会话反推 —— 401（没会话）/403（账号还没认领主码）都只是
+    // 「登录还没就位」的一瞬，按**安静重试**处理：不写 state.error、不弹红字；脏集合留在盘上，
+    // 登录认领（sync/tenant.js）或下一次冷启动自愈。
+    // 服务端不再按「未知码」回 404（会话路径上哨兵行自带创建），原 404 分支随 D16 撤掉。
+    return false
   } finally {
     state.pulling = false
   }
@@ -285,7 +288,7 @@ async function pushNow(options = {}) {
     let pushTombs = tombstones
     let pushProgress = progress
     if (options.keepalive) {
-      const b = budgetKeepaliveParts({ code: state.code, words, tombstones, progress })
+      const b = budgetKeepaliveParts({ words, tombstones, progress })
       pushWords = b.words
       pushTombs = b.tombstones
       pushProgress = b.progress
@@ -302,7 +305,7 @@ async function pushNow(options = {}) {
     const hasRecords = pushRecords.length || pushRecordTombs.length
 
     if (hasWords || hasRecords) {
-      const body = { code: state.code, words: pushWords, tombstones: pushTombs }
+      const body = { words: pushWords, tombstones: pushTombs }
       if (pushRecords.length) body.records = pushRecords
       if (pushRecordTombs.length) body.recordTombstones = pushRecordTombs
       const res = await apiFetch('/push', {
@@ -347,7 +350,7 @@ async function pushNow(options = {}) {
       await apiFetch('/progress', {
         method: 'POST',
         keepalive: !!options.keepalive,
-        body: JSON.stringify({ code: state.code, entries: pushProgress })
+        body: JSON.stringify({ entries: pushProgress })
       })
       state.lastSync = new Date()
     }
@@ -356,10 +359,9 @@ async function pushNow(options = {}) {
     // 词表已推成功、只是进度那一步失败时 doneKeys 已设好，finally 正常落账即可——
     // 把时间戳平等的词再推一遍会被服务端一律拒收，把 rejected 计数污染成假信号
     // （它本该只表示「本地版本旧了」）。
-    if (e.status === 404) {
-      state.error = '同步码已失效，请重新配对'
-      state.paired = false
-    } else if (state.code) {
+    // D16：401（没会话）/403（账号还没认领主码）＝「登录还没就位」，落进下面的有界退避
+    // **安静重试**，不当错误（不写 state.error）。服务端不再按未知码回 404，404 分支已撤。
+    if (state.code) {
       // 4.5 离线队列：网络/5xx 失败不是终点 —— 排一次**有界退避**重试。
       // 已知离线（navigator.onLine === false）时只等 'online' 事件，不空转定时器。
       if (!(typeof navigator !== 'undefined' && navigator.onLine === false)) {
@@ -411,78 +413,15 @@ function flushNow() {
   pushNow({ keepalive: true })
 }
 
-async function createCode() {
-  state.error = ''
-  try {
-    const data = await apiFetch('/create', { method: 'POST' })
-    state.code = data.code
-    try { localStorage.setItem(SYNC_CODE_KEY, data.code) } catch { /* quota */ }
-    // 新码下本机数据全是「远程没有的」，整体标脏推一次，别的设备配对时才有东西可拉
-    const vocab = useVocabulary()
-    await vocab.init()
-    vocab.markAllDirty()
-    markAllRecordsDirty()
-    scheduleRefreshPending()
-    pushSoon(0)
-    return data.code
-  } catch (e) {
-    state.error = '创建同步码失败，请检查网络'
-    return ''
-  }
-}
-
-async function pairCode(code) {
-  state.error = ''
-  const clean = (code + '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
-  if (clean.length < 8) {
-    state.error = '同步码应为 8 位字母数字'
-    return false
-  }
-  // 拉取一次以校验码有效 + 获取已有数据。
-  // 校验必须靠 HTTP 状态：未知码现在服务端回 404，
-  // 以前回的是 200 + 空词表，于是打错一个字母会「配对成功」到一个幽灵码。
-  try {
-    const data = await apiFetch(`/pull?code=${clean}`)
-    if (!data) { state.error = '同步码无效'; return false }
-    state.code = clean
-    try { localStorage.setItem(SYNC_CODE_KEY, clean) } catch { /* quota */ }
-    const vocab = useVocabulary()
-    await vocab.init()
-    await mergeAndApply(vocab, data.words || {}, data.tombstones || {})
-    if (applyRemoteProgress(data.progress || {}).length) state.progressRev++
-    state.paired = true
-    state.lastSync = new Date()
-    // 本机已有的生词也要推到这个码上。它们从没被标脏过（标脏只发生在变异时），
-    // 不推的话「配对」只是一次单向下载：A 的生词到了 B，B 的生词永远上不去。
-    // 时间戳输的那批会被服务端拒收 → 触发一次重新拉取 → 收敛。
-    vocab.markAllDirty()
-    markAllRecordsDirty()
-    scheduleRefreshPending()
-    pushSoon(0)
-    return true
-  } catch (e) {
-    if (e.status === 404) {
-      state.error = '同步码不存在，请核对后重试'
-      return false
-    }
-    state.error = '无法连接到服务器，检查网络后重试'
-    return false
-  }
-}
-
-/** 清除配对（换同步码或放弃同步） */
-function unpair() {
-  state.code = ''
-  state.paired = false
-  state.lastSync = null
-  state.error = ''
-  state.rejected = 0
-  try { localStorage.removeItem(SYNC_CODE_KEY) } catch { /* ignore */ }
-  scheduleRefreshPending()
-}
+/**
+ * 第 16.5 步 D16：`createCode`（铸码）／`pairCode`（输码配对）／`unpair`（解绑）**整体退场** ——
+ * 同步码不再由设备铸、也不再是用户手里的配对凭据（配对凭据退场，分区键改由服务端读
+ * `users.sync_code`）。铸码现在只发生在**首次登录认领**（`/api/auth/claim`，见 worker 的
+ * `handleClaim`），本机对应动作是下面的 `adoptCode`。停止同步 ＝ 登出账号，不再需要解绑。
+ */
 
 /**
- * 页面启动时自动拉取一次（已有配对码的情况下）。
+ * 页面启动时自动拉取一次（本机已有缓存租户码的情况下）。
  * 失败必须重置标志——原来在 fetch 之前就把标志置了真且失败不重置，
  * 一次离线冷启动会让整场会话都不同步。
  */
@@ -519,25 +458,24 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * 换租户键（登录认领 / 接管后由 sync/tenant.js 调）。
+ * 把本机缓存的租户码对齐到账号主码（登录认领 / 接管后由 sync/tenant.js 调）。
  *
- * 三件事，顺序有讲究：
- *   1) 旧键挪到备份位（**不删**）—— 服务端那边旧码可能已经作废（认领是改名），
- *      但万一要人工回退，用户还能把这串码抄回来重新配对。
- *   2) 换键 ＋ 本机词表整体标脏：本机生词是**一份全局词表**（不按码分家），
+ * D16 起本机这份码**只是缓存**（权威在服务端的 `users.sync_code`，客户端永不传码）。
+ * 两件事，顺序有讲究：
+ *   1) 换缓存 ＋ 本机词表整体标脏：本机生词是**一份全局词表**（不按码分家），
  *      换键后它在服务端属于「新码下还没有的」。不标脏就不会被推上去，
  *      账号那边也就永远看不到这台机器上攒的内容。
- *   3) 先拉后推（与 pullOnce/pushNow 既有姿态一致）：先把新键已有的内容合并进来，
+ *   2) 先拉后推（与 pullOnce/pushNow 既有姿态一致）：先把新键已有的内容合并进来，
  *      再让本机内容按时间戳去竞争，避免本机旧值把账号里的新值盖掉。
+ *
+ * 不再留「旧码备份位」（`reader-sync-code-previous`）：那是给「人工输码回退」准备的，
+ * 而配对凭据已随 D16 整体退场 —— 留着只是一串再也用不上的码。
  */
-async function adoptCode(rawCode, { stash = true } = {}) {
+async function adoptCode(rawCode) {
   const clean = (rawCode + '').toUpperCase().replace(/[^A-Z0-9]/g, '')
   if (clean.length !== CODE_LEN) return false
   if (clean === state.code) return true
 
-  if (stash && state.code) {
-    try { localStorage.setItem(SYNC_CODE_STASH_KEY, state.code) } catch { /* quota */ }
-  }
   state.code = clean
   state.paired = false
   state.rejected = 0
@@ -557,7 +495,7 @@ async function adoptCode(rawCode, { stash = true } = {}) {
 }
 
 export function useSync() {
-  // 首次调用时触发自动拉取（页面启动 + 已有配对码）
+  // 首次调用时触发自动拉取（页面启动 + 已有缓存租户码）
   autoPullOnce()
   return {
     code: computed(() => state.code),
@@ -573,14 +511,11 @@ export function useSync() {
     conflicts: computed(() => state.conflicts),
     refreshPending,
     clearConflicts,
-    createCode,
-    pairCode,
     adoptCode,
     syncNow,
     push: pushNow,
     pushSoon,
     flushNow,
-    pull: pullOnce,
-    unpair
+    pull: pullOnce
   }
 }

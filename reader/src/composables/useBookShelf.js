@@ -14,6 +14,7 @@ import { computed, ref, watch } from 'vue'
 import { columnsOf, sortByAddedAtDesc } from '../utils/bookShelf.js'
 import { bookStore } from '../storage/index.js'
 import { loadRecordTombstones, loadRecordsMap } from '../sync/recordStore.js'
+import { loadRetiredBooks } from '../sync/bookRetire.js'
 import {
   bookSyncState, cloudBookMetas, downloadCloudBook, planPrefetch, reconcileBooksInBackground,
   removeByoBookEverywhere
@@ -79,7 +80,8 @@ export function useBookShelf({ indexUrl, store = bookStore, auth = null } = {}) 
   function loadCloud(localIds) {
     if (!authRef.user.value) return []
     const metas = cloudBookMetas(loadRecordsMap(), loadRecordTombstones())
-    return sortByAddedAtDesc(planPrefetch(metas, localIds))
+    // 退役名单上的书不再自动列进「待接入」/ 不再自动预取（删过的不许回来）；显式导入 / 下载不受影响
+    return sortByAddedAtDesc(planPrefetch(metas, localIds, loadRetiredBooks()))
   }
 
   async function refresh() {

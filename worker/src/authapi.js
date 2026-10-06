@@ -33,7 +33,7 @@
 
 import { corsFor, isAllowedOrigin } from './cors.js'
 import { clientIp } from './ratelimit.js'
-import { CODE_LEN, randCode } from './sync.js'
+import { CODE_LEN, randCode, normalizeCode } from './code.js'
 import { sendMail, siteUrl, verifyEmailContent, resetEmailContent } from './send.js'
 import {
   SESSION_COOKIE, SESSION_ROLLING_MS, SESSION_ABSOLUTE_MS, VERIFY_TOKEN_MS, RESET_TOKEN_MS,
@@ -458,13 +458,6 @@ export const SQL_SYNC_DATA_RENAME = `UPDATE sync_data SET code = ? WHERE code = 
 export const SQL_SYNC_PROGRESS_RENAME = `UPDATE sync_progress SET code = ? WHERE code = ?`
 export const SQL_CODE_IN_DATA = `SELECT 1 AS ok FROM sync_data WHERE code = ? LIMIT 1`
 export const SQL_CODE_IN_PROGRESS = `SELECT 1 AS ok FROM sync_progress WHERE code = ? LIMIT 1`
-
-/** 洗同步码：只留大写字母数字，长度不对就当「没码」（返回空串） */
-function normalizeCode(raw) {
-  if (typeof raw !== 'string') return ''
-  const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, '')
-  return clean.length === CODE_LEN ? clean : ''
-}
 
 /** 这个码在服务端有没有行（两张表都看）—— 用于避开重名/冲突 */
 async function codeInUse(env, code) {

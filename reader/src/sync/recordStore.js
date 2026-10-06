@@ -12,10 +12,25 @@
  */
 
 import { recordKey, splitRecordKey, sanitizeRecord, newRecordId, recordTime } from './records.js'
+import { isBookId } from '../utils/bookId.js'
+import { markBookRetired, clearBookRetired } from './bookRetire.js'
 
 const KEY = 'reader-records-v1'
 const TOMB_KEY = 'reader-records-tombstones'
 const DIRTY_KEY = 'reader-records-dirty'
+
+/**
+ * 一条不变式（第 16.5 步块 4）：对本机的 BYO 书，
+ * **「记录表里有 book:<id>」⇔「退役名单里没有它」**。
+ *   记录消失 = 这本被删了（本机删 / 应用远程墓碑）-> 永久记上，别让「补发」把它拉活；
+ *   记录出现 = 这本又有了（重新导入 / 别处重新建）-> 划掉。
+ * 只有 kind==='book' 且 id 是 bk_ 指纹才碰 —— 公开书 slug 与其余四类记录都不进名单。
+ */
+function syncBookRetire(kind, id, present) {
+  if (kind !== 'book' || !isBookId(id)) return
+  if (present) clearBookRetired(id)
+  else markBookRetired(id)
+}
 
 function readMap(key) {
   try {
@@ -126,6 +141,7 @@ export function addRecords(items) {
     tombChanged = tombChanged || r.changed
     records[key] = clean
     applied[key] = clean
+    syncBookRetire(it.kind, it.id, true)
   }
   if (Object.keys(applied).length) writeMap(KEY, records)
   if (tombChanged) writeMap(TOMB_KEY, tombs)
@@ -163,6 +179,7 @@ export function removeRecord(kind, id, { record = true, dirty = true } = {}) {
     writeMap(TOMB_KEY, tombs)
   }
   if (dirty) markRecordDirty([key])
+  syncBookRetire(kind, id, false)
 }
 
 /** 批量删除（同上，逐键语义一致） */

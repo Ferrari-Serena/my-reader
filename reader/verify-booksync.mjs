@@ -2,12 +2,15 @@
  * 第 16 步块 2 验证 —— BYO 书体上云的**前端一半**（纯逻辑 ＋ 打桩，不触网、不碰浏览器）。
  *   sync/records.js   — kind='book' 认不认（交接坑：ID_PREFIX 就是判据）、元信息白名单、计数归一
  *   sync/bookSync.js  — 租户一致性闸 / 书体原文 / 元信息载荷 / PUT / 发布编排
+ *   sync/bookRetire.js ＋ recordStore.js — 第 16.5 步块 4：永久退役名单（防「删了又活」）
  * 用法: node verify-booksync.mjs
  *
- * ⚠️ 这一段里带 🔴 的两条是**故意的注入故障自检点**（项目日志记了实测读数）：
- * 把 records.js 的 `ID_PREFIX.book` 或 `FIELDS.book` 拆掉，它们必红。只跑正常输入的闸
- * 是装饰 —— 这里真的会咬自己。（拆 FIELDS.book 时 sanitizeRecord 是**抛**不是回 null，
- * 所以下面走 trySanitize 兜住两种失败形态，红法不同、红是必然。）
+ * ⚠️ 这一段里带 🔴 的几条是**故意的注入故障自检点**（项目日志记了实测读数）：
+ *   · 把 records.js 的 `ID_PREFIX.book` 或 `FIELDS.book` 拆掉，上面那两条必红。只跑正常输入
+ *     的闸是装饰 —— 这里真的会咬自己。（拆 FIELDS.book 时 sanitizeRecord 是**抛**不是回 null，
+ *     所以下面走 trySanitize 兜住两种失败形态，红法不同、红是必然。）
+ *   · 块 4 的 🔴 是两处：① recordStore 里 book 记录一消失就记入退役名单；② planLocalPublish /
+ *     planPrefetch 把退役名单里的 id 滤掉（拆掉 `!gone.has(...)`，补发／预取那几条必红）。
  */
 
 // ── localStorage 打桩（必须在 import 业务模块之前，与 verify-sync.mjs 同一套） ──
@@ -23,6 +26,7 @@ globalThis.localStorage = {
 const R = await import('./src/sync/records.js')
 const B = await import('./src/sync/bookSync.js')
 const RS = await import('./src/sync/recordStore.js')
+const BR = await import('./src/sync/bookRetire.js')
 
 let pass = 0, fail = 0
 function t(name, cond) {
@@ -401,6 +405,7 @@ console.log('\n[第 16 步块 4 — 删一本自带书：本机先删、云端�
     [Object.keys(RS.loadRecordsMap()), Object.keys(RS.loadRecordTombstones())], [[], ['book:' + ID]])
   t('本机这条标了脏（下一次推送带上墓碑）', RS.loadRecordDirty().includes('book:' + ID))
   tEq('「待发布」台账也划掉了（别把删掉的书又发回账号）', B.loadPendingPublish(), [])
+  t('🔴 删书顺带记入永久退役名单（对账补发时跳过它）', BR.isBookRetired(ID))
   tEq('删完本机正文真的没了（IndexedDB 那半被调到）', deletedLocal.length, 1)
 
   // 云端删不掉（弱网 / 5xx）：本机照样删干净，如实回报 cloud:false —— 不假装成功
@@ -430,6 +435,85 @@ console.log('\n[第 16 步块 4 — 删一本自带书：本机先删、云端�
   tEq('公开书 slug -> 拒删（bad-id）', [r.ok, r.reason], [false, 'bad-id'])
   tEq('拒删时本机没动、下游也没被调', [Object.keys(RS.loadRecordsMap()).length, touchedLocal], [before, 0])
   store.clear()
+}
+console.log('\n[第 16.5 步块 4 — 永久退役名单：读写与形状]')
+{
+  store.clear()
+  tEq('初始为空', BR.loadRetiredBooks(), [])
+  BR.markBookRetired(ID)
+  tEq('记上一本', BR.loadRetiredBooks(), [ID])
+  BR.markBookRetired(ID)
+  tEq('同一本重复记 -> 去重（不会越攒越多）', BR.loadRetiredBooks(), [ID])
+  t('isBookRetired 认得出', BR.isBookRetired(ID))
+  t('没记过的认不出来', !BR.isBookRetired('bk_ffffffffffffffff'))
+  BR.clearBookRetired(ID)
+  tEq('划掉 -> 空表，键都不留（不留空数组垃圾）',
+    [BR.loadRetiredBooks(), store.has('reader-books-retired')], [[], false])
+  BR.clearBookRetired('bk_ffffffffffffffff')
+  t('划掉一个没记过的 -> 不报错、仍为空', BR.loadRetiredBooks().length === 0)
+  BR.markBookRetired('the-giver')
+  tEq('公开书 slug 不进名单', BR.loadRetiredBooks(), [])
+  BR.markBookRetired('bk_0123456789ABCDEF')
+  tEq('大写 hex 不进名单（指纹一律小写）', BR.loadRetiredBooks(), [])
+  store.set('reader-books-retired', '{ not json')
+  tEq('表坏了 -> 退回空（不抛）', BR.loadRetiredBooks(), [])
+  store.set('reader-books-retired', JSON.stringify([ID, ID, 'the-giver', 42, null, 'bk_ffffffffffffffff']))
+  tEq('坏表：去重 ＋ 滤掉非指纹', BR.loadRetiredBooks().slice().sort(), [ID, 'bk_ffffffffffffffff'].sort())
+  store.clear()
+}
+
+console.log('\n[第 16.5 步块 4 — 记录表 ↔ 退役名单：一条不变式]')
+{
+  const rec = sampleRecord()
+  store.clear()
+  RS.putRecord('book', B.bookMetaPayload(rec), { id: ID })
+  t('写入 book 记录 -> 不在退役名单里', !BR.isBookRetired(ID))
+  RS.removeRecord('book', ID)
+  t('🔴 本机删书（记录消失）-> 自动记入退役名单', BR.isBookRetired(ID))
+  RS.putRecord('book', B.bookMetaPayload(rec), { id: ID })
+  t('重新写入（重新导入）-> 划掉', !BR.isBookRetired(ID))
+  RS.removeRecords(['book:' + ID], { record: false, dirty: false })
+  t('🔴 应用远程墓碑（record:false）-> 同样记入', BR.isBookRetired(ID))
+  const n = RS.putRecord('note', { text: 'x' })
+  RS.removeRecord('note', n.id)
+  tEq('别的 kind 删了不进名单', BR.loadRetiredBooks(), [ID])
+  RS.removeRecord('book', 'the-giver')
+  tEq('公开书 slug 删了不进名单', BR.loadRetiredBooks(), [ID])
+  store.clear()
+}
+
+console.log('\n[第 16.5 步块 4 — 补发判据 planLocalPublish：防「删了又活」]')
+{
+  const OLD = 'bk_aaaaaaaaaaaaaaaa'          // 「功能上线前导入」的那本
+  const META = { ['book:' + ID]: { schema_version: 1 } }
+  const TOMB = { ['book:' + ID]: '2026-01-01T00:00:00.000Z' }
+
+  tEq('本机有、账号没有（上线前导入）-> 补发', B.planLocalPublish({ localIds: [OLD] }), [OLD])
+  tEq('账号已有 meta -> 不补发', B.planLocalPublish({ localIds: [ID], recordsMap: META }), [])
+  tEq('本机删了还没推出去（有墓碑）-> 不补发', B.planLocalPublish({ localIds: [ID], tombstones: TOMB }), [])
+  tEq('🔴 退役名单上的 -> 不补发（删了不许活）', B.planLocalPublish({ localIds: [OLD], retired: [OLD] }), [])
+  tEq('台账欠着的 -> 补发（本机书架上有没有都不影响）', B.planLocalPublish({ pending: [ID] }), [ID])
+  tEq('台账与扫本机是同一本 -> 只发一次（并集去重）', B.planLocalPublish({ localIds: [OLD], pending: [OLD] }), [OLD])
+  tEq('🔴 台账与退役冲突 -> 退役赢（不许复活）', B.planLocalPublish({ pending: [OLD], retired: [OLD] }), [])
+  tEq('内置书 slug 混进来 -> 不发', B.planLocalPublish({ localIds: ['the-giver', OLD] }), [OLD])
+  tEq('空输入 -> 空（不抛）', B.planLocalPublish(), [])
+}
+
+console.log('\n[第 16.5 步块 4 — 预取 / 列「待接入」跳过退役]')
+{
+  const OTHER = 'bk_ffffffffffffffff'
+  const metas = [B.bookMetaPayload(sampleRecord()), B.bookMetaPayload(sampleRecord({ bookId: OTHER }))]
+  tEq('本机没有、也没退役 -> 都拉', B.planPrefetch(metas, [], []).map(m => m.bookId).sort(), [ID, OTHER].sort())
+  tEq('🔴 退役名单上的不拉', B.planPrefetch(metas, [], [ID]).map(m => m.bookId), [OTHER])
+  tEq('没传退役参数（老调用）-> 行为不变', B.planPrefetch(metas, []).length, 2)
+
+  const getBody = async (id) => ({ ok: true, status: 200, record: sampleRecord({ bookId: id }) })
+  const saved = []
+  const r = await B.prefetchCloudBooks({
+    metas, localIds: [], retired: [ID],
+    getBody, save: async (rec) => { saved.push(rec.bookId) }
+  })
+  tEq('prefetchCloudBooks 也跳过退役的那本', [r.saved, saved], [[OTHER], [OTHER]])
 }
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

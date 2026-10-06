@@ -26,7 +26,7 @@
  */
 
 import { corsFor } from './cors.js'
-import { sessionUserId, SQL_USER_BY_ID } from './authapi.js'
+import { sessionTenant } from './syncgate.js'
 import { recordKey, SQL_TOMB_UPSERT } from './sync.js'
 
 export const ROUTE_PREFIX = '/api/sync/book/'
@@ -49,33 +49,15 @@ function json(cors, data, status = 200, extra = {}) {
   })
 }
 
-/** 会话 → { userId, code }；无有效会话（或账号已注销）返回 null。code 可能是 ''＝未认领主码 */
-async function sessionAccount(request, env) {
-  const userId = await sessionUserId(request, env)
-  if (!userId) return null
-  const user = await env.DB.prepare(SQL_USER_BY_ID).bind(userId).first()
-  if (!user || user.deleted_at) return null
-  return { userId, code: String(user.sync_code || '') }
-}
-
 /**
- * 会话闸（D14-b）。放行 → 返回 { acct }；不放行 → 返回 { res }（立刻发出去）。
- * **租户码只由会话决定**（`users.sync_code`）：无会话 → 401；有会话但账号还没
- * 认领主码（查不出租户）→ 403。
- *
- * ⚠️ **URL 里严禁 code**（Ferrari 2026-10-06 裁）：8 位码进 URL 会漏进日志 /
- * Referer / 分享链接，而这里根本用不着它 —— 出现即**契约违规 → 400**。
- * 刻意**不忽略**：忽略会让「前端还在带码」这种错悄悄活下来，租户更不该被 URL
- * 参数牵着走。（`url` 参数保留：契约判定就发生在这，读的也只是「有没有」）
+ * 会话闸（D14-b / D16）：**判定只有一份**（`syncgate.js`），这里只负责把判定
+ * 成形成本路由的响应 —— 401 无会话／403 账号还没认领主码／400 URL 带码，
+ * 见 `syncgate.js` 里那段顺序说明。
  */
 async function gate(request, env, cors, url) {
-  const acct = await sessionAccount(request, env)
-  if (!acct) return { res: json(cors, { error: 'unauthenticated' }, 401) }
-  if (!acct.code) return { res: json(cors, { error: 'account has no sync code' }, 403) }
-  if (url.searchParams.has('code')) {
-    return { res: json(cors, { error: 'code must not be in url' }, 400) }
-  }
-  return { acct }
+  const g = await sessionTenant(request, env, url)
+  if (!g.acct) return { res: json(cors, { error: g.error }, g.status) }
+  return { acct: g.acct }
 }
 
 /**

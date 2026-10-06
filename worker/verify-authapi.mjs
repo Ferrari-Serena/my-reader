@@ -560,9 +560,16 @@ console.log('\n[authapi — 端到章：游客码认领（D 块）]')
   t('数据原样在新码下（META ＋ alpha）', rowsUnder(b1.code) === 2)
   t('进度也跟着搬了', progsUnder(b1.code) === 1)
   // pull 属于 /api/sync/*，走 handleSync（handleAuth 只接 /api/auth/*，不匹配就回 null）
-  t('用旧码 pull -> 404', (await handleSync(req('/api/sync/pull?code=' + G1), env)).status === 404)
-  t('用新码 pull -> 200（且能读到搬过去的词）', await (async () => {
-    const r = await handleSync(req('/api/sync/pull?code=' + b1.code), env)
+  // D16：租户由会话反推 —— 未登录 401；URL 里出现 code 一律 400（旧码新码一视同仁）
+  t('无会话 pull -> 401（D16：必须登录才能同步）',
+    (await handleSync(req('/api/sync/pull'), env)).status === 401)
+  t('URL 带码（旧码 / 新码都一样）-> 400',
+    (await handleSync(req('/api/sync/pull?code=' + G1, { cookie: A.cookie }), env)).status === 400
+    && (await handleSync(req('/api/sync/pull?code=' + b1.code, { cookie: A.cookie }), env)).status === 400)
+  t('未登录 + 带码 -> 401（闸先问「你是谁」，再看 URL 契约）',
+    (await handleSync(req('/api/sync/pull?code=' + G1), env)).status === 401)
+  t('带会话 pull -> 200（且能读到搬过去的词）', await (async () => {
+    const r = await handleSync(req('/api/sync/pull', { cookie: A.cookie }), env)
     if (r.status !== 200) return false
     const j = await r.json()
     return 'alpha' in (j.words || {})
@@ -706,8 +713,13 @@ console.log('\n[authapi — 接线：index.js 真的会把它接上]')
   t('无 cookie 的 /api/auth/me -> 401（说明真分到了 auth）', r1.status === 401)
   const r2 = await worker.fetch(at('/api/auth/nope'), env)
   t('未知 auth 路径 -> 404 JSON（没掉进兜底 HTML）', r2.status === 404 && /json/.test(r2.headers.get('Content-Type') || ''))
-  const r3 = await worker.fetch(at('/api/sync/pull?code=ZZZZZZZZ'), env)
-  t('老路由没被抢：/api/sync/* 仍走 sync.js', r3.headers.get('Content-Type') !== null && r3.status !== 401)
+  // D16 起 /api/sync 不再认 URL 里的码，用「/create 已退役 → 410」当路标最干净
+  const r3 = await worker.fetch(at('/api/sync/create', { method: 'POST' }), env)
+  t('老路由没被抢：/api/sync/* 仍走 sync.js（/create 退役 -> 410）',
+    r3.status === 410 && (await r3.json()).error === 'gone')
+  const r3b = await worker.fetch(at('/api/sync/pull'), env)
+  t('无会话 pull 由 sync.js 自己回 401（JSON，不是兜底 HTML）',
+    r3b.status === 401 && /json/.test(r3b.headers.get('Content-Type') || ''))
   const r4 = await worker.fetch(at('/api/auth/me', { method: 'PUT' }), env)
   t('非 GET/POST 的写方法 -> 404（不是「只要不是 GET 就当写」）', r4.status === 404)
   const r5 = await worker.fetch(at('/api/auth/logout', {

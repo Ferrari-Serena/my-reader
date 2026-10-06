@@ -8,7 +8,7 @@
         <div v-if="menuOpen" class="menu-dropdown" @click.stop>
           <button class="menu-item" @click="doExportBackup">⬇ Export Backup</button>
           <button class="menu-item" @click="fileInput?.click(); menuOpen = false">⬆ Import Backup</button>
-          <button class="menu-item" @click="showSyncPanel = true; menuOpen = false">↻ Sync Devices</button>
+          <button class="menu-item" @click="showSyncPanel = true; menuOpen = false">↻ Sync</button>
           <button class="menu-item danger" @click="doClearAll">Clear all</button>
         </div>
       </div>
@@ -21,11 +21,11 @@
         <div v-if="showSyncPanel" class="popup-overlay" @click.self="showSyncPanel = false">
           <div class="popup-card sync-panel">
             <div class="popup-header">
-              <h3>↻ Sync Devices</h3>
+              <h3>↻ Sync</h3>
               <button class="popup-close" @click="showSyncPanel = false">✕</button>
             </div>
             <div v-if="sync.paired.value" class="sync-status">
-              <p>✅ Paired · code: <strong>{{ sync.code.value }}</strong></p>
+              <p>✅ Synced to your account</p>
               <p class="sync-hint" v-if="sync.lastSync.value">
                 Last sync: {{ sync.lastSync.value.toLocaleString() }}
               </p>
@@ -33,7 +33,7 @@
               <p class="sync-hint" v-if="sync.pending.value > 0">
                 Waiting to upload: <strong>{{ sync.pending.value }}</strong>
               </p>
-              <p v-else class="sync-hint">Everything is uploaded ✓</p>
+              <p v-else class="sync-hint">All changes uploaded ✓</p>
               <p class="sync-hint warn" v-if="sync.rejected.value > 0">
                 {{ sync.rejected.value }} change(s) here were older than another device's — the newer copy won.
               </p>
@@ -42,7 +42,6 @@
               <button class="action-btn primary" @click="sync.syncNow(); showSyncPanel = false" :disabled="sync.pulling.value || sync.pushing.value">
                 {{ (sync.pulling.value || sync.pushing.value) ? 'Syncing...' : 'Sync Now' }}
               </button>
-              <button class="action-btn" @click="sync.unpair()">Unpair</button>
               <details v-if="sync.conflicts.value.length" class="sync-conflicts">
                 <summary>Recent sync events ({{ sync.conflicts.value.length }})</summary>
                 <ul class="sync-conflict-list">
@@ -53,18 +52,8 @@
             </div>
             <div v-else>
               <div class="sync-section">
-                <p class="sync-label">Create a sync code on this device:</p>
-                <button class="action-btn primary" @click="doCreateSync">Create Code</button>
-                <p v-if="sync.code.value" class="sync-code-big">{{ sync.code.value }}</p>
-                <p class="sync-hint" v-if="sync.code.value">Enter this code on your other device to pair.</p>
-              </div>
-              <hr class="sync-divider">
-              <div class="sync-section">
-                <p class="sync-label">Or enter a code from another device:</p>
-                <div class="sync-input-row">
-                  <input v-model="pairInput" class="sync-code-input" maxlength="8" placeholder="ABCD1234" autocapitalize="characters" />
-                  <button class="action-btn primary" @click="doPair" :disabled="pairInput.length < 8">Pair</button>
-                </div>
+                <p class="sync-label">Sign in to sync your words, notes and books across devices.</p>
+                <p class="sync-hint">Open the Account tab to sign in — no sync code needed.</p>
               </div>
               <p v-if="sync.error.value" class="sync-error">{{ sync.error.value }}</p>
             </div>
@@ -178,7 +167,6 @@ vocab.init()
 
 const sync = useSync()
 const showSyncPanel = ref(false)
-const pairInput = ref('')
 
 // 4.4 同步可见：把事件账本里的一条翻成一句人话
 const CONFLICT_TEXT = {
@@ -193,13 +181,6 @@ function conflictText(c) {
   return at ? `${at} — ${what}` : what
 }
 
-async function doCreateSync() {
-  await sync.createCode()
-}
-async function doPair() {
-  const ok = await sync.pairCode(pairInput.value)
-  if (ok) { pairInput.value = ''; showSyncPanel.value = false }
-}
 
 // ---- controls state ----
 

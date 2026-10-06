@@ -13,6 +13,8 @@
  * 块 3 加的是另外两半（见文件尾）：**账号 → 本机**（登录后自动预取整本，D14-a）与
  * **本机 → 账号**（把还没上云的书用台账补发）。
  * 块 4 加删除（D14-c「删书同步删云端」）：本机记录＋台账＋正文先删，云端对象尽力删。
+ * 第 16.5 步块 4（D16-b）再把补发升级成**对账扫本机书**（功能上线前导入的书唯一的补登记
+ * 路径），并加**永久退役名单**（bookRetire.js）—— 删过的书不许被补发或预取拉活。
  *
  * 为什么是独立 fetch（不走 useSync 的 apiFetch）：书体最大 8 MB，而 /api/sync 那条
  * keepalive 路径的预算是 64 KiB —— 一裁就整条丢。上传也不带 `keepalive`。
@@ -22,6 +24,7 @@ import { reactive } from 'vue'
 import { putRecord, removeRecord, loadRecordsMap, loadRecordTombstones } from './recordStore.js'
 import { splitRecordKey } from './records.js'
 import { nowIso } from './clock.js'
+import { loadRetiredBooks, clearBookRetired } from './bookRetire.js'
 
 export const BOOK_ROUTE = '/api/sync/book/'
 /** 书体可达 8 MB，同步通道那档 8 s 不够用 */
@@ -135,6 +138,9 @@ export async function publishByoBook(record, {
 } = {}) {
   const meta = bookMetaPayload(record)
   if (!meta) return { ok: false, reason: 'bad-record' }
+  // 有意上云 ＝ 撤销退役（第 16.5 步块 4）：重新导入同一本要能回来。放在租户闸之前 ——
+  // 离线重新导入也得先撤销，否则这笔永远卡在退役名单里发不出去（台账会记着，下次登录补）。
+  clearBookRetired(meta.bookId)
   if (!tenantReady({ accountCode, localCode })) {
     markPendingPublish(meta.bookId) // 还没登录 / 认领没跑完 -> 记着，登录后自动补
     return { ok: false, reason: 'tenant-not-ready' }
@@ -204,10 +210,37 @@ export function cloudBookMetas(recordsMap, tombstones) {
   return out
 }
 
-/** 这台设备还没有的云书（纯函数）：本机已有的不再拉 */
-export function planPrefetch(metas, localIds) {
+/**
+ * 本机 -> 账号：这一趟该补发哪几本（纯函数，专门钉住「删了又活」）。
+ * 候选取**并集**（同一本只发一次）：
+ *   · 台账里欠着的（导入时没登录 / 那次上传失败 —— 一次明确的「我要这本」）；
+ *   · 本机书架上有、账号没有的（无 meta、也无墓碑）—— 这是**功能上线前导入的书**唯一的
+ *     补登记路径（那时还没有台账这回事）。
+ * 再减掉退役名单：删过的书不许因为「本机还有正文」被重新推上去。
+ */
+export function planLocalPublish({ localIds, recordsMap, tombstones, pending, retired } = {}) {
+  const recs = recordsMap || {}
+  const tombs = tombstones || {}
+  const gone = new Set((retired || []).filter(isByoBookId))
+  const out = new Set()
+  for (const id of pending || []) if (isByoBookId(id)) out.add(id)
+  for (const id of localIds || []) {
+    if (!isByoBookId(id)) continue
+    if (recs['book:' + id] || tombs['book:' + id]) continue // 账号已有 / 本机删了还没推出去
+    out.add(id)
+  }
+  return [...out].filter((id) => !gone.has(id))
+}
+
+/**
+ * 这台设备还没有的云书（纯函数）：本机已有的不再拉，**退役名单上的也不拉**
+ * （删过的书不许被自动预取拉回来 —— 第 16.5 步块 4；显式点「下载」那条路不受影响）。
+ */
+export function planPrefetch(metas, localIds, retired) {
   const have = new Set(localIds || [])
-  return (metas || []).filter((m) => m && isByoBookId(m.bookId) && !have.has(m.bookId))
+  const gone = new Set((retired || []).filter(isByoBookId))
+  return (metas || []).filter((m) => m && isByoBookId(m.bookId)
+    && !have.has(m.bookId) && !gone.has(m.bookId))
 }
 
 /** GET 书体。恒不抛；不是一整本的也算失败（宁可下次再拉，不落半本） */
@@ -238,9 +271,9 @@ export async function fetchBookBody(bookId, {
  * 把账号里有、这台设备没有的书体拉下来落盘。逐本独立 —— 一本拉不动不影响别的
  * （§12.6：会话过期 → 静默，下次登录补）。
  */
-export async function prefetchCloudBooks({ metas, localIds, getBody = fetchBookBody, save, onSaved } = {}) {
+export async function prefetchCloudBooks({ metas, localIds, retired, getBody = fetchBookBody, save, onSaved } = {}) {
   const saved = [], failed = []
-  for (const meta of planPrefetch(metas, localIds)) {
+  for (const meta of planPrefetch(metas, localIds, retired)) {
     const r = await getBody(meta.bookId)
     if (!r.ok || !r.record) { failed.push(meta.bookId); continue }
     try {
@@ -268,11 +301,12 @@ export async function downloadCloudBook(bookId, { getBody = fetchBookBody, save 
 let _reconciling = false
 
 /**
- * 登录 / 打开书架时对账一次，**两个方向都走**：
- *   ① 账号 → 本机：预取整本（D14-a「登录后自动后台预取」）；
- *   ② 本机 → 账号：把**还没上云**的书补登记 —— 判据是「记录通道里没有 `book:<id>` 这条
- *      元信息」（当初导入时没登录，或那次上传失败）。上传成功一定会留下 meta，所以这一步
- *      天然幂等，**不会**每次登录把整本重传一遍。
+ * 登录 / 打开书架时对账一次，**三个方向都走**：
+ *   ② 本机 → 账号：补发 —— 台账欠着的 ∪ 本机有、账号没有的（功能上线前导入的书），
+ *      减退役名单（判据见 planLocalPublish）。上传成功一定会留下 meta，所以天然幂等，
+ *      **不会**每次登录把整本重传一遍；
+ *   ① 账号 → 本机：预取整本（D14-a「登录后自动后台预取」），退役名单上的不拉；
+ *   ③ 收尾：墓碑/退役名单上的书，再删一次云端对象（幂等，补「删书那次 R2 没删掉」的残留）。
  * **不 await、不抛、同时只跑一趟**；失败静默（书体同步是附加动作，不该卡住登录或书架）。
  */
 export function reconcileBooksInBackground() {
@@ -294,11 +328,19 @@ export function reconcileBooksInBackground() {
       const accountCode = user.syncCode
       const localCode = sync.code.value
 
-      // ② 本机 → 账号：只补发**明确欠着**的那几本（导入时没登录 / 那次上传失败）。
-      //    判据是上面那张「待发布」台账，不是「记录通道里没有 meta」—— 后者会把
-      //    「已经删掉的书」又发回账号（删除只留墓碑、不留 meta），删了又活。
+      const localIds = (await listByoBooks()).map((m) => m.id)
+
+      // ② 本机 → 账号：补发。候选 = 台账欠着的 ∪ 本机有、账号没有的（功能上线前导入的书），
+      //    减退役名单（删过的书不许复活）。判据见 planLocalPublish —— 单看「记录通道里没有
+      //    meta」不够：删除只留墓碑、不留 meta，那会把已删的书又发回账号（删了又活）。
       let published = 0
-      for (const bookId of loadPendingPublish()) {
+      for (const bookId of planLocalPublish({
+        localIds,
+        recordsMap: loadRecordsMap(),
+        tombstones: loadRecordTombstones(),
+        pending: loadPendingPublish(),
+        retired: loadRetiredBooks()
+      })) {
         const record = await loadBook(bookId)
         if (!record) { clearPendingPublish(bookId); continue } // 本机也没了 -> 台账清掉
         const r = await publishByoBook(record, { accountCode, localCode })
@@ -306,24 +348,28 @@ export function reconcileBooksInBackground() {
       }
       if (published) sync.pushSoon()
 
-      // ① 账号 → 本机：用刚刷新过的两张表（上面那批 meta 刚写进去）
+      // ① 账号 → 本机：用刚刷新过的两张表（上面那批 meta 刚写进去）；退役名单上的不拉
       const metas = cloudBookMetas(loadRecordsMap(), loadRecordTombstones())
-      const localIds = (await listByoBooks()).map((m) => m.id)
       const r = await prefetchCloudBooks({
         metas,
         localIds,
+        retired: loadRetiredBooks(),
         save: (rec) => saveBook(rec),
         onSaved: () => { bookSyncState.revision++ }
       })
       bookSyncState.failed = r.failed.length
 
-      // ③ 收尾：本机台账里还留着墓碑的书，再删一次云端对象（幂等）。覆盖「上次删的时候
-      //    离线、或 R2 打了个嗝」—— 那些正文会变成账号目录里看不见的残留。台账推成功后
-      //    会被清掉，所以这不是每次登录都白跑。
+      // ③ 收尾：墓碑上的书 ＋ 退役名单上的书，再删一次云端对象（幂等）。覆盖「上次删的时候
+      //    离线、或 R2 打了个嗝」—— 那些正文会变成账号目录里看不见的残留；墓碑推成功后会被
+      //    清掉，所以只靠墓碑会漏掉残留，退役名单这条正是补它（D14-c 的收尾）。
+      //    本地记录表里还有 meta 的（别处重新建回来了）跳过：宁可留着数据，不删别人刚建的书。
+      const recsNow = loadRecordsMap()
+      const wipe = new Set(loadRetiredBooks().filter((id) => !recsNow['book:' + id]))
       for (const key of Object.keys(loadRecordTombstones())) {
         const sp = splitRecordKey(key)
-        if (sp && sp.kind === 'book' && isByoBookId(sp.id)) await deleteCloudBookBody(sp.id)
+        if (sp && sp.kind === 'book' && isByoBookId(sp.id)) wipe.add(sp.id)
       }
+      for (const id of wipe) await deleteCloudBookBody(id)
     } catch { /* 对账失败不影响本机阅读：下次登录 / 下次开书架再来 */ } finally {
       _reconciling = false
       bookSyncState.prefetching = false
@@ -354,7 +400,9 @@ export async function deleteCloudBookBody(bookId, {
 /**
  * 删一本自带书（第 16 步块 4 / D14-c「删书同步删云端」）。顺序有讲究：
  *   ① **本机先删**（确定性）：记录通道里的 meta ＋ 删除台账（离线也要能收敛 —— 台账会由
- *      下一次推送变成服务端墓碑，别的设备拉到来就跟着丢）+「待发布」台账划掉；
+ *      下一次推送变成服务端墓碑，别的设备拉到来就跟着丢）+「待发布」台账划掉。meta 一消失
+ *      就自动记入**永久退役名单**（第 16.5 步块 4，见 recordStore 那条不变式）—— 对账补发
+ *      时跳过它，删掉的书不会因为「本机还剩正文」被重新推回账号；
  *   ② 本机正文与书架索引（IndexedDB）；
  *   ③ 云端对象**尽力**删（失败不假装成功：`cloud:false` 如实回报 —— 残留最多 8 MB，
  *      看不见也读不到，账号那边已经没有这本书了）。

@@ -345,12 +345,10 @@ console.log('\n[mergeAndApply — 批量落盘（一次写，不是每条一次�
 console.log('\n[budget.js — keepalive 64 KiB 预算]')
 {
   const { KEEPALIVE_BODY_LIMIT, utf8Bytes, budgetKeepaliveParts } = await import('./src/sync/budget.js')
-  const code = 'ABCD2345'
-  const bytesOf = (b) => utf8Bytes(JSON.stringify({ code, words: b.words, tombstones: b.tombstones }))
-    + utf8Bytes(JSON.stringify({ code, entries: b.progress }))
+  const bytesOf = (b) => utf8Bytes(JSON.stringify({ words: b.words, tombstones: b.tombstones }))
+    + utf8Bytes(JSON.stringify({ entries: b.progress }))
 
   const small = budgetKeepaliveParts({
-    code,
     words: { go: { word: 'go', updatedAt: T1, snapshot: { definitions: ['x'] } } },
     tombstones: { gone: T2 },
     progress: { 'reading:b1': { payload: { chapterId: 'ch-001', updatedAt: T2 }, updatedAt: T2 } }
@@ -363,7 +361,7 @@ console.log('\n[budget.js — keepalive 64 KiB 预算]')
   for (let i = 0; i < 400; i++) {
     words['w' + i] = { word: 'w' + i, updatedAt: new Date(Date.parse(T0) + i * 1000).toISOString(), snapshot: { definitions: ['x'.repeat(400)] } }
   }
-  const big = budgetKeepaliveParts({ code, words, tombstones: { t1: T1, t2: T2 }, progress: {} })
+  const big = budgetKeepaliveParts({ words, tombstones: { t1: T1, t2: T2 }, progress: {} })
   const bigTotal = bytesOf(big)
   t('超预算时总字节数不超上限', bigTotal <= KEEPALIVE_BODY_LIMIT, bigTotal + ' bytes')
   t('确实裁掉了词', big.droppedWords.length > 0, 'dropped ' + big.droppedWords.length)
@@ -375,14 +373,14 @@ console.log('\n[budget.js — keepalive 64 KiB 预算]')
     const ts = new Date(Date.parse(T0) + i * 1000).toISOString()
     progress['reading:b' + i] = { payload: { chapterId: 'ch-001', paragraphIndex: 0, pad: 'y'.repeat(100), updatedAt: ts }, updatedAt: ts }
   }
-  const mixed = budgetKeepaliveParts({ code, words: { go: words.w0 }, tombstones: { t1: T1 }, progress })
+  const mixed = budgetKeepaliveParts({ words: { go: words.w0 }, tombstones: { t1: T1 }, progress })
   const mixedTotal = bytesOf(mixed)
   t('进度重的场景也不超上限', mixedTotal <= KEEPALIVE_BODY_LIMIT, mixedTotal + ' bytes')
   t('自愈的进度被裁（下次重推）', Object.keys(mixed.progress).length < 800)
   t('被裁后仍保留最新的进度', 'reading:b799' in mixed.progress && !('reading:b0' in mixed.progress))
   t('词与墓碑在预算内完整保留', 'go' in mixed.words && mixed.tombstones.t1 === T1)
 
-  const tiny = budgetKeepaliveParts({ code, words: { a: words.w0, b: words.w1 }, tombstones: {}, progress: {} }, 120)
+  const tiny = budgetKeepaliveParts({ words: { a: words.w0, b: words.w1 }, tombstones: {}, progress: {} }, 120)
   t('预算连信封都装不下时全部裁掉，不抛错',
     tiny.droppedWords.length === 2 && Object.keys(tiny.words).length === 0 && bytesOf(tiny) <= 120)
 }
@@ -546,7 +544,7 @@ console.log('\n[第 3 步 — 登录 ↔ 数据：租户键对账判据（纯函
   t('账号有主码、本机没码 -> adopt（这就是「换新设备登录」）', tenantAction({ accountCode: 'AAAAAAAA', localCode: '' }) === 'adopt')
 }
 
-console.log('\n[第 3 步 — adoptCode：换租户键的三件事]')
+console.log('\n[第 3 步 — adoptCode：把本机缓存租户码对齐到账号主码]')
 {
   const realFetch = globalThis.fetch
   const calls = []
@@ -580,11 +578,12 @@ console.log('\n[第 3 步 — adoptCode：换租户键的三件事]')
   t('adoptCode 成功', ok === true)
   t('① 键换成新码', sync.code.value === 'NEWCODE2')
   t('① 新码落盘（刷新后还认得）', store.get('reader-sync-code') === 'NEWCODE2')
-  t('② 旧码挪到备份位、没被删', store.get('reader-sync-code-previous') === 'OLDCODE1')
-  t('③ 先拉一次新键', calls.some(c => c.url.includes('/pull?code=NEWCODE2')))
+  t('② 不再留旧码备份位（配对凭据已随 D16 退场）', !store.has('reader-sync-code-previous'))
+  t('③ 先拉一次（D16：不带码，租户由会话反推）',
+    calls.some(c => c.url.includes('/pull')) && calls.every(c => !c.url.includes('code=')))
   await tick(60)
   const push = calls.find(c => c.url.includes('/push'))
-  t('③ 随后把本机词整体推给新键', !!push && push.body && push.body.code === 'NEWCODE2')
+  t('③ 随后把本机词整体推给新键（body 不含 code）', !!push && !!push.body && !('code' in push.body))
   t('推的里面真有本机原有的那个词', !!push && !!push.body && 'gamma' in push.body.words)
 
   // 形状不对的码：不动任何东西
@@ -742,7 +741,7 @@ console.log('\n[第 3 步 — 记录通道端到端：useSync push/pull（fetch 
   const { useSync } = await import('./src/composables/useSync.js?sim=RECORDS')
   const sync = useSync()
 
-  await sync.pairCode('RECCODE1')
+  await sync.adoptCode('RECCODE1')
   await tick(30)
   calls.length = 0
 
@@ -814,7 +813,7 @@ console.log('\n[第 4 步 M2 — 同步可见：待上传数 + 事件账本（fe
   const rs = await import('./src/sync/recordStore.js')
   const { useSync } = await import('./src/composables/useSync.js?sim=M2')
   const sync = useSync()
-  await sync.pairCode('M2CODE01')
+  await sync.adoptCode('M2CODE01')
   await tick(30)
 
   sync.clearConflicts()
@@ -843,6 +842,18 @@ console.log('\n[第 4 步 M2 — 同步可见：待上传数 + 事件账本（fe
   t('被服务端拒收 → 账本记 rejected', sync.conflicts.value.some(c => c.kind === 'rejected'))
   t('事件账本已持久化到盘上', String(store.get('reader-sync-conflicts') || '').includes('rejected'))
   t('账本只留最近 20 条', sync.conflicts.value.length <= 20)
+
+  // 第 16.5 步块 4：书体上传台账也算进「待上传」（原来只算脏词＋脏记录＋墓碑 —— 书体那一半漏了）
+  const B = await import('./src/sync/bookSync.js')
+  store.delete('reader-books-to-publish')
+  await sync.refreshPending()
+  const base2 = sync.pending.value
+  B.markPendingPublish('bk_0123456789abcdef')
+  await sync.refreshPending()
+  t('书体欠着一本 → 待上传 +1（改前这句会漏掉书）', sync.pending.value === base2 + 1)
+  B.clearPendingPublish('bk_0123456789abcdef')
+  await sync.refreshPending()
+  t('台账划掉 → 回到基线', sync.pending.value === base2)
 
   globalThis.fetch = realFetch
   for (const k of keys) store.delete(k)
@@ -1025,6 +1036,43 @@ console.log('\n[第 9 步 — useNotes：首次使用即对齐盘上现状（拉
     n2.count() === 1 && n2.all()[0].bookId === 'bk_race')
   for (const n of n2.all()) n2.remove(n.id)
   t('收尾：清干净', n2.count() === 0)
+}
+
+console.log('\n[第 16.5 步 D16 — 前端去码：发出去的请求里绝不带 code]')
+{
+  const realFetch = globalThis.fetch
+  const calls = []
+  const jsonRes = (obj) => ({ ok: true, status: 200, json: async () => obj })
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url)
+    calls.push({ url: u, body: opts.body ? JSON.parse(opts.body) : null })
+    if (u.includes('/pull')) return jsonRes({ words: {}, tombstones: {}, progress: {}, records: [], recordTombstones: [] })
+    if (u.includes('/push')) return jsonRes({ accepted: 0, rejected: 0 })
+    return jsonRes({})
+  }
+  const tick = (ms) => new Promise(r => setTimeout(r, ms))
+  store.delete('reader-sync-code')
+  store.set('reader-sync-code', 'D16CODE1')
+
+  const rs = await import('./src/sync/recordStore.js')
+  const { useSync } = await import('./src/composables/useSync.js?sim=D16')
+  const sync = useSync()
+  await tick(40)                       // 冷启动自动 pull
+  rs.putRecord('note', { text: 'd16' }) // 造一条脏记录，逼出一次 push
+  await sync.syncNow()                 // 拉 + 推
+
+  const urls = calls.map(c => c.url)
+  t('确实发过 pull 与 push（不是空转）',
+    urls.some(u => u.includes('/pull')) && urls.some(u => u.includes('/push')))
+  t('🔴 没有任何 URL 带 code=（租户由服务端按会话反推）', urls.every(u => !u.includes('code=')))
+  t('🔴 没有任何请求体带 code', calls.every(c => !c.body || !('code' in c.body)))
+  t('createCode / pairCode / unpair 已从前端退场', !sync.createCode && !sync.pairCode && !sync.unpair)
+
+  globalThis.fetch = realFetch
+  store.delete('reader-sync-code')
+  store.delete('reader-records-v1')
+  store.delete('reader-records-tombstones')
+  store.delete('reader-records-dirty')
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

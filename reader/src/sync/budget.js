@@ -41,14 +41,15 @@ function byRecency(map) {
  * 把 /push 与 /progress 两个 keepalive 请求体一起裁到预算内。
  * 只裁子集，不改语义：每一类在本地都还在，下次推送自会补上。
  *
- * @param {object} parts { code, words, tombstones, progress }
+ * @param {object} parts { words, tombstones, progress }
  * @returns {{words: object, tombstones: object, progress: object, droppedWords: string[]}}
  */
-export function budgetKeepaliveParts({ code = '', words = {}, tombstones = {}, progress = {} } = {},
+export function budgetKeepaliveParts({ words = {}, tombstones = {}, progress = {} } = {},
                                       limit = KEEPALIVE_BODY_LIMIT) {
   // 两个请求各自的最小信封：它们无论如何都要占用 64 KiB
-  const envelope = utf8Bytes(JSON.stringify({ code, words: {}, tombstones: {} }))
-    + utf8Bytes(JSON.stringify({ code, entries: {} }))
+  // （D16 起 /push 与 /progress 的请求体都不再带 code —— 租户由服务端按会话反推）
+  const envelope = utf8Bytes(JSON.stringify({ words: {}, tombstones: {} }))
+    + utf8Bytes(JSON.stringify({ entries: {} }))
 
   const out = { words: {}, tombstones: {}, progress: {}, droppedWords: [] }
   let budget = limit - envelope
