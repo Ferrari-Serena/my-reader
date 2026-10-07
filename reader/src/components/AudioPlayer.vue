@@ -394,7 +394,9 @@ function playFrom(seconds) {
   startStaticAudio(seconds)
 }
 
-defineExpose({ playFrom, stop: stopAll })
+// `useBrowserTTS` 也放出来：生成面板（第 17 步块 D）失败时要能直接退回浏览器朗读，
+// 与播放器自己那颗「Use Browser TTS」按钮走的是同一条路。
+defineExpose({ playFrom, stop: stopAll, useBrowserTTS })
 
 // ---- audio element events ----
 // 区分两类 error：加载期（404 等 → 亮出兜底按钮）vs 播放期（当作结束）。

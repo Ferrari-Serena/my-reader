@@ -147,6 +147,19 @@
         @prev-track="prevChapter"
         @ended="onChapterAudioEnded"
       />
+
+      <!-- 第 17 步块 D：BYO 书 ＋ 已登录才挂。这里只判粗条件（免得非 BYO 的读者白拉一块懒加载
+           chunk）；「已就绪 / 无 WebGPU / 够不够格」由面板里的 audioGenGate 细判，口径只一处。 -->
+      <GenAudioPanel
+        v-if="isByoBook && !!authUser"
+        :book-id="bookId"
+        :chapter="currentChapter"
+        :audio-index="audioIndex"
+        :is-byo="isByoBook"
+        :logged-in="!!authUser"
+        @ready="onCloudAudioReady"
+        @browser-tts="onBrowserTts"
+      />
     </template>
 
     <!-- 划词浮条（第 9 步 9.1）：选中 -> 选色 -> 划到词边界 -->
@@ -213,7 +226,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ChapterNav from '../components/ChapterNav.vue'
 import AudioPlayer from '../components/AudioPlayer.vue'
@@ -222,7 +235,9 @@ import { useVocabulary } from '../composables/useVocabulary'
 import { usePhrases } from '../composables/usePhrases'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
 import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
+import { chapterAudioPath, chapterTimingsUrl, fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
 import { useSync } from '../composables/useSync'
+import { useAuth } from '../composables/useAuth'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
 import { isBookId } from '../utils/bookId.js'
 import { loadBook as loadByoRecord, BookStoreError } from '../storage/index.js'
@@ -232,6 +247,10 @@ import NoteEditor from '../components/NoteEditor.vue'
 import NotesPanel from '../components/NotesPanel.vue'
 import { useNotes } from '../composables/useNotes'
 import { NOTE_COLORS, DEFAULT_NOTE_COLOR, resolveAnchor, snapToWords, noteMarksForChapter, groupNotesByChapter, noteStatus } from '../utils/notes.js'
+
+// 第 17 步块 D · 生成面板：**动态** import —— 主包不许静态引 src/generate/（体积＋lamejs 的
+// LGPL 边界，见 verify-generate.mjs 的卫生断言）。面板与 kokoro-js 一起落在懒加载 chunk 里。
+const GenAudioPanel = defineAsyncComponent(() => import('../generate/GenAudioPanel.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -487,11 +506,24 @@ const currentChapterText = computed(() => {
   return [currentChapter.value.title, ...currentChapter.value.paragraphs.map(p => p.text)].join(' ')
 })
 
-// R2 音频经 Worker 代理：/api/audio/<bookId>/<chapterId>.mp3
+// 音频 URL 两条路（形状不同，不能共用一个前缀）：
+//   · 内置书（公版／自产）→ /api/audio/<bookId>/<chapterId>.mp3（**匿名可读**，不动）
+//   · BYO 书 → /api/book/<bookId>/audio/<chapterId>.mp3（**账号空间**，需会话；见 utils/audioCloud.js）
 const AUDIO_BASE = '/api/audio'
+const isByoBook = computed(() => isBookId(bookId.value))
+// 账号会话：面板只在「BYO 书 + 已登录」时挂（生成要写账号空间，未登录服务端 401）。
+// 与 App.vue 共用同一份单例（useAuth 是 module-level state），这里只取 user。
+const { user: authUser } = useAuth()
+// 云端音频「生成好了」的世代号：+1 让 mp3／timings 的 URL 变一下，绕开服务端的
+// `immutable` 缓存（同一章重新生成过就必须拿新的）。0 时不加查询串 —— 首次加载与 D-1
+// 验过的那条 URL 一字不差（服务端只认 pathname，查询串不影响取键）。
+const audioVersion = ref(0)
 const currentAudioUrl = computed(() => {
-  if (!currentChapter.value) return ''
-  return `${AUDIO_BASE}/${bookId.value}/${currentChapter.value.id}.mp3`
+  const ch = currentChapter.value
+  if (!ch) return ''
+  if (!isByoBook.value) return `${AUDIO_BASE}/${bookId.value}/${ch.id}.mp3`
+  const v = audioVersion.value
+  return chapterAudioPath(bookId.value, ch.id + '.mp3') + (v ? `?v=${v}` : '')
 })
 
 // ---- 缺音频降级（0.2b · 口径 i）----
@@ -515,7 +547,10 @@ async function loadTimings(chId) {
   const key = `${bookId.value}/${chId}`
   if (!(key in timingsCache)) {
     try {
-      const res = await fetch(`${AUDIO_BASE}/${bookId.value}/${chId}.timings.json`)
+      const url = isByoBook.value
+        ? chapterTimingsUrl(bookId.value, chId) + (audioVersion.value ? `?v=${audioVersion.value}` : '')
+        : `${AUDIO_BASE}/${bookId.value}/${chId}.timings.json`
+      const res = await fetch(url)
       timingsCache[key] = res.ok ? await res.json() : null
     } catch {
       timingsCache[key] = null
@@ -523,6 +558,28 @@ async function loadTimings(chId) {
   }
   // 防快速切章/换书串台：比完整 key（bookId + chapterId）
   if (key === `${bookId.value}/${currentChapter.value?.id}`) audioTimings.value = timingsCache[key]
+}
+
+/**
+ * 第 17 步块 D：这一章的云端音频刚生成好（面板 @ready）。
+ * ① 上传回执里带的就是**合并后的索引** —— 直接落盘，不必再拉一次；
+ * ② `audioVersion` +1：URL 变一下，绕开 immutable 缓存；
+ * ③ 把这一章的 timings 从缓存里删掉再拉一次（旧那份是「还没有音频」时缓存的 null）。
+ * 真正的「正在播浏览器 TTS 就地热切（保留 currentTime）」归块 D-3 —— 那要改 AudioPlayer。
+ * 这里保证的是：**下一次按播放**走的就是云端音频。
+ */
+function onCloudAudioReady({ index, chapterId: chId } = {}) {
+  if (index) audioIndex.value = index
+  audioVersion.value += 1
+  const id = chId || currentChapter.value?.id || ''
+  if (!id) return
+  delete timingsCache[`${bookId.value}/${id}`]
+  loadTimings(id)
+}
+
+/** 面板里点「改用浏览器朗读」：交给播放器自己那套兜底（与 404 降级同一条路） */
+function onBrowserTts() {
+  audioPlayerRef.value?.useBrowserTTS?.()
 }
 
 function paraStart(paraId) {
@@ -947,7 +1004,11 @@ async function loadByoBook() {
   if (!record) throw new Error(notHere)
   bookTitle.value = record.title || 'Untitled'
   chapters.value = record.chapters
-  audioIndex.value = null
+  // 云端就绪清单（第 17 步块 D）：未登录 401／还没生成过 404 一律当「没有清单」→ 播放器
+  // 退回「点开试、404 再降级浏览器朗读」的旧行为（不报错、不空转、也不冒充有音频）。
+  // `book` 字段对不上同样不认（宁缺勿错）。
+  const cloud = await fetchCloudIndex(bookId.value)
+  audioIndex.value = (cloud.ok && indexUsable(cloud.index, bookId.value)) ? cloud.index : null
 }
 
 async function loadBook() {

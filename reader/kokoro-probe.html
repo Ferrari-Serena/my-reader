@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>my-reader · BYO audio generator probe (block C)</title>
+<style>
+  body{font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;max-width:820px;margin:0 auto;padding:20px;background:#faf9f7;color:#1a1a1a}
+  h1{font-size:20px;margin:0 0 4px}
+  h2{font-size:16px;margin:0 0 8px}
+  .sub{color:#666;font-size:13px;margin:0 0 16px}
+  .card{background:#fff;border:1px solid #e6e2dc;border-radius:10px;padding:14px 16px;margin:0 0 12px}
+  label{display:inline-block;margin:4px 12px 4px 0}
+  select,textarea,input{font:inherit;padding:3px 6px;border:1px solid #cfc9c0;border-radius:6px;background:#fff}
+  textarea{width:100%;box-sizing:border-box}
+  button{font:inherit;padding:5px 12px;margin:6px 6px 0 0;border:1px solid #cfc9c0;border-radius:6px;background:#f3f0ea;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .mono{font:12.5px/1.6 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+  .ok{color:#1a7f37}.warn{color:#9a6700}.bad{color:#b42318}
+  .log{margin-top:8px;max-height:40vh;overflow:auto;background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:8px}
+  audio{width:100%;margin:8px 0}
+  a{margin-right:14px}
+</style>
+</head>
+<body>
+<h1>BYO 朗读音频 · 网页端生成探针</h1>
+<p class="sub">第 17 步 · 块 C。不进主包：只有本页引 kokoro-js。用来量「能不能跑 / 跑多快 / 吃多少内存」，
+口径与内置书同源（24 kHz、段间 0.35 s、标题也读、timings 同形）。</p>
+
+<section class="card">
+  <h2>① 设备闸 + 模型</h2>
+  <div id="deviceStatus" class="mono"></div>
+  <div id="gpuStatus" class="mono"></div>
+  <div style="margin-top:6px">
+    <label>device <select id="deviceSel"></select></label>
+    <label>dtype <select id="dtypeSel"></select></label>
+    <button id="loadModelBtn">加载模型</button>
+  </div>
+  <div id="modelStatus" class="mono"></div>
+</section>
+
+<section class="card">
+  <h2>② 选一章</h2>
+  <label>来源
+    <select id="sourceSel">
+      <option value="builtin">内置书</option>
+      <option value="byo">本机 BYO 书</option>
+      <option value="paste">粘贴文本</option>
+    </select>
+  </label>
+  <span id="builtinWrap"><label>书 <select id="bookSel"></select></label></span>
+  <span id="byoWrap" hidden><label>BYO 书 <select id="byoSel"></select></label></span>
+  <label>章 <select id="chapterSel"></select></label>
+  <button id="loadChapterBtn">载入章节</button>
+  <div id="pasteWrap" hidden style="margin-top:6px">
+    <textarea id="pasteText" rows="6" placeholder="把一章正文粘进来（空行分段）。标题写第一行也可以。"></textarea>
+  </div>
+  <div id="chapterInfo" class="mono"></div>
+</section>
+
+<section class="card">
+  <h2>③ 生成</h2>
+  <label>voice <select id="voiceSel"></select></label>
+  <button id="genBtn" disabled>生成这一章</button>
+  <button id="cancelBtn" disabled>取消</button>
+  <div id="genStatus" class="mono"></div>
+</section>
+
+<section class="card">
+  <h2>④ 试听与读数</h2>
+  <audio id="audio" controls></audio>
+  <div id="metrics" class="mono"></div>
+  <div style="margin-top:6px">
+    <a id="dlWav" hidden download>下载 WAV</a>
+    <a id="dlTimings" hidden download>下载 timings.json</a>
+    <a id="dlMp3" hidden download>下载 mp3（48 kbps，上传口径）</a>
+  </div>
+</section>
+
+<div id="log" class="mono log"></div>
+<script type="module" src="/src/generate/probe.js"></script>
+</body>
+</html>

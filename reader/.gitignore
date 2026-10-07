@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 卫生闸的一次性构建产物（verify-generate.mjs 跑完就删；这里兜底免得构建崩了留档）
+.verify-dist

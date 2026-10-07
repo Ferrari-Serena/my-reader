@@ -252,12 +252,12 @@ def deploy():
             return r
 
         git('add', 'public/books')
-        status = git('status', '--porcelain')
+        status = git('status', '--porcelain', '--', 'public/books')
         if not status.stdout.strip():
             return jsonify({'deployed': False, 'message': '没有新的改动需要部署'})
 
         msg = request.json.get('message', 'Add book via local generator') if request.is_json else 'Add book via local generator'
-        commit = git('commit', '-m', msg)
+        commit = git('commit', '-m', msg, '--', 'public/books')
         if commit.returncode != 0:
             return jsonify({'error': f'commit 失败: {commit.stderr[:300]}'}), 500
 
