@@ -44,6 +44,7 @@ import { ref, watch, onUnmounted, computed } from 'vue'
 import { audioStorageKey } from '../sync/progress.js'
 import { nowIso } from '../sync/clock.js'
 import { noAudioTooltip } from '../utils/audioIndex.js'
+import { chunkOffsets, paragraphIdAt } from '../utils/ttsChunks.js'
 
 const CHUNK_MAX = 160
 
@@ -57,7 +58,11 @@ const props = defineProps({
   bookId: { type: String, default: '' },
   chapterId: { type: String, default: '' },
   bookTitle: { type: String, default: '' },
-  chapterTitle: { type: String, default: '' }
+  chapterTitle: { type: String, default: '' },
+  // 云端音色还在本机生成（第 17 步块 D-3）：只影响副标题文案
+  cloudPending: { type: Boolean, default: false },
+  // 「章文本里每段的字符起点」表（标题那项 id 留空）—— 热切时把朗读位置换成段落
+  paragraphStarts: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['time', 'next-track', 'prev-track', 'ended'])
@@ -65,7 +70,7 @@ const emit = defineEmits(['time', 'next-track', 'prev-track', 'ended'])
 // ---- state machine ----
 
 const state = ref('idle') // idle | loading | playing | error
-const source = ref('Chapter audio')
+const source = ref('Cloud voice')
 
 const audioEl = ref(null)
 let sessionId = 0
@@ -75,6 +80,8 @@ let browserSessionId = 0
 let resumeTimer = null
 let pollTimer = null
 let chunkDone = false
+let spokenOffset = 0 // 正在念的那个 chunk 在章文本里的字符起点（热切定位用）
+let chunkStarts = [] // 本轮切句各自在章文本里的起点（与 chunks 同长）
 
 const statusLabel = computed(() => {
   // 无音频章：静态 MP3 压根不存在，直接亮「No chapter audio」+ 兜底按钮
@@ -84,7 +91,7 @@ const statusLabel = computed(() => {
   switch (state.value) {
     case 'loading': return 'Loading...'
     case 'playing': return 'Playing...'
-    case 'error': return 'Chapter audio unavailable'
+    case 'error': return 'Cloud voice unavailable'
     default: return 'Read aloud'
   }
 })
@@ -92,6 +99,11 @@ const statusLabel = computed(() => {
 // 副标题：无音频且空闲时显示原因，否则显示当前音源
 const sourceLabel = computed(() => {
   if (!props.hasAudio && state.value === 'idle') return noAudioTooltip(props.noAudioReason)
+  // pending 态（第 17 步块 D-3）：正在用浏览器朗读，而这一章的云端音色还在本机生成 ——
+  // 就绪后会自动热切，这一行要如实告诉用户「现在听的是谁、后台在干什么」。
+  if (source.value === 'Browser TTS' && state.value === 'playing' && props.cloudPending) {
+    return 'Browser TTS · Generating…'
+  }
   return source.value
 })
 
@@ -185,7 +197,7 @@ function startStaticAudio(seekTo = null) {
   if (!el) { startBrowserTTS(); return }
 
   state.value = 'loading'
-  source.value = 'Chapter audio'
+  source.value = 'Cloud voice'
   // 记下元素里装的到底是哪一章 —— 之后 props 会先于 stopAll 变掉
   playingIds = { bookId: props.bookId, chapterId: props.chapterId }
 
@@ -394,9 +406,77 @@ function playFrom(seconds) {
   startStaticAudio(seconds)
 }
 
+// ---- 云端音色就绪 → 就地热切（第 17 步块 D-3）----
+//
+// 场景：这一章本来只能用浏览器朗读，用户点了「生成这一章」正在听浏览器朗读；云端音频
+// 刚就绪 —— 把音源换成云端音色，**位置按段落接**。判据 2 只要段落级：Web Speech 给不出
+// 「当前句在整章音频里的秒数」，段内接位做不到，判据也不要求。
+//
+// 顺序是刻意的（① 静音起播 → ② 起来了再停朗读 → ③ 开声）：
+//   · 热切不在用户手势里 —— 非静音 play() 在 iOS/Safari 会被拦；静音起播各浏览器都放行；
+//   · 起不来就**什么都不动**（朗读照旧接着念），绝不把用户丢进静音或空白；
+//   · 停朗读放在起播之后，两段声音最多重叠几十毫秒。
+
+/** 等 el.duration 可用（热切要按秒定位；play() 已 resolve 时通常早就有值了） */
+function waitForMetadata(el, ms = 3000) {
+  if (Number.isFinite(el.duration) && el.duration > 0) return Promise.resolve()
+  return new Promise((resolve) => {
+    const done = () => { clearTimeout(timer); el.removeEventListener('loadedmetadata', done); resolve() }
+    const timer = setTimeout(done, ms)
+    el.addEventListener('loadedmetadata', done)
+  })
+}
+
+/** 正在朗读时念到哪一段（整章字符起点 → 段 id）。**没在朗读 → null**（调用方据此跳过热切）。 */
+function ttsParagraphId() {
+  if (source.value !== 'Browser TTS') return null
+  if (state.value !== 'playing' && state.value !== 'loading') return null
+  return paragraphIdAt(props.paragraphStarts, spokenOffset)
+}
+
+/**
+ * @param {number} seconds 该段在云端音频里的起始秒（0 / NaN → 从头）
+ * @returns {Promise<boolean>} 真切过去了才 true
+ */
+async function hotSwitch(seconds) {
+  const el = audioEl.value
+  if (!el || !props.audioUrl) return false
+  const wasTts = source.value === 'Browser TTS'
+  const mySid = ++sessionId // 让在途的旧加载守卫失效
+  clearLoadTimer()
+  const target = Number.isFinite(seconds) && seconds > 0 ? seconds : 0
+
+  el.muted = true
+  playingIds = { bookId: props.bookId, chapterId: props.chapterId }
+  el.src = props.audioUrl
+  try {
+    await el.play()
+  } catch (err) {
+    el.muted = false
+    playingIds = null
+    console.error('Cloud audio hot-switch failed:', err.name, err.message)
+    return false
+  }
+  if (mySid !== sessionId) { el.muted = false; return false } // 期间用户自己切章/停了
+
+  await waitForMetadata(el)
+  if (target > 0 && target < (el.duration || Infinity) - 3) el.currentTime = target
+  el.muted = false
+  if (wasTts) stopBrowserTTS() // 起来了才停朗读
+  state.value = 'playing'
+  source.value = 'Cloud voice'
+  currentTime.value = el.currentTime
+  savePosition(el.currentTime, true)
+  setupMediaSession()
+  if (hasMediaSession) navigator.mediaSession.playbackState = 'playing'
+  emit('time', el.currentTime)
+  return true
+}
+
 // `useBrowserTTS` 也放出来：生成面板（第 17 步块 D）失败时要能直接退回浏览器朗读，
 // 与播放器自己那颗「Use Browser TTS」按钮走的是同一条路。
-defineExpose({ playFrom, stop: stopAll, useBrowserTTS })
+// `hotSwitch` / `ttsParagraphId` 归块 D-3：ReaderView 拿前者换音源、拿后者问「念到哪段了」。
+defineExpose({ playFrom, stop: stopAll, useBrowserTTS, hotSwitch, ttsParagraphId })
 
 // ---- audio element events ----
 // 区分两类 error：加载期（404 等 → 亮出兜底按钮）vs 播放期（当作结束）。
@@ -461,6 +541,9 @@ function startBrowserTTS() {
     if (cur) chunks.push(cur)
   }
   if (chunks.length === 0) chunks.push(text)
+  // 热切要按段落定位：先把「每个 chunk 落在原文哪儿」算出来（精确，见 ttsChunks.js）
+  chunkStarts = chunkOffsets(text, chunks)
+  spokenOffset = chunkStarts[0] || 0
 
   let idx = 0
   state.value = 'playing'
@@ -481,6 +564,7 @@ function startBrowserTTS() {
     utt.rate = 0.9
 
     utt.onstart = () => {
+      spokenOffset = chunkStarts[idx] || 0
       clearTimers()
       resumeTimer = setInterval(() => {
         if (mySid !== browserSessionId) { clearTimers(); return }

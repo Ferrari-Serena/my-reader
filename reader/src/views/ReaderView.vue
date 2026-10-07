@@ -142,6 +142,8 @@
         :chapter-id="currentChapter?.id || ''"
         :book-title="bookTitle"
         :chapter-title="currentChapter?.title || ''"
+        :cloud-pending="cloudGenerating"
+        :paragraph-starts="chapterParagraphStarts"
         @time="onAudioTime"
         @next-track="nextChapter"
         @prev-track="prevChapter"
@@ -159,6 +161,7 @@
         :logged-in="!!authUser"
         @ready="onCloudAudioReady"
         @browser-tts="onBrowserTts"
+        @status="onPanelStatus"
       />
     </template>
 
@@ -236,6 +239,7 @@ import { usePhrases } from '../composables/usePhrases'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
 import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { chapterAudioPath, chapterTimingsUrl, fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
+import { buildParagraphStarts } from '../utils/ttsChunks.js'
 import { useSync } from '../composables/useSync'
 import { useAuth } from '../composables/useAuth'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
@@ -498,13 +502,19 @@ const currentPageNumber = computed(() => {
 
 const totalPages = computed(() => chapters.value.length)
 
-const currentChapterText = computed(() => {
-  if (!currentChapter.value) return ''
-  // Image books have no text to speak; AudioPlayer won't render
-  if (isImageBook.value) return ''
-  // Title is read as well (matches pre-generated MP3 content, see generator/pipeline/tts.py)
-  return [currentChapter.value.title, ...currentChapter.value.paragraphs.map(p => p.text)].join(' ')
+// 朗读文本 + 「每一段在文本里的字符起点」**同源产出**（第 17 步块 D-3）：热切要靠这张表把
+// 「念到哪一段」换成「云端音频里的第几秒」，两者分开算必然漂（标题算不算、段间空格几个）。
+const chapterSpeech = computed(() => {
+  if (!currentChapter.value || isImageBook.value) return { text: '', starts: [] }
+  // Title is read as well (matches pre-generated MP3 content, see generator/pipeline/tts.py).
+  // 标题占第 0 项、id 留空 —— 它没有 timings 条目，热切时按「从章首接」处理。
+  return buildParagraphStarts([
+    { id: '', text: currentChapter.value.title },
+    ...currentChapter.value.paragraphs.map(para => ({ id: para.id, text: para.text })),
+  ])
 })
+const currentChapterText = computed(() => chapterSpeech.value.text)
+const chapterParagraphStarts = computed(() => chapterSpeech.value.starts)
 
 // 音频 URL 两条路（形状不同，不能共用一个前缀）：
 //   · 内置书（公版／自产）→ /api/audio/<bookId>/<chapterId>.mp3（**匿名可读**，不动）
@@ -561,26 +571,49 @@ async function loadTimings(chId) {
 }
 
 /**
- * 第 17 步块 D：这一章的云端音频刚生成好（面板 @ready）。
- * ① 上传回执里带的就是**合并后的索引** —— 直接落盘，不必再拉一次；
- * ② `audioVersion` +1：URL 变一下，绕开 immutable 缓存；
- * ③ 把这一章的 timings 从缓存里删掉再拉一次（旧那份是「还没有音频」时缓存的 null）。
- * 真正的「正在播浏览器 TTS 就地热切（保留 currentTime）」归块 D-3 —— 那要改 AudioPlayer。
- * 这里保证的是：**下一次按播放**走的就是云端音频。
+ * 第 17 步块 D／D-3：这一章的云端音频刚就绪（面板 @ready，或它的就绪轮询命中）。
+ * ① 回执里带的就是**合并后的索引** —— 直接落盘，不必再拉一次；
+ * ② `audioVersion` +1：URL 变一下，绕开 immutable 缓存 ＋ 让 timings 重拉
+ *    （旧那份是「还没有音频」时缓存的 null）；
+ * ③ **就地热切**：此刻正用浏览器朗读这一章的话，把音源换成云端音色，位置按**段落**接
+ *    （判据 2 只要求段落级；段内接位做不到，理由见 ttsChunks.js 头注）。
+ * 没在朗读就不动 —— 下一次按播放走的就是云端音频。
  */
-function onCloudAudioReady({ index, chapterId: chId } = {}) {
+async function onCloudAudioReady({ index, chapterId: chId } = {}) {
   if (index) audioIndex.value = index
   audioVersion.value += 1
   const id = chId || currentChapter.value?.id || ''
   if (!id) return
+  // 就绪的是**别的章**（切章后旧答复才到）→ 只落索引，别拿它去热切当前章
+  if (id !== currentChapter.value?.id) return
+  // 问播放器「念到哪一段」。没在朗读 → null → 不必热切。
+  const pid = audioPlayerRef.value?.ttsParagraphId?.()
+  if (pid === null || pid === undefined) return
   delete timingsCache[`${bookId.value}/${id}`]
-  loadTimings(id)
+  await loadTimings(id)
+  // 标题段（id 空）→ 0：从章首接；timings 里没这一段 → 不动，让朗读继续
+  const sec = pid ? paraStart(pid) : 0
+  if (sec === null) return
+  // 等一拍，让 `?v=` 那次 URL 变更落到播放器的 prop 上再换源
+  await nextTick()
+  await audioPlayerRef.value?.hotSwitch?.(sec)
 }
 
 /** 面板里点「改用浏览器朗读」：交给播放器自己那套兜底（与 404 降级同一条路） */
 function onBrowserTts() {
   audioPlayerRef.value?.useBrowserTTS?.()
 }
+
+// 面板状态（第 17 步块 D-3）：只用来决定播放器副标题要不要写「· Generating…」。
+// 带 chapterId 一起收 —— 切章后旧状态自然失效，不用另设清空钩子。
+const panelStatus = ref({ chapterId: '', running: false, pending: false })
+function onPanelStatus(next) {
+  panelStatus.value = next || { chapterId: '', running: false, pending: false }
+}
+const cloudGenerating = computed(() => {
+  const st = panelStatus.value
+  return !!st.running && !!st.pending && st.chapterId === (currentChapter.value?.id || '')
+})
 
 function paraStart(paraId) {
   const t = audioTimings.value?.paragraphs

@@ -57,6 +57,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   detectWebGPU, shouldOfferGeneration, stillPending, GEN_REASON_HINT,
   GEN_NOTES, GEN_SCOPE_NOTE, GEN_ESTIMATE_NOTE, estimateRemainingMs, formatEta,
+  chapterToken, staleReply, pendingCheckUrl,
 } from './audioGenGate.js'
 import { generateChapterAudio } from './chapterGen.js'
 
@@ -67,7 +68,7 @@ const props = defineProps({
   isByo: { type: Boolean, default: false },
   loggedIn: { type: Boolean, default: false }
 })
-const emit = defineEmits(['ready', 'browser-tts'])
+const emit = defineEmits(['ready', 'browser-tts', 'status'])
 
 const STAGE_LABEL = { model: '加载语音模型', synth: '合成音频', encode: '编码 mp3', upload: '上传到你的账号空间' }
 const EMPTY_PROGRESS = { index: 0, total: 0, elapsedMs: 0, etaMs: 0 }
@@ -135,6 +136,55 @@ function reset() {
   if (!running.value) { stage.value = ''; progress.value = { ...EMPTY_PROGRESS } }
 }
 
+// ---- 就绪轮询（第 17 步块 D-3）----
+// 这一章还没就绪时，隔几秒问一次「这本书的云端索引变了没」。命中就 emit('ready')，
+// ReaderView 落索引并让播放器热切。轮询放在**懒加载这一侧**是刻意的：本文件已经引了
+// audioGenGate，判定口径天然一处，主包不必再养第二份。
+// 收口三处：① 已就绪 → 停；② 切章/换书/索引变 → 重判；③ 卸载 → 停。标签页在后台不发请求。
+const POLL_MS = 6000
+let pollTimer = null
+let pollBusy = false
+
+const pending = computed(() => stillPending(props.audioIndex, chapterId.value))
+
+function stopPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
+async function pollOnce() {
+  const id = chapterId.value
+  if (!id || !props.bookId) return
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return // 后台不空转
+  if (!stillPending(props.audioIndex, id)) { stopPoll(); return }
+  if (pollBusy) return
+  const token = chapterToken(props.bookId, id)
+  pollBusy = true
+  try {
+    const res = await fetch(pendingCheckUrl(props.bookId), { cache: 'no-store', credentials: 'same-origin' })
+    const body = res.ok ? await res.json().catch(() => null) : null
+    // 过期答复（用户已经切章/换书）一律丢弃 —— 别把上一章的索引写到这一章头上
+    if (staleReply(token, chapterToken(props.bookId, chapterId.value))) return
+    if (!stillPending(body, id)) emit('ready', { chapterId: id, index: body || null })
+  } catch { /* 网络抖动：下个 tick 再来 */ }
+  finally { pollBusy = false }
+}
+
+function startPoll() {
+  stopPoll()
+  const id = chapterId.value
+  if (!id || !props.bookId) return
+  if (!stillPending(props.audioIndex, id)) return
+  pollTimer = setInterval(pollOnce, POLL_MS)
+}
+
+// 状态外报：ReaderView 拿它决定播放器副标题要不要写「Generating…」。
+// 带 chapterId 一起报 —— 调用方因此不必另设「切章清空」钩子，也不会把上一章的状态串过来。
+watch([pending, running, chapterId], () => {
+  emit('status', { chapterId: chapterId.value, running: running.value, pending: pending.value })
+}, { immediate: true })
+
+watch([() => props.bookId, chapterId, () => props.audioIndex], startPoll, { immediate: true })
+
 watch(chapterId, () => {
   justDone.value = false
   if (doneTimer) { clearTimeout(doneTimer); doneTimer = null }
@@ -144,6 +194,7 @@ watch(chapterId, () => {
 onBeforeUnmount(() => {
   cancelFlag = true // 离开这本书就别再算了（结果会以 cancelled 回来，没人接）
   if (doneTimer) clearTimeout(doneTimer)
+  stopPoll() // 就绪轮询：组件没了就别再问了
 })
 
 function cancel() {
