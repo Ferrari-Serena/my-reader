@@ -42,6 +42,8 @@ import {
   PURGE_AFTER_MS, deletionState, purgeDueAt, daysLeft,
   checkPasswordPolicy, needsRehash, csrfToken, csrfMatches,
 } from './auth.js'
+// 块 E：注销真删要清账号空间的音频 —— 键布局在 audiostore.js（本文件不能引 bookaudio.js，会成环）
+import { audioPrefixFor, purgePrefix } from './audiostore.js'
 
 /** 登录失败滑窗与阈值（同一 (scope,key) 桶内计数） */
 export const LOGIN_WINDOW_MS = 15 * 60 * 1000
@@ -708,6 +710,7 @@ export const PURGE_BATCH_LIMIT = 100
 /**
  * 到期真删（Cron 入口，见 index.js 的 scheduled）。对每个冷静期已满的账号：
  *   - 主码名下的 sync_data / sync_progress（口径 ②：**连带清**）
+ *   - 主码名下的 BYO 朗读音频 R2 对象（`user/<code>/`，块 E 判据 5）
  *   - 该账号的会话 / 邮件令牌 / 邮箱失败计数行
  *   - 最后删 users 行（dict_cache 是全体共享的词典缓存，**不动**）
  * 幂等：删过的下一轮查不到，天然不重复。
@@ -723,6 +726,9 @@ export async function purgeDeletedAccounts(env, nowMs = Date.now()) {
       stmts.push(env.DB.prepare(SQL_PURGE_SYNC_DATA).bind(u.sync_code))
       stmts.push(env.DB.prepare(SQL_PURGE_SYNC_PROGRESS).bind(u.sync_code))
     }
+    // 块 E（判据 5）：账号空间里的 BYO 朗读音频（`user/<code>/`）一并清 —— 注销是**真删**，
+    // 音频是正文的派生物，没有独立保留的理由。恒不抛：一次 R2 打嗝不该堵住整批注销。
+    if (u.sync_code) await purgePrefix(env, audioPrefixFor(u.sync_code))
     stmts.push(env.DB.prepare(SQL_DELETE_USER_SESSIONS).bind(u.id))
     stmts.push(env.DB.prepare(SQL_DELETE_USER_TOKENS).bind(u.id))
     if (u.email) stmts.push(env.DB.prepare(SQL_CLEAR_EMAIL_ATTEMPTS).bind(u.email))

@@ -25,6 +25,8 @@ import { putRecord, removeRecord, loadRecordsMap, loadRecordTombstones } from '.
 import { splitRecordKey } from './records.js'
 import { nowIso } from './clock.js'
 import { loadRetiredBooks, clearBookRetired } from './bookRetire.js'
+import { fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
+import { saveAudioIndex, clearAudioIndex } from './audioIndexCache.js'
 
 export const BOOK_ROUTE = '/api/sync/book/'
 /** 书体可达 8 MB，同步通道那档 8 s 不够用 */
@@ -272,7 +274,7 @@ export async function fetchBookBody(bookId, {
  * 把账号里有、这台设备没有的书体拉下来落盘。逐本独立 —— 一本拉不动不影响别的
  * （§12.6：会话过期 → 静默，下次登录补）。
  */
-export async function prefetchCloudBooks({ metas, localIds, retired, getBody = fetchBookBody, save, onSaved } = {}) {
+export async function prefetchCloudBooks({ metas, localIds, retired, getBody = fetchBookBody, save, onSaved, getIndex = fetchCloudIndex, saveIndex = saveAudioIndex } = {}) {
   const saved = [], failed = []
   for (const meta of planPrefetch(metas, localIds, retired)) {
     const r = await getBody(meta.bookId)
@@ -280,14 +282,30 @@ export async function prefetchCloudBooks({ metas, localIds, retired, getBody = f
     try {
       if (save) await save(r.record)
       saved.push(meta.bookId)
+      // 块 E「预取带 index」：书体落地后顺手把就绪清单也存下（拿不到就不存，不影响预取结果）
+      await stashCloudIndex(meta.bookId, { getIndex, saveIndex })
       if (onSaved) onSaved(meta.bookId)
     } catch { failed.push(meta.bookId) }
   }
   return { saved, failed }
 }
 
+/**
+ * 块 E「预取带 index」：把一本书的云端就绪索引拉回来、落到本机缓存。**恒不抛** ——
+ * 索引只是让「打开书的首帧就知道哪几章有云端音色」，拉不到就当没缓存（打开书时那条路照旧）。
+ * @returns {Promise<boolean>} 真存下了才 true
+ */
+export async function stashCloudIndex(bookId, { getIndex = fetchCloudIndex, saveIndex = saveAudioIndex } = {}) {
+  try {
+    const r = await getIndex(bookId)
+    if (!r || !r.ok) return false
+    if (!indexUsable(r.index, bookId)) return false // `book` 字段对不上 → 宁缺勿错
+    return !!saveIndex(bookId, r.index)
+  } catch { return false }
+}
+
 /** 只拉一本（书架那条「下载」按钮走这里） */
-export async function downloadCloudBook(bookId, { getBody = fetchBookBody, save } = {}) {
+export async function downloadCloudBook(bookId, { getBody = fetchBookBody, save, getIndex = fetchCloudIndex, saveIndex = saveAudioIndex } = {}) {
   if (!isByoBookId(bookId)) return { ok: false, reason: 'bad-id' }
   const r = await getBody(bookId)
   if (!r.ok || !r.record) return { ok: false, reason: 'fetch-failed', status: r.status }
@@ -296,6 +314,8 @@ export async function downloadCloudBook(bookId, { getBody = fetchBookBody, save 
   } catch {
     return { ok: false, reason: 'save-failed' }
   }
+  // 块 E：单本下载（书架那颗「加载」按钮）与预取同一条口径 —— 一并把就绪清单带下来
+  await stashCloudIndex(bookId, { getIndex, saveIndex })
   return { ok: true, bookId }
 }
 
@@ -454,6 +474,7 @@ export async function removeByoBookEverywhere(bookId, { fetchImpl = globalThis.f
   if (!isByoBookId(bookId)) return { ok: false, reason: 'bad-id' }
   removeRecord('book', bookId, { record: true, dirty: true })
   clearPendingPublish(bookId)
+  clearAudioIndex(bookId) // 块 E：删书连带清本机缓存的那份就绪清单（云端的由服务端 DELETE 同趟清）
   let localDeleted = false
   try { if (deleteLocal) localDeleted = !!(await deleteLocal(bookId)) } catch { localDeleted = false }
   const cloud = await deleteCloudBookBody(bookId, { fetchImpl })

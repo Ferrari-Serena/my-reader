@@ -44,10 +44,12 @@ import { sessionTenant } from './syncgate.js'
 import { parseRange } from './range.js'
 import { isBookId } from './sync.js'
 import { attemptCount, noteAttempt } from './authapi.js'
+// 块 E：键布局 ＋ 「按前缀清」搬到 audiostore.js（三处共用；authapi 不能反向引本文件，见该文件头注）
+import { USER_PREFIX, audioObjectKey, audioPrefixFor, bookAudioPrefixFor, purgePrefix } from './audiostore.js'
 
 export const ROUTE_PREFIX = '/api/book/'
-/** BYO 音频在 R2 里的前缀（`user/` 即权限边界） */
-export const USER_PREFIX = 'user/'
+/** 键布局与清理的真身在 `audiostore.js`；这里**原样再导出**，调用方与自检不必改 import。 */
+export { USER_PREFIX, audioObjectKey }
 /** 就绪索引文件名（与内置书同形） */
 export const INDEX_FILE = 'audio-index.json'
 /** 单个上传文件大小上限：一章 48 kbps mp3 ≈ 5 MB；8 MB 留余量，同时挡住当网盘用（手抄 MAX_BOOK_BYTES） */
@@ -82,10 +84,6 @@ export function classifyFile(file) {
   return null
 }
 
-/** 对象在 R2 里的键：账号主码是**目录**，也就是租户边界 */
-export function audioObjectKey(code, bookId, file) {
-  return `${USER_PREFIX}${code}/${bookId}/${file}`
-}
 
 function json(cors, data, status = 200, extra = {}) {
   return new Response(JSON.stringify(data), {
@@ -118,7 +116,7 @@ async function gate(request, env, cors, url) {
  * 列举失败 → 返回 null（**fail-open**：不因为列举失败而挡住正常上传）。
  */
 async function accountUsage(env, code) {
-  const prefix = `${USER_PREFIX}${code}/`
+  const prefix = audioPrefixFor(code)
   const books = new Set()
   const sizes = new Map()
   let totalBytes = 0
@@ -150,6 +148,24 @@ async function uploadRateOk(env, code, now) {
   if (n >= perMin) return { ok: false, retryAfter: Math.ceil(UPLOAD_WINDOW_MS / 1000) }
   await noteAttempt(env, RATE_SCOPE, code, now, true)
   return { ok: true }
+}
+
+/**
+ * 删一本书的全部音频（块 E「删书连带清音频」）：清 `user/<code>/<bookId>/`。
+ * 由 `booksync.js` 的 DELETE 同趟调用 —— 客户端只发一个请求，也不会「删了正文忘了音频」。
+ * **恒不抛**；返回删掉的条数（失败 -1，只用来回报／记日志）。
+ */
+export function purgeBookAudio(env, code, bookId) {
+  return purgePrefix(env, bookAudioPrefixFor(code, bookId))
+}
+
+/**
+ * 删一个账号的全部音频（块 E「注销连带清音频」，判据 5）：清 `user/<code>/`。
+ * 由 `authapi.js` 的 `purgeDeletedAccounts`（冷静期到期**真删**）调用 —— 软删标记本身不动数据。
+ * **恒不抛**；返回删掉的条数（失败 -1）。
+ */
+export function purgeAccountAudio(env, code) {
+  return purgePrefix(env, audioPrefixFor(code))
 }
 
 /**

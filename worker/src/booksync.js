@@ -28,6 +28,8 @@
 import { corsFor } from './cors.js'
 import { sessionTenant } from './syncgate.js'
 import { recordKey, SQL_TOMB_UPSERT } from './sync.js'
+// 块 E：删书连带清音频 —— 键布局与「按前缀清」在 bookaudio.js／audiostore.js，这里只调用
+import { purgeBookAudio } from './bookaudio.js'
 
 export const ROUTE_PREFIX = '/api/sync/book/'
 /** R2 键前缀（与内置书音频的 `<bookId>/…` 分开，一眼看得出是 BYO 正文） */
@@ -135,6 +137,10 @@ export async function handleBookSync(request, env) {
   try {
     const existed = !!(await env.AUDIO.head(key))
     await env.AUDIO.delete(key)
+    // 块 E「删书连带清音频」：同一趟把 `user/<code>/<bookId>/` 也清掉 —— 客户端只发一个
+    // DELETE，也不会「删了正文、忘了音频留下成孤儿对象」。恒不抛（清了 0 条也是正常的：
+    // 这本书从没生成过音频）。
+    const audioRemoved = await purgeBookAudio(env, acct.code, bookId)
     const nowIso = new Date().toISOString()
     let tombstoned = false
     try {
@@ -144,7 +150,7 @@ export async function handleBookSync(request, env) {
     } catch (e) {
       console.error('book tombstone failed (对象已删):', e && e.message)
     }
-    return json(cors, { ok: true, bookId, removed: existed, tombstoned })
+    return json(cors, { ok: true, bookId, removed: existed, tombstoned, audioRemoved })
   } catch (e) {
     console.error('book delete failed:', e && e.message)
     return json(cors, { error: 'storage delete failed' }, 500)

@@ -614,7 +614,15 @@ console.log('\n[authapi — 端到章：游客码认领（D 块）]')
 console.log('\n[authapi — 端到章：注销 / 冷静期撤销 / 到期真删（F 块）]')
 {
   const db = newDb()
-  const env = { DB: d1(db) }
+  // 块 E：注销真删也要清账号空间的音频（`user/<code>/`）—— 最小 R2 替身，只需 list/delete
+  const audioStore = new Map()
+  const env = { DB: d1(db), AUDIO: {
+    async list({ prefix = '' } = {}) {
+      const all = [...audioStore.keys()].filter((k) => k.startsWith(prefix)).sort()
+      return { objects: all.map((k) => ({ key: k, size: 1 })), truncated: false }
+    },
+    async delete(keys) { for (const k of (Array.isArray(keys) ? keys : [keys])) audioStore.delete(k) },
+  } }
   const ORIGIN = 'https://my-reader.ferrari11.com'
   const SITE = ORIGIN
   const req = (path, { method = 'GET', body, cookie, origin = ORIGIN, csrf } = {}) => new Request(SITE + path, {
@@ -688,11 +696,19 @@ console.log('\n[authapi — 端到章：注销 / 冷静期撤销 / 到期真删�
   await handleAuth(post('/api/auth/delete', { password: PW }, { cookie: rcookie, csrf: rsj.csrf }), env)
   db.prepare('UPDATE users SET deleted_at = ? WHERE id = ?').run(T - PURGE_AFTER_MS - 1, uid) // 拨到已到期
   t('已到期：restore -> 410 gone', (await handleAuth(post('/api/auth/restore', { email: 'del@qq.com', password: PW }), env)).status === 410)
+  // 该主码名下的 BYO 音频（两件）＋ 另一个账号的一件（**不许**被连带清掉）
+  const bidE = 'bk_0011223344556677'
+  audioStore.set(`user/${mainCode}/${bidE}/ch-01.mp3`, 1)
+  audioStore.set(`user/${mainCode}/${bidE}/audio-index.json`, 1)
+  audioStore.set('user/OTHER789/deadbeef/ch-01.mp3', 1)
   const purge = await purgeDeletedAccounts(env, T)
   t('到期真删：清掉 1 个账号', purge.purged === 1)
   t('到期真删：users 行没了', userOf('del@qq.com') == null)
   t('到期真删：连带清掉主码名下 sync_data', db.prepare('SELECT COUNT(*) AS n FROM sync_data WHERE code = ?').get(mainCode).n === 0)
   t('到期真删：连带清掉 sync_progress', db.prepare('SELECT COUNT(*) AS n FROM sync_progress WHERE code = ?').get(mainCode).n === 0)
+  t('块 E：到期真删连带清掉账号空间的音频（user/<code>/ 下 2 件都清）',
+    [...audioStore.keys()].filter((k) => k.startsWith(`user/${mainCode}/`)).length === 0)
+  t('块 E：**别的账号**的音频不许动', audioStore.has('user/OTHER789/deadbeef/ch-01.mp3'))
 
   // 未到期的账号不受影响
   await handleAuth(post('/api/auth/register', { email: 'keep@qq.com', password: PW }), env)

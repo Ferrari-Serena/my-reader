@@ -21,11 +21,12 @@
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import {
-  handleBookAudio, audioObjectKey, classifyFile,
+  handleBookAudio, audioObjectKey, classifyFile, purgeBookAudio, purgeAccountAudio,
   ROUTE_PREFIX, USER_PREFIX, INDEX_FILE,
   MAX_AUDIO_FILE_BYTES, DEFAULT_MAX_ACCOUNT_BYTES, DEFAULT_MAX_BOOKS, DEFAULT_UPLOAD_PER_MIN,
 } from './src/bookaudio.js'
 import { tokenHash } from './src/auth.js'
+import { purgePrefix } from './src/audiostore.js'
 import worker from './src/index.js'
 
 let pass = 0, fail = 0
@@ -93,7 +94,8 @@ function r2(pageLimit = 1000) {
       }
     },
     async head(key) { const e = store.get(key); return e ? { key, size: e.bytes.length } : null },
-    async delete(key) { store.delete(key) },
+    // 块 E：清理按**批量**删（真 R2 支持一次删多个键）
+    async delete(keyOrKeys) { for (const k of (Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys])) store.delete(k) },
     async list(opts = {}) {
       const prefix = opts.prefix || ''
       const all = [...store.keys()].filter(k => k.startsWith(prefix)).sort()
@@ -420,6 +422,50 @@ console.log('\n[index.js — 分发与 CORS 先后]')
   t('经主入口：不支持的动词落到 404', wrongMethod.status === 404)
   t('经主入口：不相干的路径不受影响（仍是 404）', badPath.status === 404)
   t('老 /api/audio 路由没被吃掉（空桶 → 404，且不因书路由而 401）', legacy.status === 404)
+}
+
+console.log('\n[块 E — 按前缀清（audiostore.js）：删书 / 注销都用它]')
+{
+  const { env } = await newEnv()
+  const store = env.AUDIO
+  await store.put(`user/${CODE_A}/${BID}/ch-01.mp3`, MP3)
+  await store.put(`user/${CODE_A}/${BID}/ch-01.timings.json`, JSON.stringify(TIMINGS))
+  await store.put(`user/${CODE_A}/${BID}/audio-index.json`, JSON.stringify(INDEX))
+  await store.put(`user/${CODE_A}/${BID2}/ch-01.mp3`, MP3)
+  await store.put(`user/${CODE_B}/${BID}/ch-01.mp3`, MP3)
+
+  t('purgeBookAudio：只清这一本（3 件），同账号别的书与别的账号都不动',
+    (await purgeBookAudio(env, CODE_A, BID)) === 3
+    && !store.keys().some((k) => k.startsWith(`user/${CODE_A}/${BID}/`))
+    && store.keys().includes(`user/${CODE_A}/${BID2}/ch-01.mp3`)
+    && store.keys().includes(`user/${CODE_B}/${BID}/ch-01.mp3`))
+  t('purgeBookAudio：清一本从没生成过音频的书 → 0 条、不报错',
+    (await purgeBookAudio(env, CODE_A, 'bk_0000000000000000')) === 0)
+  t('purgeAccountAudio：清掉该账号剩下的全部音频（1 件）',
+    (await purgeAccountAudio(env, CODE_A)) === 1
+    && !store.keys().some((k) => k.startsWith(`user/${CODE_A}/`)))
+  t('purgeAccountAudio：别的账号仍在（边界只到 user/<code>/）',
+    store.keys().includes(`user/${CODE_B}/${BID}/ch-01.mp3`))
+
+  // 分页：R2 list 每页上限 1000；把假桶压成每页 2 条，逼出「删到一半游标失效」的经典 bug
+  const small = await newEnv({ AUDIO: r2(2) })
+  const s2 = small.env.AUDIO
+  for (let i = 0; i < 5; i++) await s2.put(`user/${CODE_A}/${BID}/p-${i}.mp3`, MP3)
+  await s2.put(`user/${CODE_B}/${BID}/keep.mp3`, MP3)
+  t('分页（每页 2 条）：5 件跨多页也一次清干净，且不误伤别的账号',
+    (await purgeBookAudio(small.env, CODE_A, BID)) === 5
+    && !s2.keys().some((k) => k.startsWith(`user/${CODE_A}/`))
+    && s2.keys().includes(`user/${CODE_B}/${BID}/keep.mp3`))
+
+  t('list 抛错 → 回 -1（恒不抛：一次 R2 打嗝不该把删书 / 注销弄成失败）',
+    (await purgePrefix({ AUDIO: { async list() { throw new Error('boom') } } }, 'user/X/')) === -1)
+  t('delete 抛错 → 回 -1（同上）', await (async () => {
+    const bad = { AUDIO: {
+      async list() { return { objects: [{ key: 'user/X/y.mp3', size: 1 }], truncated: false } },
+      async delete() { throw new Error('boom') },
+    } }
+    return (await purgePrefix(bad, 'user/X/')) === -1
+  })())
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

@@ -166,5 +166,19 @@ t('顺序：问段 → 查秒 → nextTick → 换源',
 t('换算模块在主包侧、且不静态引生成器',
   !/(^|\n)\s*(import|export)[^\n]*generate/.test(read('src/utils/ttsChunks.js')))
 
+console.log('\n[第 17 步块 E — 索引缓存：预取垫首帧 / 拉回写回 / 删书清掉]')
+{
+  t('打开书：先用缓存垫首帧（loadAudioIndex → indexUsable），再拉一次覆盖',
+    view.includes('const cached = loadAudioIndex(bookId.value)') &&
+    view.includes('audioIndex.value = indexUsable(cached, bookId.value) ? cached : null') &&
+    at(view, 'const cached = loadAudioIndex(bookId.value)') < at(view, 'await fetchCloudIndex(bookId.value)'))
+  t('拉回来的更真：写回缓存（saveAudioIndex）',
+    view.includes('saveAudioIndex(bookId.value, cloud.index)'))
+  t('本机刚生成的那份也写回缓存（onCloudAudioReady）',
+    /onCloudAudioReady[\s\S]{0,500}saveAudioIndex\(bookId\.value, index\)/.test(view))
+  t('缓存模块在主包侧、不引生成器',
+    !/(^|\n)\s*(import|export)[^\n]*generate/.test(read('src/sync/audioIndexCache.js')))
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

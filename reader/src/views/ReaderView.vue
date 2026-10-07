@@ -239,6 +239,7 @@ import { usePhrases } from '../composables/usePhrases'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
 import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { chapterAudioPath, chapterTimingsUrl, fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
+import { loadAudioIndex, saveAudioIndex } from '../sync/audioIndexCache.js'
 import { buildParagraphStarts } from '../utils/ttsChunks.js'
 import { useSync } from '../composables/useSync'
 import { useAuth } from '../composables/useAuth'
@@ -580,7 +581,10 @@ async function loadTimings(chId) {
  * 没在朗读就不动 —— 下一次按播放走的就是云端音频。
  */
 async function onCloudAudioReady({ index, chapterId: chId } = {}) {
-  if (index) audioIndex.value = index
+  if (index) {
+    audioIndex.value = index
+    saveAudioIndex(bookId.value, index) // 块 E：本机刚生成的也写进缓存（下次开书首帧即有）
+  }
   audioVersion.value += 1
   const id = chId || currentChapter.value?.id || ''
   if (!id) return
@@ -1040,8 +1044,15 @@ async function loadByoBook() {
   // 云端就绪清单（第 17 步块 D）：未登录 401／还没生成过 404 一律当「没有清单」→ 播放器
   // 退回「点开试、404 再降级浏览器朗读」的旧行为（不报错、不空转、也不冒充有音频）。
   // `book` 字段对不上同样不认（宁缺勿错）。
+  // 块 E「预取带 index」：先用预取时缓存下来的那份垫上（B 设备一打开就有，判据 3 的首帧），
+  // 再拉一次覆盖 —— 别的设备新生成的章靠这次覆盖追平。缓存空 → 退回原来的「等这次请求」。
+  const cached = loadAudioIndex(bookId.value)
+  audioIndex.value = indexUsable(cached, bookId.value) ? cached : null
   const cloud = await fetchCloudIndex(bookId.value)
-  audioIndex.value = (cloud.ok && indexUsable(cloud.index, bookId.value)) ? cloud.index : null
+  if (cloud.ok && indexUsable(cloud.index, bookId.value)) {
+    audioIndex.value = cloud.index
+    saveAudioIndex(bookId.value, cloud.index) // 这次拿到的更真：写回缓存，下次首帧用它
+  }
 }
 
 async function loadBook() {

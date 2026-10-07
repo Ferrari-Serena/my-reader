@@ -76,7 +76,13 @@ function r2() {
       return { key, size: e.size, httpMetadata: e.httpMetadata, text: async () => e.text, body: new Response(e.text).body }
     },
     async head(key) { const e = store.get(key); return e ? { key, size: e.size } : null },
-    async delete(key) { store.delete(key) },
+    // 块 E：清理按**批量**删（真 R2 支持一次删多个键）
+    async delete(keyOrKeys) { for (const k of (Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys])) store.delete(k) },
+    async list(opts = {}) {
+      const prefix = opts.prefix || ''
+      const all = [...store.keys()].filter((k) => k.startsWith(prefix)).sort()
+      return { objects: all.map((k) => ({ key: k, size: store.get(k).size })), truncated: false }
+    },
   }
 }
 
@@ -241,12 +247,22 @@ console.log('\n[booksync — DELETE（对象 ＋ 元信息墓碑）]')
       VALUES (?, ?, 'book', ?, ?, NULL)`)
     .run(CODE_A, recordKey('book', BID), JSON.stringify({ bookId: BID, title: '自带的书' }), new Date(NOW).toISOString())
   await handleBookSync(req('PUT', bookPath(BID), { cookie: TOKEN_A, body: JSON.stringify(BOOK) }), env)
+  // 块 E「删书连带清音频」：这本书的两件派生对象 ＋ 同一账号另一本的一件 ＋ 另一个账号的一件
+  await audio.put(`user/${CODE_A}/${BID}/ch-01.mp3`, 'xxxx')
+  await audio.put(`user/${CODE_A}/${BID}/ch-01.timings.json`, '{}')
+  await audio.put(`user/${CODE_A}/${BID2}/ch-01.mp3`, 'xxxx')
+  await audio.put(`user/${CODE_B}/${BID}/ch-01.mp3`, 'xxxx')
 
   const del = await handleBookSync(req('DELETE', bookPath(BID), { cookie: TOKEN_A }), env)
   const delJson = await del.json()
   t('DELETE 200 + ok', del.status === 200 && delJson.ok === true)
   t('删掉了 R2 对象（removed=true）', delJson.removed === true)
-  t('R2 里已无此键', audio.keys().length === 0)
+  t('删掉了 R2 里的书体对象', !audio.raw(bookObjectKey(CODE_A, BID)))
+  t('块 E：删书连带清音频 —— user/<code>/<bookId>/ 下两件都没了',
+    !audio.raw(`user/${CODE_A}/${BID}/ch-01.mp3`) && !audio.raw(`user/${CODE_A}/${BID}/ch-01.timings.json`))
+  t('块 E：同一账号**别的书**的音频不动（只清这一本的目录）', !!audio.raw(`user/${CODE_A}/${BID2}/ch-01.mp3`))
+  t('块 E：**别的账号**的音频不动（租户边界没被越）', !!audio.raw(`user/${CODE_B}/${BID}/ch-01.mp3`))
+  t('DELETE 回执带 audioRemoved（真删了几件就报几件）', delJson.audioRemoved === 2)
   const row = db.prepare('SELECT kind, payload, deleted_at FROM sync_data WHERE code = ? AND word = ?')
     .get(CODE_A, recordKey('book', BID))
   t('元信息被写成墓碑（payload=null、deleted_at 有值、kind 不变）',
@@ -260,6 +276,8 @@ console.log('\n[booksync — DELETE（对象 ＋ 元信息墓碑）]')
   const bDel = await (await handleBookSync(req('DELETE', bookPath(BID), { cookie: TOKEN_B }), env)).json()
   t('B 删同一个 bookId：B 目录里本来没有 → removed=false，A 的对象原封不动',
     bDel.removed === false && !!audio.raw(bookObjectKey(CODE_A, BID)))
+  t('块 E：B 删自己那本 → 清的是 B 目录的音频；A 目录（另一本）不动',
+    !audio.raw(`user/${CODE_B}/${BID}/ch-01.mp3`) && !!audio.raw(`user/${CODE_A}/${BID2}/ch-01.mp3`))
 }
 
 console.log('\n[booksync — 输入闸]')

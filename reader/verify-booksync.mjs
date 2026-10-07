@@ -553,5 +553,66 @@ console.log('\n[第 16.6 步 — 对账漏拍：单飞 ＋ 补跑（createSingle
   tEq('bookSyncState 的失败位是**点名**（failedIds）而不是计数 —— 界面才能把这几行画成「重试」',
     [typeof B.bookSyncState.queued, B.bookSyncState.failedIds], ['number', []])
 }
+console.log('\n[第 17 步块 E — 预取带 index（本机缓存 ＋ 预取顺带）]')
+{
+  const C = await import('./src/sync/audioIndexCache.js')
+  const { readFileSync } = await import('node:fs')
+  const A1 = 'bk_aaaabbbbccccdddd', A2 = 'bk_2222333344445555'
+  const IDX = { book: A1, withAudio: ['ch-01'], missing: {} }
+
+  t('存 → 读：原样拿回',
+    C.saveAudioIndex(A1, IDX) === true && JSON.stringify(C.loadAudioIndex(A1)) === JSON.stringify(IDX))
+  t('形状不对的不收（没有 withAudio）',
+    C.saveAudioIndex(A2, { book: A2 }) === false && C.loadAudioIndex(A2) === null)
+  t('没收进去不会踩掉已有的那份', C.loadAudioIndex(A1) !== null)
+  t('没存过 → null', C.loadAudioIndex('bk_9999888877776666') === null)
+  t('clear 之后 → null（删书要清本机这份）',
+    C.clearAudioIndex(A1) === true && C.loadAudioIndex(A1) === null)
+  t('clear 没存过的 → false（不假装清了）', C.clearAudioIndex('bk_9999888877776666') === false)
+
+  // 上限：超了淘汰最老的，防 localStorage 无界增长
+  const key = (i) => 'bk_' + String(i).padStart(16, '0')
+  for (let i = 0; i < C.MAX_CACHED_BOOKS + 3; i++) C.saveAudioIndex(key(i), { book: '', withAudio: [], missing: {} })
+  t('缓存有上限（不无界增长，最老的被淘汰）',
+    C.loadAudioIndex(key(0)) === null && C.loadAudioIndex(key(C.MAX_CACHED_BOOKS + 2)) !== null)
+
+  // 预取：只给「真拉下来」的书拉 index（打桩，不触网）
+  const idxCalled = []
+  const savedIdx = {}
+  const r = await B.prefetchCloudBooks({
+    metas: [{ bookId: A1 }, { bookId: A2 }],
+    localIds: [], retired: [],
+    getBody: async (id) => (id === A1
+      ? { ok: true, record: { bookId: id, chapters: [{ id: 'ch-01' }] } }
+      : { ok: false, status: 500 }),
+    save: async () => {},
+    getIndex: async (id) => { idxCalled.push(id); return { ok: true, index: { book: id, withAudio: ['ch-01'], missing: {} } } },
+    saveIndex: (id, index) => { savedIdx[id] = index; return true },
+  })
+  tEq('预取：只给**真拉下来**的那本拉 index（失败那本不拉）', idxCalled, [A1])
+  t('预取：index 存进去了', !!savedIdx[A1] && savedIdx[A1].withAudio[0] === 'ch-01')
+  tEq('预取结果不受 index 影响', [r.saved, r.failed], [[A1], [A2]])
+
+  // 恒不抛：index 拉不到 / 拿错书 / 抛异常 —— 都不该把预取弄坏
+  t('index 404 → 不存、不抛',
+    (await B.stashCloudIndex(A1, {
+      getIndex: async () => ({ ok: false, status: 404 }),
+      saveIndex: () => { throw new Error('不该被调到') },
+    })) === false)
+  t('index 是别的书的（book 对不上）→ 宁缺勿错',
+    (await B.stashCloudIndex(A1, {
+      getIndex: async () => ({ ok: true, index: { book: 'bk_ffffffffffffffff', withAudio: [] } }),
+      saveIndex: () => true,
+    })) === false)
+  t('getIndex 抛异常 → 不抛、回 false',
+    (await B.stashCloudIndex(A1, {
+      getIndex: async () => { throw new Error('boom') },
+      saveIndex: () => true,
+    })) === false)
+
+  const bsSrc = readFileSync(new URL('./src/sync/bookSync.js', import.meta.url), 'utf8')
+  t('删书那条路会清本机缓存（removeByoBookEverywhere → clearAudioIndex）', bsSrc.includes('clearAudioIndex(bookId)'))
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
