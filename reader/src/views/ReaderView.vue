@@ -153,7 +153,7 @@
         />
 
         <button
-          v-if="genEntry"
+          v-if="genEntry && GEN_ENTRY_ENABLED"
           class="gen-entry"
           :aria-expanded="genOpen ? 'true' : 'false'"
           @click="genOpen = !genOpen"
@@ -636,6 +636,11 @@ const cloudGenerating = computed(() => {
 // ---- 底部停靠区：生成入口 ＋ 面板 ＋ 播放器（2026-10-07 Ferrari 裁 A）----
 // 面板收起时只是不渲染、组件仍在，所以「这一章能不能生成」只有面板里的闸说了算 ——
 // 这里只接它的外报（entry），主包不再重写一份判定。
+// 2026-10-08 · 第 17 步 D21：生成入口**撤出阅读器**，改挂 My Books 页（Phase1 §13.8 ④
+// 「入口只在 My Books 页」）。入口按钮默认关；面板**仍挂着** —— 它还是「浏览器朗读 →
+// 云端音色」就绪热切的那条轮询（§13.5 处置表：留）。块 D 在 My Books 页重建入口时复用
+// GenAudioPanel；届时把这个开关与下面那个按钮一起处置。
+const GEN_ENTRY_ENABLED = false
 const genOpen = ref(false)
 const genEntry = computed(() => !!panelStatus.value.entry)
 

@@ -205,7 +205,10 @@ console.log('\n[第 17 步块 E — 索引缓存：预取垫首帧 / 拉回写�
 
   // —— 2026-10-07 Ferrari 裁 A：入口进播放器条、点开才展开 ——
   t('生成入口 ＋ 面板 ＋ 播放器同处一个停靠区',
-    view.includes('<div ref="bottomDockRef" class="bottom-dock">') && view.includes('v-if="genEntry"'))
+    view.includes('<div ref="bottomDockRef" class="bottom-dock">') &&
+    view.includes('v-if="genEntry && GEN_ENTRY_ENABLED"'))
+  t('入口默认关（2026-10-08 · D21：入口撤出阅读器、改挂 My Books 页）',
+    view.includes('const GEN_ENTRY_ENABLED = false'))
   t('入口文案就是裁的那句；展开时变「收起」',
     view.includes('genOpen ? \'收起\' : \'本章可以生成真人朗读\''))
   t('入口可见性来自面板外报（主包不重写闸判定）',
