@@ -217,7 +217,7 @@ function startStaticAudio(seekTo = null) {
   }).catch((err) => {
     if (mySid !== sessionId) return
     clearLoadTimer()
-    console.error('Chapter audio failed:', err.name, err.message)
+    console.error('Cloud voice failed:', err.name, err.message)
     state.value = 'error'
     source.value = err.name === 'NotAllowedError'
       ? 'Playback blocked — tap Browser TTS'
