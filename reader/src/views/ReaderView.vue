@@ -1,5 +1,5 @@
 <template>
-  <div class="reader-view" :style="settingsCssVars">
+  <div class="reader-view" :style="[settingsCssVars, dockVars]">
     <!-- Loading -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -132,37 +132,51 @@
         @jump="jumpToChapter"
       />
 
-      <AudioPlayer
-        ref="audioPlayerRef"
-        :chapter-text="currentChapterText"
-        :audio-url="currentAudioUrl"
-        :has-audio="currentChapterHasAudio"
-        :no-audio-reason="chapterNoAudioReason"
-        :book-id="bookId"
-        :chapter-id="currentChapter?.id || ''"
-        :book-title="bookTitle"
-        :chapter-title="currentChapter?.title || ''"
-        :cloud-pending="cloudGenerating"
-        :paragraph-starts="chapterParagraphStarts"
-        @time="onAudioTime"
-        @next-track="nextChapter"
-        @prev-track="prevChapter"
-        @ended="onChapterAudioEnded"
-      />
+      <!-- 底部停靠区（2026-10-07 Ferrari 裁 A）：生成入口 ＋ 展开后的面板 ＋ 播放器条在**同一个
+           fixed 容器**里排队 —— 入口跟着播放器走、面板从播放器正上方长出来，不必滚到章末找。
+           容器高度由 ResizeObserver 写进 --dock-h，正文据此留白，免得最后几行被压住。 -->
+      <div ref="bottomDockRef" class="bottom-dock">
+        <!-- 第 17 步块 D：BYO 书 ＋ 已登录才挂。这里只判粗条件（免得非 BYO 的读者白拉一块懒加载
+             chunk）；「已就绪 / 无 WebGPU / 够不够格」由面板里的 audioGenGate 细判，口径只一处。
+             ⚠️ 收起 ≠ 卸载：组件一直在，生成与就绪轮询才不会被自己的展开状态掐断。 -->
+        <GenAudioPanel
+          v-if="isByoBook && !!authUser"
+          :open="genOpen"
+          :book-id="bookId"
+          :chapter="currentChapter"
+          :audio-index="audioIndex"
+          :is-byo="isByoBook"
+          :logged-in="!!authUser"
+          @ready="onCloudAudioReady"
+          @browser-tts="onBrowserTts"
+          @status="onPanelStatus"
+        />
 
-      <!-- 第 17 步块 D：BYO 书 ＋ 已登录才挂。这里只判粗条件（免得非 BYO 的读者白拉一块懒加载
-           chunk）；「已就绪 / 无 WebGPU / 够不够格」由面板里的 audioGenGate 细判，口径只一处。 -->
-      <GenAudioPanel
-        v-if="isByoBook && !!authUser"
-        :book-id="bookId"
-        :chapter="currentChapter"
-        :audio-index="audioIndex"
-        :is-byo="isByoBook"
-        :logged-in="!!authUser"
-        @ready="onCloudAudioReady"
-        @browser-tts="onBrowserTts"
-        @status="onPanelStatus"
-      />
+        <button
+          v-if="genEntry"
+          class="gen-entry"
+          :aria-expanded="genOpen ? 'true' : 'false'"
+          @click="genOpen = !genOpen"
+        >{{ genOpen ? '收起' : '本章可以生成真人朗读' }}</button>
+
+        <AudioPlayer
+          ref="audioPlayerRef"
+          :chapter-text="currentChapterText"
+          :audio-url="currentAudioUrl"
+          :has-audio="currentChapterHasAudio"
+          :no-audio-reason="chapterNoAudioReason"
+          :book-id="bookId"
+          :chapter-id="currentChapter?.id || ''"
+          :book-title="bookTitle"
+          :chapter-title="currentChapter?.title || ''"
+          :cloud-pending="cloudGenerating"
+          :paragraph-starts="chapterParagraphStarts"
+          @time="onAudioTime"
+          @next-track="nextChapter"
+          @prev-track="prevChapter"
+          @ended="onChapterAudioEnded"
+        />
+      </div>
     </template>
 
     <!-- 划词浮条（第 9 步 9.1）：选中 -> 选色 -> 划到词边界 -->
@@ -618,6 +632,27 @@ const cloudGenerating = computed(() => {
   const st = panelStatus.value
   return !!st.running && !!st.pending && st.chapterId === (currentChapter.value?.id || '')
 })
+
+// ---- 底部停靠区：生成入口 ＋ 面板 ＋ 播放器（2026-10-07 Ferrari 裁 A）----
+// 面板收起时只是不渲染、组件仍在，所以「这一章能不能生成」只有面板里的闸说了算 ——
+// 这里只接它的外报（entry），主包不再重写一份判定。
+const genOpen = ref(false)
+const genEntry = computed(() => !!panelStatus.value.entry)
+
+// 停靠区是 fixed 的，正文底部要按它的**实际高度**留白：面板展开时比播放器条高得多，
+// 写死 88px 会把最后几行压在条底下。ResizeObserver 一量就写进 --dock-h（.reader-view 用它）。
+const bottomDockRef = ref(null)
+const dockH = ref(88)
+const dockVars = computed(() => ({ '--dock-h': dockH.value + 'px' }))
+let dockRO = null
+watch(bottomDockRef, (el) => {
+  if (dockRO) { dockRO.disconnect(); dockRO = null }
+  if (!el || typeof ResizeObserver === 'undefined') return
+  dockRO = new ResizeObserver(() => { dockH.value = el.offsetHeight || 88 })
+  dockRO.observe(el)
+  dockH.value = el.offsetHeight || 88
+})
+onBeforeUnmount(() => { if (dockRO) dockRO.disconnect() })
 
 function paraStart(paraId) {
   const t = audioTimings.value?.paragraphs
@@ -1214,8 +1249,36 @@ onBeforeUnmount(() => {
 .reader-view {
   max-width: var(--reader-width, 760px);
   margin: 0 auto;
-  padding: 0 16px 88px;
+  /* 底部留白跟着停靠区的**实测**高度走（--dock-h 由 ReaderView 的 ResizeObserver 写）：
+     面板一展开，这里就自动让位，最后几行不会被压在条底下。
+     ⚠️ 底部口径只此一处（--dock-pad）：下面三个断点只改左右内边距 ——
+     2026-10-07 实测：断点里写死底部 88px 会盖掉这里，桌面宽度下面板展开时正文被压住。 */
+  --dock-pad: calc(var(--dock-h, 88px) + 16px);
+  padding: 0 16px var(--dock-pad);
 }
+
+/* 底部停靠区（2026-10-07 裁 A）：入口 ＋ 面板 ＋ 播放器条同处一个 fixed 栈 */
+.bottom-dock {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 150;
+  background: var(--bg-primary, #fff);
+}
+.gen-entry {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  border: 0;
+  border-top: 1px solid var(--border-color, #d2d2d7);
+  background: var(--panel-bg, #fafafa);
+  color: var(--accent-color, #1a73e8);
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+}
+.gen-entry:hover { text-decoration: underline; }
 
 .loading-state,
 .error-state {
@@ -1323,7 +1386,7 @@ onBeforeUnmount(() => {
 /* Mobile */
 @media (max-width: 480px) {
   .reader-view {
-    padding: 0 12px 72px;
+    padding: 0 12px var(--dock-pad);
   }
   .paragraph {
     font-size: var(--reader-font-size, 16px);
@@ -1337,7 +1400,7 @@ onBeforeUnmount(() => {
 /* Tablet */
 @media (min-width: 768px) {
   .reader-view {
-    padding: 0 24px 88px;
+    padding: 0 24px var(--dock-pad);
     max-width: var(--reader-width, 720px);
   }
 }
@@ -1345,7 +1408,7 @@ onBeforeUnmount(() => {
 /* Desktop */
 @media (min-width: 1024px) {
   .reader-view {
-    padding: 0 32px 88px;
+    padding: 0 32px var(--dock-pad);
     max-width: var(--reader-width, 760px);
   }
 }

@@ -668,11 +668,8 @@ onUnmounted(() => {
   padding-bottom: max(10px, env(safe-area-inset-bottom));
   background: var(--bg-primary, #fff);
   border-top: 1px solid var(--border-color, #d2d2d7);
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 150;
+  /* 定位交给 ReaderView 的 .bottom-dock（2026-10-07 Ferrari 裁 A）：生成入口与面板要长在
+     播放器正上方，三件必须在**同一个** fixed 容器里排队 —— 各自 fixed 就叠不到一起。 */
   box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
 }
 

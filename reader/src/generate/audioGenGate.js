@@ -112,7 +112,7 @@ export function formatEta(ms) {
 export const GEN_NOTES = [
   { id: 'desktop', text: '强烈建议在电脑端操作 —— 性能足、可长时间运行、不会被系统中断。' },
   { id: 'first-download', text: '首次需下载约 90 MB 语音模型（仅一次，之后走浏览器缓存）。' },
-  { id: 'foreground', text: '生成期间请保持页面在前台，不要关闭标签页。' },
+  { id: 'foreground', text: '生成期间请让这个标签页留在前台（别切走、别最小化），也不要关闭它 —— 后台标签页会被浏览器降速甚至冻结。' },
   { id: 'mobile', text: '手机／平板可能很慢或中途被系统中断，建议改在电脑上做。' },
   { id: 'scope', text: '生成的是你自己账号空间里的音频，只有你的账号能看到。' },
   { id: 'personal', text: '音频由你自己的正文生成，仅个人使用，不用于分发。' },
@@ -122,5 +122,5 @@ export const GEN_NOTES = [
 export const GEN_SCOPE_NOTE = '一次只生成当前打开的这一章，不排队整本。'
 
 /** 时长预期（依据项目日志 2026-10-07 块 C3 读数：webgpu ＋ fp16 RTF 0.84 → 平均章 ≈ 17 min） */
-export const GEN_ESTIMATE_NOTE = '桌面（WebGPU ＋ fp16）实测约 15–20 分钟／章，全程需保持页面在前台。'
+export const GEN_ESTIMATE_NOTE = '桌面（WebGPU ＋ fp16）实测约 15–20 分钟／章，全程需让本标签页留在前台。'
 export const GEN_ESTIMATE_MINUTES = { min: 15, max: 20 }

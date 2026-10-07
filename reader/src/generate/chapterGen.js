@@ -19,6 +19,8 @@
  *   ③ **失败不上传**：合成／编码炸了，连一记 PUT 都不发（索引最后写是 audioUpload 的事）；
  *   ④ **配额与限流不在这里消化**：403／429 原样透出 `status` ＋ `substep`，由面板退回
  *      浏览器 TTS（§13.2 配额口径 —— 不报错、不白屏）。
+ *   ⑤ **取消是中断、不是失败**（2026-10-07 裁「3＋1」）：`signal` 一旦 abort，正在飞的模型下载当场断
+ *      （信号在 engine 的 fetch 包装里注入），回执按 `cancelled` 出 —— 面板说「已取消」，不是「加载失败」。
  *
  * ⚠️ engine.js（kokoro-js）**动态**引，两个理由：① 主包不许静态引本目录（verify-generate.mjs
  * 的卫生断言）；② node 自检要能在**不加载 kokoro-js** 的前提下把编排与失败分流全跑一遍 ——
@@ -46,7 +48,7 @@ const fail = (step, reason, extra) => ({ ok: false, step, status: 0, reason, ...
  *          loadModelFn?:Function, generateChapterFn?:Function, encodeFn?:Function,
  *          fetchImpl?:Function, timeoutMs?:number,
  *          onStage?:(stage:string)=>void, onProgress?:Function, onPlan?:Function,
- *          onChunk?:Function, shouldCancel?:()=>boolean}} o
+ *          onChunk?:Function, shouldCancel?:()=>boolean, signal?:AbortSignal}} o
  * @returns {Promise<object>} 见头注；`ok:true` 时带 `index`（合并后的就绪清单，面板据此热切）
  */
 export async function generateChapterAudio({
@@ -54,8 +56,11 @@ export async function generateChapterAudio({
   loadModelFn = null, generateChapterFn = null, encodeFn = null,
   fetchImpl = globalThis.fetch, timeoutMs = undefined,
   onStage = null, onProgress = null, onPlan = null, onChunk = null, shouldCancel = null,
+  signal = null,
 } = {}) {
   if (!bookId || !chapterId || !chapter) return fail('input', 'bad-input')
+  // 「这一趟是不是已经被取消了」：取消信号从面板一路传到这里，再往下透给 engine 的 fetch 包装
+  const aborted = () => !!(signal && signal.aborted)
   const stage = (s) => { try { if (onStage) onStage(s) } catch { /* 进度回调自己出错不该毁掉生成 */ } }
 
   // ① 模型 —— 外部已给实例就跳过（面板复用／探针场景）
@@ -64,12 +69,16 @@ export async function generateChapterAudio({
     stage('model')
     try {
       const load = loadModelFn || (async (o) => (await engine()).loadModel(o))
-      const r = await load({ device, dtype, onProgress })
+      const r = await load({ device, dtype, onProgress, signal })
       inst = r && r.tts
       if (!inst) return fail('model', 'model-failed', { message: 'loadModel 没回实例' })
     } catch (e) {
+      // ⑤ 取消 ≡ 中断：底下是被 abort 撕掉的下载，别报「加载语音模型失败」吓人
+      if (aborted()) return fail('cancelled', 'cancelled')
       return fail('model', 'model-failed', { message: msgOf(e) })
     }
+    // 模型装完了才发现已取消（下载刚好卡在取消前后）→ 一块都别合成
+    if (aborted()) return fail('cancelled', 'cancelled')
   }
 
   // ② 合成 —— 切块／段间静音／timings 口径全在 engine，这里不重复

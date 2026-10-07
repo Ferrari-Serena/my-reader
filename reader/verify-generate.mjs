@@ -485,6 +485,42 @@ console.log('\n[chapterGen — 编排与失败分流（不加载 kokoro-js）]')
   }
 
   {
+    // 真中断（2026-10-07 裁「3＋1」）：面板点取消 → abort 信号一路传到这里 →
+    // 底下的下载是被 abort 撕掉的，回执必须是 cancelled（**不是** model-failed）
+    const stages = []
+    const f = fakeFetch({})
+    const ctrl = new AbortController()
+    let sawSignal = null
+    const r = await generateChapterAudio({
+      bookId: 'bk_1', chapterId: 'ch-01', chapter: CH,
+      loadModelFn: async (o2) => { sawSignal = o2.signal; ctrl.abort(); throw new Error('The operation was aborted.') },
+      generateChapterFn: async () => fakeStitched(),
+      encodeFn: async () => new Uint8Array(1),
+      fetchImpl: f, onStage: (x) => stages.push(x), signal: ctrl.signal,
+    })
+    t('loadModel 拿得到信号（引擎据此在 fetch 层注入）', sawSignal === ctrl.signal)
+    t('模型阶段被取消 → step:cancelled，不是 model-failed',
+      r.ok === false && r.step === 'cancelled' && r.reason === 'cancelled', JSON.stringify(r))
+    t('取消 → 不合成、不编码、一字节都不发', eq(stages, ['model']) && f.calls.length === 0)
+  }
+
+  {
+    // 下载恰好卡在取消前后：模型装完了但旗子已举 → 一块都不合成
+    const stages = []
+    const f = fakeFetch({})
+    const ctrl = new AbortController()
+    const r = await generateChapterAudio({
+      bookId: 'bk_1', chapterId: 'ch-01', chapter: CH,
+      loadModelFn: async () => { ctrl.abort(); return { tts: { fake: true } } },
+      generateChapterFn: async () => { stages.push('synth-called'); return fakeStitched() },
+      encodeFn: async () => new Uint8Array(1),
+      fetchImpl: f, onStage: (x) => stages.push(x), signal: ctrl.signal,
+    })
+    t('模型装完才发现已取消 → 按 cancelled 收，合成一次都不进',
+      r.step === 'cancelled' && eq(stages, ['model']), JSON.stringify(stages))
+  }
+
+  {
     const f = fakeFetch({})
     const r = await generateChapterAudio({
       bookId: 'bk_1', chapterId: 'ch-01', chapter: CH, tts: {},
@@ -531,6 +567,17 @@ console.log('\n[chapterGen — 编排与失败分流（不加载 kokoro-js）]')
     t('chapterGen 不静态引 engine.js／kokoro-js（重活只在真要合成时才拉）',
       !/from\s+['"][^'"]*engine\.js['"]/.test(src) && !src.includes("'kokoro-js'"))
     t('chapterGen 的 engine 走动态 import', /await import\(['"][^'"]*engine\.js['"]\)/.test(src))
+    const eng = readFileSync(join(__dirname, 'src/generate/engine.js'), 'utf8')
+    t('engine 有单槽的「本次加载信号」（取消要能掉断正在飞的下载）',
+      /let activeModelSignal = null/.test(eng) && /activeModelSignal = signal \|\| null/.test(eng))
+    t('engine 收工必清信号（finally），不影响别人',
+      /finally \{\s*activeModelSignal = null\s*\}/.test(eng))
+    t('只给模型那一坨请求挂信号（别的请求一律不动）',
+      /if \(activeModelSignal && isModelUrl\(url\)\)/.test(eng) && /export function isModelUrl/.test(eng))
+    t('信号合并有 AbortSignal.any 缺失时的兜底',
+      /AbortSignal\.any/.test(eng) && /addEventListener\('abort'/.test(eng))
+    t('fetch 路由装在 ensureMirror（面板与探针共用一条路；此前面板那条漏装）',
+      /installMirrorRouting\(\)\n\s+if \(!mirrorPromise\)/.test(eng))
   }
 }
 

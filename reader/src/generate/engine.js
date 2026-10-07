@@ -56,6 +56,31 @@ const emit = (msg) => { try { if (logger) logger(msg) } catch { /* 日志出口�
 let mirrorOn = false
 let mirrorPromise = null
 let routingInstalled = false
+// 「取消生成」要能掉断**正在飞**的模型下载。kokoro-js ／ transformers.js 都没有 signal 入口，
+// 信号只能在下面那个 fetch 包装里注入。同一时刻只会有一次生成在跑（面板自己拦着），故用单槽。
+let activeModelSignal = null
+
+/** 这个 URL 是不是模型那一坨（HF 原址或本地镜像）—— 只有它可被「取消生成」掉断 */
+export function isModelUrl(url) {
+  return typeof url === 'string' && (url.startsWith(HF_REPO_PREFIX) || url.startsWith(MIRROR_PREFIX))
+}
+
+/**
+ * 把外部信号与调用方自己的信号并成一个。`AbortSignal.any` 旧浏览器没有 → 手工转发兜底。
+ * 返回 undefined 表示「没有要挂的信号」（fetch 照旧）。
+ */
+export function combineSignals(list) {
+  const sigs = (list || []).filter(Boolean)
+  if (!sigs.length) return undefined
+  if (sigs.length === 1) return sigs[0]
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') return AbortSignal.any(sigs)
+  const ctrl = new AbortController()
+  for (const s of sigs) {
+    if (s.aborted) { ctrl.abort(s.reason); break }
+    s.addEventListener('abort', () => ctrl.abort(s.reason), { once: true })
+  }
+  return ctrl.signal
+}
 
 /** 把 HF 上这一个 repo 的请求改写到本地镜像（幂等；只装一次）。 */
 export function installMirrorRouting() {
@@ -71,6 +96,12 @@ export function installMirrorRouting() {
         const local = MIRROR_PREFIX + url.slice(HF_REPO_PREFIX.length)
         target = (typeof input === 'string') ? local : new Request(local, input)
         emit('[mirror] ' + url.slice(HF_REPO_PREFIX.length))
+      }
+      // 取消生成（2026-10-07 裁「3＋1」）：**只**给模型这一坨请求挂信号，别的请求（/api/*、词典…）一律不动。
+      // 挂上之后点取消 = 正在飞的下载**当场断**，不用等它自己走完。
+      if (activeModelSignal && isModelUrl(url)) {
+        const own = (init && init.signal) || ((input && input.signal) || null)
+        init = { ...(init || {}), signal: combineSignals([own, activeModelSignal]) }
       }
     } catch { target = input }
     return orig.call(this, target, init)
@@ -94,6 +125,11 @@ async function detectMirror() {
 
 /** 探测本地镜像（结果缓存；重复调用同一个 promise —— 面板与探针都靠它幂等）。 */
 export function ensureMirror() {
+  // 模型请求的 fetch 路由在**这里**装 —— 面板与探针都只走这一条路（它们都先 await 本函数）。
+  // 2026-10-07 实测：此前只有探针自己装，**面板那条路漏了** → 镜像改写与「取消生成」
+  // 的信号注入都不生效。组件对对对上后面一句话才成立：镜像不在（真机／线上）时 config.json 404 →
+  // mirrorOn=false → 只剩信号注入，不改写地址，行为与今天一致。
+  installMirrorRouting()
   if (!mirrorPromise) mirrorPromise = detectMirror()
   return mirrorPromise
 }
@@ -154,11 +190,12 @@ export function resetModel() { tts = null; modelKey = '' }
 
 /**
  * 加载（或复用同配置的）kokoro-js 实例。**抛错由调用方接**。
- * @param {{device?:string, dtype?:string, onProgress?:Function, force?:boolean}} opts
+ * @param {{device?:string, dtype?:string, onProgress?:Function, force?:boolean,
+ *          signal?:AbortSignal}} opts
  * @returns {Promise<{tts:object, device:string, dtype:string, key:string,
  *                    cached:boolean, voices:string[], ms:number}>}
  */
-export async function loadModel({ device = 'wasm', dtype = 'q8', onProgress = null, force = false } = {}) {
+export async function loadModel({ device = 'wasm', dtype = 'q8', onProgress = null, force = false, signal = null } = {}) {
   await ensureMirror()
   if (mirrorOn && !MIRRORED_DTYPES.includes(dtype)) {
     throw new Error('本地镜像里没有 ' + dtype + ' 档 —— 已镜像：' + MIRRORED_DTYPES.join('/'))
@@ -170,12 +207,18 @@ export async function loadModel({ device = 'wasm', dtype = 'q8', onProgress = nu
   }
   emit(`[model] from_pretrained(${MODEL_ID}, device=${device}, dtype=${dtype}) …`)
   const t0 = now()
-  const inst = await KokoroTTS.from_pretrained(MODEL_ID, {
-    dtype, device, progress_callback: onProgress || undefined,
-  })
-  tts = inst
-  modelKey = key
-  return { tts: inst, device, dtype, key, cached: false, voices: voicesOf(inst), ms: now() - t0 }
+  // 这次加载期间，模型那一坨请求都挂上这个信号（点取消 → 当场断）。**收工必清**，别影响别人。
+  activeModelSignal = signal || null
+  try {
+    const inst = await KokoroTTS.from_pretrained(MODEL_ID, {
+      dtype, device, progress_callback: onProgress || undefined,
+    })
+    tts = inst
+    modelKey = key
+    return { tts: inst, device, dtype, key, cached: false, voices: voicesOf(inst), ms: now() - t0 }
+  } finally {
+    activeModelSignal = null
+  }
 }
 
 // ── 合成一章（不含 mp3 编码／上传 —— 那是 chapterGen 的事）───────────────────

@@ -135,7 +135,31 @@ t('标签页在后台不发请求', panel.includes("document.visibilityState ===
 t('已就绪 → 停轮询（不空转）',
   panel.includes('if (!stillPending(props.audioIndex, id)) { stopPoll(); return }'))
 t('卸载时收掉定时器', /onBeforeUnmount\(\(\) => \{[\s\S]{0,400}stopPoll\(\)/.test(panel))
-t('状态外报带 chapterId（切章不串台）', panel.includes("emit('status', { chapterId: chapterId.value"))
+t('状态外报带 chapterId（切章不串台）',
+  panel.includes('chapterId: chapterId.value, running: running.value, pending: pending.value'))
+t('入口可见性由面板外报（主包拿不到闸，不重写判定）', panel.includes('entry: gate.value.show'))
+
+// —— 2026-10-07 实报修复：加载模型阶段进度条一动不动 ——
+t('模型阶段的百分比接上了线（panel → chapterGen → engine 的 progress_callback）',
+  panel.includes('onProgress: (p) => { progress.value = { ...progress.value, model: modelProgress(p) } }') &&
+  /function modelProgress\(p\)/.test(panel))
+t('自己走的秒表：模型阶段「已用」也在动',
+  /function startTick\(\)/.test(panel) && panel.includes('tickMs.value = Date.now() - t0'))
+t('秒表开跑时起、收工与卸载时停',
+  panel.includes('  startTick()') &&
+  /stopTick\(\)[\s\S]{0,120}running\.value = false/.test(panel) &&
+  /onBeforeUnmount\(\(\) => \{[\s\S]{0,600}stopTick\(\)/.test(panel))
+t('没有百分比可算的阶段不画 0% 死条（走「来回跑」态）',
+  panel.includes(`:class="{ 'gen-bar-wait': !pct }"`) &&
+  panel.includes(`:style="pct ? { width: pct + '%' } : {}"`) &&
+  panel.includes('.gen-bar-wait > i'))
+t('模型阶段有下载字节就按它算真百分比',
+  /if \(stage\.value === 'model'\) return p\.model && p\.model\.total \? p\.model\.pct : 0/.test(panel))
+t('进度文案把「下载了多少」说出来（不是只说「加载中」）',
+  panel.includes('模型已就绪，正在初始化') && panel.includes('首次需下载约 90 MB'))
+t('前台那条说清楚了：后台标签页会被降速甚至冻结',
+  read('src/generate/audioGenGate.js').includes('留在前台（别切走、别最小化）') &&
+  read('src/generate/audioGenGate.js').includes('后台标签页会被浏览器降速甚至冻结'))
 
 // ═══ ReaderView ═══
 console.log('\n[ReaderView — 段落表同源 ＋ @ready 的接线顺序]')
@@ -178,6 +202,74 @@ console.log('\n[第 17 步块 E — 索引缓存：预取垫首帧 / 拉回写�
     /onCloudAudioReady[\s\S]{0,500}saveAudioIndex\(bookId\.value, index\)/.test(view))
   t('缓存模块在主包侧、不引生成器',
     !/(^|\n)\s*(import|export)[^\n]*generate/.test(read('src/sync/audioIndexCache.js')))
+
+  // —— 2026-10-07 Ferrari 裁 A：入口进播放器条、点开才展开 ——
+  t('生成入口 ＋ 面板 ＋ 播放器同处一个停靠区',
+    view.includes('<div ref="bottomDockRef" class="bottom-dock">') && view.includes('v-if="genEntry"'))
+  t('入口文案就是裁的那句；展开时变「收起」',
+    view.includes('genOpen ? \'收起\' : \'本章可以生成真人朗读\''))
+  t('入口可见性来自面板外报（主包不重写闸判定）',
+    view.includes('const genEntry = computed(() => !!panelStatus.value.entry)'))
+  t('收起 ≠ 卸载：面板一直挂着，生成与轮询不会被展开状态掐断',
+    view.includes(':open="genOpen"') && panel.includes('!!props.open && !!chapterId.value'))
+  // 2026-10-07 真机实测踩过：留白口径只写在基础规则里，三个断点又各写死一个底部值 →
+  // 桌面宽度下媒体查询盖掉它，面板展开时正文被压住。所以这里**逐个 .reader-view 块**查：
+  // 每一条 padding 的底值都必须走 --dock-pad，谁写死一个 px 就红。
+  const dockBlocks = view.match(/\.reader-view \{[^}]*\}/g) || []
+  const dockBottoms = dockBlocks.flatMap((b) =>
+    [...b.matchAll(/padding:\s*([^;]+);/g)].map((m) => m[1].trim().split(/\s+/).pop()))
+  t('正文底部留白口径只有一处（各断点不许再写死底部值）',
+    dockBottoms.length >= 2 &&
+    dockBottoms.every((v) => v.includes('var(--dock-pad)')) &&
+    /--dock-pad:\s*calc\(var\(--dock-h, 88px\) \+ 16px\);/.test(view),
+    JSON.stringify({ blocks: dockBlocks.length, bottoms: dockBottoms }))
+  t('正文底部按停靠区实测高度留白（面板展开不会被压住）',
+    /new ResizeObserver\(\(\) => \{[^}]*dockH\.value = el\.offsetHeight/.test(view))
+  t('播放器不再自己 fixed（定位交给停靠区）',
+    !/\.audio-player \{[\s\S]{0,400}position:\s*fixed/.test(player))
+}
+
+// ═══ 2026-10-07 Ferrari 裁「3＋1」：真中断（取消掉断模型下载）＋ 防中断（唤醒锁／关页拦）═══
+console.log('\n[第 17 步 · 裁「3＋1」— 真中断 ＋ 防中断]')
+{
+  const chapterGen = read('src/generate/chapterGen.js')
+  const engine = read('src/generate/engine.js')
+
+  t('面板持一个可中断信号（真中断的把手）',
+    panel.includes('let abortCtrl = null') && panel.includes('abortCtrl = new AbortController()'))
+  t('点取消 → 当场 abort（不是只举旗子等它走完）',
+    /function cancel\(\) \{[\s\S]{0,300}abortCtrl\.abort\(\)/.test(panel))
+  t('信号交给编排，一路传到引擎',
+    panel.includes('signal: abortCtrl.signal') &&
+    chapterGen.includes('signal = null,') &&
+    chapterGen.includes('await load({ device, dtype, onProgress, signal })'))
+  t('取消 ≠ 失败：中断按 cancelled 出，不报「加载语音模型失败」',
+    // 两条都要点名：① catch 里就该分流（不能落到 model-failed）；
+    // ② 模型装完才发现已取消的那一道也得在（不然白合成一整章）。
+    /catch \(e\) \{[^}]{0,220}if \(aborted\(\)\) return fail\('cancelled', 'cancelled'\)/.test(chapterGen) &&
+    /if \(aborted\(\)\) return fail\('cancelled', 'cancelled'\)\n  \}/.test(chapterGen) &&
+    panel.includes("res.step === 'cancelled'"))
+  t('引擎：模型请求挂信号、收工必清、别的请求不动',
+    engine.includes('let activeModelSignal = null') &&
+    /if \(activeModelSignal && isModelUrl\(url\)\)/.test(engine) &&
+    /finally \{\s*activeModelSignal = null\s*\}/.test(engine))
+
+  t('防中断①：生成期间申请屏幕唤醒锁',
+    panel.includes("navigator.wakeLock.request('screen')") &&
+    /function startKeepAlive\(\)[\s\S]{0,200}acquireWake\(\)/.test(panel))
+  t('防中断①：回前台补一次（后台会被系统收走）',
+    /visibilitychange', onVisibility/.test(panel) && /function onVisibility\(\) \{ if \(running\.value\)/.test(panel))
+  t('防中断①：收工与卸载都释放（只挂不摘就是漏）',
+    /function stopKeepAlive\(\)[\s\S]{0,260}releaseWake\(\)/.test(panel) &&
+    /onBeforeUnmount\(\(\) => \{[\s\S]{0,500}stopKeepAlive\(\)/.test(panel) &&
+    /abortCtrl = null\n  stopTick\(\)\n  stopKeepAlive\(\)/.test(panel))
+  t('防中断②：生成中关页／刷新会弹原生确认',
+    panel.includes("window.addEventListener('beforeunload', onBeforeUnload)") &&
+    panel.includes('e.returnValue =') &&
+    /function stopKeepAlive\(\)[\s\S]{0,260}removeEventListener\('beforeunload', onBeforeUnload\)/.test(panel))
+  t('两条都是尽力而为（不支持／被拒不拦生成）',
+    /catch \{ wakeSentinel = null \}/.test(panel) &&
+    panel.includes("if (typeof navigator === 'undefined' || !navigator.wakeLock) return"))
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
