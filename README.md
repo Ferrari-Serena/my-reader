@@ -18,14 +18,15 @@
 
 ## 测试
 
-`reader` 12 套 ＋ `worker` 8 套，合计 2,357 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
+`reader` 13 套 ＋ `worker` 8 套，合计 2,368 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
 
 ```bash
-cd reader && npm test   # 12 套（verify-*.mjs ＋ smoke-test.mjs）
+cd reader && npm test   # 13 套（verify-*.mjs ＋ smoke-test.mjs）
 cd worker && npm test   # 8 套（verify-*.mjs）
 ```
 
 - `reader/verify-core.mjs` — 词典 / 分词 / 词组 / 存储核心
+- `reader/verify-vueimports.mjs` — 组件卫生闸：`src/**` 里调用的 Vue API 必须在本文件 import 过（0823b05 白屏事故的防复发闸）
 - `reader/verify-sync.mjs` — 同步合并、keepalive 预算裁剪、进度迁移、脏词持久化
 - `reader/verify-booksync.mjs` — BYO 书体上云的前端一半（租户闸 / 原文 / 元信息 / 发布编排）
 - `reader/verify-import.mjs` — BYO 导入解析层（错误口径 / 格式识别 / 编号 / 出口净化）

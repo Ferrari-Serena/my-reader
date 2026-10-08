@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node verify-core.mjs && node verify-sync.mjs && node verify-booksync.mjs && node verify-import.mjs && node verify-books.mjs && node verify-importui.mjs && node smoke-test.mjs && node verify-authui.mjs && node verify-audio.mjs && node verify-genui.mjs && node verify-generate.mjs && node verify-hotswitch.mjs"
+    "test": "node verify-core.mjs && node verify-vueimports.mjs && node verify-sync.mjs && node verify-booksync.mjs && node verify-import.mjs && node verify-books.mjs && node verify-importui.mjs && node smoke-test.mjs && node verify-authui.mjs && node verify-audio.mjs && node verify-genui.mjs && node verify-generate.mjs && node verify-hotswitch.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",
