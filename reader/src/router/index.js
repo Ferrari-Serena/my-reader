@@ -22,6 +22,14 @@ const routes = [
     component: ReaderView
   },
   {
+    // 第 17 步块 D · D-2：生成页（章节多选／进度／排队位次／剩余额度）。
+    // 懒加载 ＋ **只引 `utils/genApi.js`**：主包不许静态引 `src/generate/`
+    // （体积 ＋ lamejs 的 LGPL 边界，见 verify-generate.mjs 的卫生断言）。
+    path: '/generate/:bookId',
+    name: 'GenerateAudio',
+    component: () => import('../views/GenerateAudioView.vue')
+  },
+  {
     path: '/vocabulary',
     name: 'Vocabulary',
     component: () => import('../views/VocabularyView.vue')

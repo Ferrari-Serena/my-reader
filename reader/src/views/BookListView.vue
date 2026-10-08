@@ -71,6 +71,22 @@
       </section>
 
       <section v-else class="shelf-pane" role="tabpanel">
+        <!-- 页面级常驻条（第 17 步块 D-3 ／ D21-b・m）：**可折叠** —— 首次展开，之后收成一行小字。
+             文案只有一份（utils/genApi.js 的 SHELF_NOTE_LINES／SHELF_NOTE_COLLAPSED），这里只画。
+             **不写死「5 章」**：额度一律写「单账号每日限额，剩余额度在生成页」（D21-e）。 -->
+        <div v-if="myBooks.length" class="gen-note">
+          <button
+            type="button"
+            class="gen-note-toggle"
+            :aria-expanded="noteOpen ? 'true' : 'false'"
+            @click="toggleNote"
+          >{{ noteOpen ? '收起' : '展开' }}</button>
+          <ul v-if="noteOpen" class="gen-note-list">
+            <li v-for="n in SHELF_NOTE_LINES" :key="n">{{ n }}</li>
+          </ul>
+          <p v-else class="gen-note-line">{{ SHELF_NOTE_COLLAPSED }}</p>
+        </div>
+
         <p v-if="myBooks.length === 0" class="shelf-note">
           Books you import stay on this device and appear here.
         </p>
@@ -80,6 +96,7 @@
             :key="book.id"
             :book="book"
             removable
+            :gen="genOf(book)"
             @remove="removeBook"
           />
         </div>
@@ -119,6 +136,14 @@ import { groupByCategory, categoryKeyOf, categoryLabelOf, notOnDeviceRows } from
 import { useNotes } from '../composables/useNotes'
 import { missingBookGroups } from '../utils/notes.js'
 import BookCard from '../components/BookCard.vue'
+import { useAuth } from '../composables/useAuth.js'
+import { loadAudioIndex, saveAudioIndex } from '../sync/audioIndexCache.js'
+import { fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
+import {
+  GEN_POLL_MS, SHELF_NOTE_COLLAPSED, SHELF_NOTE_LINES,
+  fetchGenStatus, genEntryState, genEntryTo, loadShelfNoteOpen, markShelfNoteSeen,
+  saveShelfNoteOpen, shelfIndexStale, withAudioCount
+} from '../utils/genApi.js'
 
 // 数据源在组合式里：静态 book-index.json（公开书库）＋ IndexedDB 书库（我的书架），
 // 合成与排序口径全在 utils/bookShelf.js，这里只负责画。
@@ -196,6 +221,116 @@ const visibleGroups = computed(() => (
     : groups.value.filter((g) => g.key === activeCategory.value)
 ))
 
+// ── 书级生成入口（第 17 步块 D-3 ／ D21-b・e・f・g・i・j・m）──────────────────
+// 判定与文案都在 `utils/genApi.js`（`genEntryState` 三态 ＋ `genEntryTo`），这里只负责取数与画。
+// 取数顺序：**本机缓存先垫**（一帧就有数）→ 登录后逐本问一次服务端台账（「生成中」的唯一来源）
+// → 台账的 `done` 与本机缓存对不上时，才补拉一次真索引。空闲不请求、未登录不请求。
+
+const auth = useAuth()
+const genInfo = ref({})        // bookId → { summary, withAudioCount }
+const cachedCounts = ref({})   // bookId → 本机缓存里的已就绪章数（null ＝ 没缓存）
+const noteOpen = ref(true)
+
+/** 本机缓存里的已就绪章数；没缓存 → null（与 0 不是一回事：只有 null 才可能要去拉真索引） */
+function cachedAudioCount(bookId) {
+  const idx = loadAudioIndex(bookId)
+  return indexUsable(idx, bookId) ? withAudioCount(idx) : null
+}
+
+function refreshCachedCounts() {
+  const m = {}
+  for (const b of myBooks.value) m[b.id] = cachedAudioCount(b.id)
+  cachedCounts.value = m
+}
+
+/** 一本书的入口三态（未登录时 `genEntryState` 直接给 login 那一格，不看去数） */
+function genOf(book) {
+  const info = genInfo.value[book.id] || null
+  const e = genEntryState({
+    isByo: true,
+    loggedIn: !!auth.user.value,
+    chapterCount: book.chapterCount,
+    withAudioCount: info ? info.withAudioCount : cachedCounts.value[book.id],
+    summary: info ? info.summary : null
+  })
+  if (e.kind === 'none') return null
+  return { ...e, to: genEntryTo(e.kind, book.id) }
+}
+
+// 只有「有章在排队／在跑」的书才值得再问（空闲不空转；后台标签页不发）
+// 注意名字：本文件上面另有一个 `busyIds`（缺书区那条「正在下载」的行），这两个不能同名。
+const genBusyIds = computed(() => Object.entries(genInfo.value)
+  .filter(([, v]) => v.summary && (v.summary.pending + v.summary.running) > 0)
+  .map(([id]) => id))
+let genPollTimer = null
+let genPollBusy = false
+
+async function genPollOnce() {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+  if (genPollBusy) return
+  const ids = genBusyIds.value
+  if (!ids.length) { stopGenPoll(); return }
+  genPollBusy = true
+  try { for (const id of ids) await loadGenInfo(id) }
+  catch { /* 恒不抛：下个 tick 再来 */ }
+  finally { genPollBusy = false }
+  if (!genBusyIds.value.length) stopGenPoll()
+}
+
+function stopGenPoll() { if (genPollTimer) { clearInterval(genPollTimer); genPollTimer = null } }
+function startGenPoll() { stopGenPoll(); genPollTimer = setInterval(genPollOnce, GEN_POLL_MS) }
+onBeforeUnmount(stopGenPoll)
+
+/** 问一本书：台账（进度／排队）＋ 必要时补一次真索引。恒不抛（拿不到就保持原样、不编状态） */
+async function loadGenInfo(bookId) {
+  const r = await fetchGenStatus(bookId)
+  if (!r.ok) return               // 401（没登录）／网络抖动：入口退回「看不到在跑」，不报错
+  const summary = r.data.summary
+  let count = cachedCounts.value[bookId]
+  if (shelfIndexStale(summary, count)) {
+    const ci = await fetchCloudIndex(bookId)
+    if (ci.ok && indexUsable(ci.index, bookId)) {
+      saveAudioIndex(bookId, ci.index)   // 这次拿到的更真：写回缓存，下次首帧用它
+      count = withAudioCount(ci.index)
+    } else if (ci.status === 404) {
+      count = 0                          // 404 ＝ 这本书**确知**没有音频（不是「不知道」）
+    }
+  }
+  genInfo.value = { ...genInfo.value, [bookId]: { summary, withAudioCount: count } }
+  cachedCounts.value = { ...cachedCounts.value, [bookId]: count }
+}
+
+/** 逐本问，限并发 4（书架最多 20 本自带书，别一次把连接占满；串行又太慢） */
+async function loadGenForShelf() {
+  if (activeShelf.value !== 'mine') return
+  refreshCachedCounts()
+  if (!auth.user.value || !myBooks.value.length) { genInfo.value = {}; stopGenPoll(); return }
+  const queue = myBooks.value.map((b) => b.id)
+  const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+    while (queue.length) {
+      const id = queue.shift()
+      try { await loadGenInfo(id) } catch { /* 单本失败不影响别的 */ }
+    }
+  })
+  await Promise.all(workers)
+  if (genBusyIds.value.length) startGenPoll()
+  else stopGenPoll()
+}
+
+/** 常驻条开合（D21-m）：首次展开，点过之后按用户自己的选择记住 */
+function toggleNote() {
+  noteOpen.value = !noteOpen.value
+  saveShelfNoteOpen(noteOpen.value)
+}
+noteOpen.value = loadShelfNoteOpen()   // 首次展开、之后收成一行小字
+markShelfNoteSeen()
+
+// 切到 My Books 栏 ／ 书架重列（预取落盘）／ 登录态一变 → 重取一次
+watch(
+  [activeShelf, () => myBooks.value, () => auth.user.value],
+  () => { loadGenForShelf() }
+)
+
 onMounted(refresh)
 </script>
 
@@ -233,6 +368,37 @@ onMounted(refresh)
   background: var(--bg-secondary, #f5f5f5);
   color: var(--text-secondary, #6e6e73);
   font-size: 13px;
+}
+
+/* 页面级常驻条（第 17 步块 D-3）：首次展开、之后收成一行小字（D21-m） */
+.gen-note {
+  position: relative;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-left: 3px solid var(--accent-color, #1a73e8);
+  border-radius: 8px;
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-secondary, #6e6e73);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.gen-note-list { margin: 0; padding-left: 18px; }
+.gen-note-list li + li { margin-top: 2px; }
+.gen-note-line { margin: 0; padding-right: 52px; }
+
+.gen-note-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent-color, #1a73e8);
+  cursor: pointer;
 }
 
 .shelf-loading {

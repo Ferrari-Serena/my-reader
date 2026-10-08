@@ -147,6 +147,7 @@ export const CH_STATE = {
   failed: 'failed',    // 跑挂了（可重新提交，不重复扣额度）
   stale: 'stale',      // 队列行说 done，但索引里**没有**音频
   todo: 'todo',        // 从没提交过
+  tooLong: 'tooLong',  // 单章字符超过上限（§13.8 ② 尾部口径）—— 服务端**一定**跳过，生成页先停
 }
 
 /**
@@ -174,6 +175,35 @@ export function chapterGenState(row, hasAudio) {
 /** 这一章现在能不能勾（todo／stale／failed 可以；已就绪、排队中、在跑的不行） */
 export function chapterSelectable(state) {
   return state === CH_STATE.todo || state === CH_STATE.stale || state === CH_STATE.failed
+}
+
+/** 单章字符上限 —— 与 worker 的 `MAX_CHAPTER_CHARS` **同值手抄**（超了服务端一定跳过，UI 先停） */
+export const MAX_CHAPTER_CHARS = 40000
+
+/**
+ * 生成页里一章的**最终**状态：长度失控的章**先停**（§13.8 ② 尾部口径：单章 > 40,000 字符
+ * 明确停 ＋ 给可读原因），其余原样走 `chapterGenState`。
+ * 为什么在这里停：这一类章**永远**生成不出来（不是「这次失败、可以重试」），让它可勾只会
+ * 换来一句「跳过（这一章太长）」—— 那是白等一个来回。
+ *
+ * 顺序照 `chapterGenState` 的老口径：**先看索引** —— 已经生成出来的长章（生成上限之前产的）
+ * 仍然是「已生成」，不能因为长度反过来把它说成不能生成。
+ */
+export function chapterRowState(row, hasAudio, chars) {
+  if (hasAudio) return CH_STATE.ready
+  if (num(chars) > MAX_CHAPTER_CHARS) return CH_STATE.tooLong
+  return chapterGenState(row, hasAudio)
+}
+
+/** 章级状态 → 徽标文字（生成页的章节表；**一份**，别处要用就引这里） */
+export const CH_STATE_LABEL = {
+  [CH_STATE.ready]: '已生成',
+  [CH_STATE.running]: '合成中',
+  [CH_STATE.queued]: '排队中',
+  [CH_STATE.failed]: '失败',
+  [CH_STATE.stale]: '未生成',
+  [CH_STATE.todo]: '未生成',
+  [CH_STATE.tooLong]: '太长',
 }
 
 /** 这一章此刻在排队／生成中吗（播放器据此显示 pending ＋ 轮询热切） */
@@ -211,12 +241,84 @@ export function genEntryState({ isByo, loggedIn, chapterCount, withAudioCount, s
   return { kind: 'start', label: '去生成音频 →', done: 0, total, busy: 0 }
 }
 
+/**
+ * My Books 页面级常驻条的文案（D21-b／e／m）：不点生成也能读（默认朗读走浏览器 TTS，偏机械音）
+ * → 封面下方可以生成更自然的真人音色 → 体验期免费 → 单账号每日限额（**不写死 5 章**；
+ * 剩余额度在生成页）。与 `GEN_PAGE_NOTES` 同一姿态：文案只有这一份，书架页只负责画。
+ */
+export const SHELF_NOTE_LINES = [
+  '不点生成也能读：默认朗读走浏览器 TTS（机械音）。',
+  '每本书封面下方，可以生成更自然的真人音色（体验期免费）。',
+  '单账号每日限额 —— 剩余额度在生成页。',
+]
+/** 常驻条收起来之后的那一行小字（D21-m：**首次展开**，之后收成一行） */
+export const SHELF_NOTE_COLLAPSED = '默认朗读是机械音；封面下方的「去生成音频」可以生成更自然的真人音色（体验期免费）。'
+
+// ── 纯逻辑⑤ 书级入口的取数（书架页：本机缓存 ＋ 服务端台账）──────────────────
+
+/** 索引里的「已就绪」章数（`withAudio` 条数；形状坏 → 0，不妄断） */
+export function withAudioCount(index) {
+  return Array.isArray(index && index.withAudio) ? index.withAudio.length : 0
+}
+
+/**
+ * 书架这一格要不要去拉一次**真索引**（D21-f 的「已生成 x/y 章」要准，本机缓存却可能旧）。
+ *
+ * `cached` ＝ 本机缓存里这本书的已就绪章数（没缓存 = null）；服务端台账的 `done` 是同一件事的
+ * 另一个下界（`done` 行 ⇒ 那一章有音频；清空过的行是 `purged`、不算在内）。两个下界**对不上**
+ * 就说明手上这份旧了（别的设备刚生成完 ／ 这本清空过）→ 拉一次真的。两个都是 0
+ * （从没生成过、也没缓存）⇒ 不必拉：0 就是 0。
+ */
+export function shelfIndexStale(summary, cached) {
+  const done = Math.max(0, num(summary && summary.done))
+  if (cached === null || cached === undefined) return done > 0
+  return done !== Math.max(0, num(cached))
+}
+
+/** 入口三态 → 点它去哪儿（未登录去账号页引导登录，其余去生成页） */
+export function genEntryTo(kind, bookId) {
+  if (kind === 'login') return '/account'
+  return `/generate/${String(bookId || '')}`
+}
+
+/** 常驻条折叠态的落点（本机记忆，D21-m）—— 一个「看过了」标记 ＋ 用户手动开合的选择 */
+export const SHELF_NOTE_KEYS = { seen: 'reader-gen-note-seen', open: 'reader-gen-note-open' }
+
+/**
+ * 这次该展开还是收起（D21-m：**首次展开**，读过一次之后默认收起）。用户手动开合过就以那个
+ * 为准（`open` 键在 ＝ 用户点过）。恒不抛：读不到 localStorage（隐私模式）一律当「首次」→ 展开。
+ */
+export function loadShelfNoteOpen(storage = globalThis.localStorage) {
+  const get = (k) => { try { return storage ? storage.getItem(k) : null } catch { return null } }
+  const open = get(SHELF_NOTE_KEYS.open)
+  if (open !== null && open !== undefined) return open === '1'
+  return get(SHELF_NOTE_KEYS.seen) === null
+}
+
+/** 记住「看过了」——「首次展开」只给一次；恒不抛 */
+export function markShelfNoteSeen(storage = globalThis.localStorage) {
+  try { if (storage) storage.setItem(SHELF_NOTE_KEYS.seen, '1') } catch { /* 不记忆也不影响阅读 */ }
+}
+
+/** 记住用户手动开合的选择；恒不抛 */
+export function saveShelfNoteOpen(open, storage = globalThis.localStorage) {
+  try { if (storage) storage.setItem(SHELF_NOTE_KEYS.open, open ? '1' : '0') } catch { /* 同上 */ }
+}
+
 /** 剩余额度一句话（D21-e：**不写死具体章数**、也不承诺永久免费 —— 只写「体验期免费」） */
 export function quotaLine(quota) {
   const q = normalizeQuota(quota)
   if (q.chaptersLeft === null) return '今日额度稍后可见（体验期免费，单账号每日限额）'
   if (q.chaptersLeft <= 0) return '今天的额度用完了 —— 明天再来，或先清空某本书的音频腾空间'
   return `今天还可生成 ${q.chaptersLeft} 章（体验期免费，单账号每日限额）`
+}
+
+/** 剩余额度的一句话（**只有数**，给生成页底部「本次将生成 N 章（今天剩余 M 章）」用） */
+export function quotaLeftText(quota) {
+  const q = normalizeQuota(quota)
+  if (q.chaptersLeft === null) return '今天剩余额度稍后可见'
+  if (q.chaptersLeft <= 0) return '今天的额度用完了'
+  return `今天剩余 ${q.chaptersLeft} 章`
 }
 
 /** 排队位次一句话（只报服务端复读的真数字，不自算秒数 —— D21-g） */
