@@ -130,7 +130,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useBookShelf } from '../composables/useBookShelf'
 import { groupByCategory, categoryKeyOf, categoryLabelOf, notOnDeviceRows } from '../utils/bookShelf.js'
 import { useNotes } from '../composables/useNotes'
