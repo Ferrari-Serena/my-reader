@@ -11,6 +11,7 @@ import {
   chapterAudioPath, bookIndexPath, chapterAudioUrl, chapterTimingsUrl,
   timingsOf, mergeAudioIndex, indexUsable, fetchCloudIndex,
 } from './src/utils/audioCloud.js'
+import { chapterHasAudio, tocMissingAudio } from './src/utils/audioIndex.js'
 import {
   AUDIO_ROUTE as WRITE_ROUTE, chapterAudioPath as writePath,
   mergeAudioIndex as writeMerge, timingsOf as writeTimings,
@@ -113,6 +114,27 @@ console.log('\n[audioCloud — fetchCloudIndex：恒不抛；401／404 都不是
   t('空 bookId → bad-input 且一发不发', r.reason === 'bad-input' && f.calls.length === 0)
 }
 t('索引超时是有限正值（不是 0／Infinity）', Number.isFinite(INDEX_TIMEOUT_MS) && INDEX_TIMEOUT_MS > 0)
+
+// ═══ ⑥ D25 —— 「清空该书音频」的读侧口径 ═══
+console.log('\n[audioCloud — D25 清空音频后的读侧口径：正文仍可读、书仍在架]')
+{
+  const bid = 'bk_a1b2c3d4e5f60718'
+  // 服务端 `DELETE /api/book/<bookId>/audio` 回写的那一份（worker/src/bookaudio.js 的 clearBookAudio）
+  const cleared = { book: bid, withAudio: [], missing: {} }
+  t('清空后的索引仍被认（book 对得上 → 不会当成拿错书）', indexUsable(cleared, bid) === true)
+  t('清空后的索引：不逐章标「无音频」（与「整本没音频」的老口径一致，章表不刷屏）',
+    eq(tocMissingAudio(cleared), {}))
+  t('清空后的索引：单章判定「不妄断」→ 仍按有音频处理（播放器去试 mp3，失败退回浏览器朗读）',
+    chapterHasAudio(cleared, 'ch-01') === true)
+  t('因此正文仍可读、书仍在架（清空只删 user/<code>/<bookId>/，不碰书体与本地书架）',
+    chapterHasAudio(cleared, 'ch-07') === true && tocMissingAudio(cleared)['ch-07'] === undefined)
+  t('清空 ≠ 不许再生成：清空后重新生成的章就是「未生成」的章，索引从空长回来',
+    eq(mergeAudioIndex(cleared, 'ch-07', bid), { book: bid, withAudio: ['ch-07'], missing: {} }))
+  t('清空音频的路由族 = AUDIO_ROUTE（不是删书路由 /api/sync/book/…）',
+    AUDIO_ROUTE === '/api/book/' && !AUDIO_ROUTE.includes('sync'))
+  t('清空音频的 URL 形状 = AUDIO_ROUTE ＋ <bookId> ＋ "/audio"（与 worker 的 clearAll 形状对齐）',
+    `${AUDIO_ROUTE}${bid}/audio` === '/api/book/bk_a1b2c3d4e5f60718/audio')
+}
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

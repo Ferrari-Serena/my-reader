@@ -20,6 +20,7 @@ import { utcDayStart } from './ratelimit.js'
  */
 const ROUTE_RULES = [
   ['/api/sync', 'sync'],
+  ['/api/gen', 'gen'],
   ['/api/auth', 'auth'],
   ['/api/dict', 'dict'],
   ['/api/audio', 'audio'],

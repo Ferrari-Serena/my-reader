@@ -32,6 +32,10 @@ db.exec(readFileSync(new URL('./migrations/0002_rate_limit.sql', import.meta.url
 db.exec(readFileSync(new URL('./migrations/0003_users_sessions.sql', import.meta.url), 'utf8'))
 // 0004 sync_data 加 kind 列（一次性 ALTER，见 migrations/0004_sync_data_kind.sql）
 db.exec(readFileSync(new URL('./migrations/0004_sync_data_kind.sql', import.meta.url), 'utf8'))
+// 0005 服务端合成任务表（幂等，见 migrations/0005_audio_tasks.sql）
+db.exec(readFileSync(new URL('./migrations/0005_audio_tasks.sql', import.meta.url), 'utf8'))
+// 0006 audio_tasks 加 purged_at（一次性 ALTER，见 migrations/0006_audio_tasks_purged.sql）
+db.exec(readFileSync(new URL('./migrations/0006_audio_tasks_purged.sql', import.meta.url), 'utf8'))
 
 const CODE = 'TESTCODE'
 const alive = db.prepare(SQL_ALIVE_UPSERT)
@@ -242,6 +246,90 @@ console.log('\n[schema.sql 与 0003 一致（新建库直接建出最终形态�
     t(`schema.sql 含索引 ${name}`, schemaSql.includes(name))
   }
 }
+
+console.log('\n[0005 迁移 — 服务端合成任务表（第 17 步 块 C）]')
+{
+  const hasTable = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name=?").get(n).n === 1
+  const hasIndex = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index' AND name=?").get(n).n === 1
+
+  t('audio_tasks 建出', hasTable('audio_tasks'))
+  t('有 (status, created_at) 索引（领任务）', hasIndex('idx_audio_tasks_claim'))
+  t('有 (code, created_at) 索引（配额求和）', hasIndex('idx_audio_tasks_code_created'))
+  t('0005 幂等：重复执行不报错', (() => {
+    try { db.exec(readFileSync(new URL('./migrations/0005_audio_tasks.sql', import.meta.url), 'utf8')); return true }
+    catch { return false }
+  })())
+
+  // 语义：一章一行（重复提交撞主键）；状态默认 pending；配额按 code + created_at 求和
+  const ins = db.prepare(`INSERT OR IGNORE INTO audio_tasks
+      (code, book_id, chapter_id, title, char_count, status, attempts, created_at, updated_at)
+      VALUES (?, ?, ?, '', ?, 'pending', 0, ?, ?)`)
+  const BK = 'bk_a1b2c3d4e5f60718'
+  t('首次提交收下 (changes=1)', ins.run('Q1CODE', BK, 'ch-01', 1000, 100, 100).changes === 1)
+  t('同章重复提交被主键挡下 (changes=0) ⇒ 幂等、不重复计费', ins.run('Q1CODE', BK, 'ch-01', 1000, 100, 100).changes === 0)
+  t('同书另一章是另一行', ins.run('Q1CODE', BK, 'ch-02', 2000, 100, 100).changes === 1)
+  t('别的账号同章是另一行（租户边界）', ins.run('Q2CODE', BK, 'ch-01', 1000, 100, 100).changes === 1)
+
+  const q = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(char_count),0) AS c FROM audio_tasks WHERE code = ? AND created_at >= ? AND created_at < ?')
+  t('配额求和：章数 = 行数、字符 = SUM(char_count)', (() => {
+    const r = q.get('Q1CODE', 0, 86400000)
+    return r.n === 2 && r.c === 3000
+  })())
+  t('别账号不混入自己的配额', q.get('Q2CODE', 0, 86400000).n === 1)
+  t('日子之外的行不计（次日重新算）', q.get('Q1CODE', 0, 50).n === 0)
+  t('新行默认 status=pending、attempts=0', (() => {
+    const r = db.prepare("SELECT status, attempts FROM audio_tasks WHERE code='Q1CODE' AND chapter_id='ch-01'").get()
+    return r.status === 'pending' && r.attempts === 0
+  })())
+  // 租约语义：只有 pending 能被认领（靠 changes 判别 —— 与 D24 的 claim 同一条 SQL 形状）
+  const claim = db.prepare("UPDATE audio_tasks SET status='running', attempts=attempts+1 WHERE code=? AND book_id=? AND chapter_id=? AND status='pending'")
+  t('认领一枚 pending 成功 (changes=1)', claim.run('Q1CODE', BK, 'ch-01').changes === 1)
+  t('再认领同一枚失败 (changes=0) ⇒ 防双启', claim.run('Q1CODE', BK, 'ch-01').changes === 0)
+}
+
+console.log('\n[0006 迁移 — audio_tasks 加 purged_at（第 17 步 块 D／D25-f）]')
+{
+  const hasCol = (tbl, col) =>
+    db.prepare(`SELECT COUNT(*) AS n FROM pragma_table_info('${tbl}') WHERE name = '${col}'`).get().n === 1
+  t('0006 能跑通且加了 purged_at 列', hasCol('audio_tasks', 'purged_at'))
+  t('0006 不幂等：重复执行报 duplicate column（故标注「不要重跑」）', (() => {
+    try { db.exec(readFileSync(new URL('./migrations/0006_audio_tasks_purged.sql', import.meta.url), 'utf8')); return false }
+    catch (e) { return /duplicate column/i.test(String(e.message)) }
+  })())
+  t('老行（没被清空过）的 purged_at 就是 NULL —— 加列不改既有数据', (() => {
+    const r = db.prepare("SELECT purged_at FROM audio_tasks WHERE code = 'Q1CODE' AND chapter_id = 'ch-01'").get()
+    return r !== undefined && r.purged_at === null
+  })())
+  t('purged_at 可写可清（重提时置回 NULL：只有 status=purged 时它才有意义）', (() => {
+    const upd = db.prepare("UPDATE audio_tasks SET status = 'purged', purged_at = ? WHERE code = 'Q1CODE' AND chapter_id = 'ch-01'")
+    const back = db.prepare("UPDATE audio_tasks SET status = 'pending', purged_at = NULL WHERE code = 'Q1CODE' AND chapter_id = 'ch-01'")
+    const a = upd.run(12345).changes
+    const mid = db.prepare("SELECT status, purged_at FROM audio_tasks WHERE code = 'Q1CODE' AND chapter_id = 'ch-01'").get()
+    back.run()
+    const last = db.prepare("SELECT status, purged_at FROM audio_tasks WHERE code = 'Q1CODE' AND chapter_id = 'ch-01'").get()
+    return a === 1 && mid.status === 'purged' && mid.purged_at === 12345
+      && last.status === 'pending' && last.purged_at === null
+  })())
+}
+
+console.log('\n[0006 与 schema.sql 同形：audio_tasks 的列**与顺序**逐字一致]')
+{
+  const fresh = new DatabaseSync(':memory:')
+  fresh.exec(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'))
+  const cols = (d) => d.prepare("SELECT name FROM pragma_table_info('audio_tasks')").all().map((r) => r.name).join(',')
+  t('迁移链（0005 ＋ 0006）与 schema.sql 的 audio_tasks 列同序（ALTER 只能追加列 ⇒ 建表语句里必须把它写在最后）',
+    cols(db) === cols(fresh))
+  t('purged_at 落在最后', cols(db).endsWith('purged_at') && cols(fresh).endsWith('purged_at'))
+}
+
+console.log('\n[schema.sql 与 0005 一致（新建库直接建出任务表）]')
+{
+  const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
+  t('schema.sql 含表 audio_tasks', /CREATE TABLE IF NOT EXISTS audio_tasks\b/.test(schemaSql))
+  t('schema.sql 含两个任务表索引',
+    schemaSql.includes('idx_audio_tasks_claim') && schemaSql.includes('idx_audio_tasks_code_created'))
+  t('schema.sql 的 audio_tasks 含 purged_at（新建库直接建出最终形态）', /purged_at\s+INTEGER/.test(schemaSql))
+}
 console.log('\n[schema.sql 与 0004 一致（新建库直接建出 kind 列）]')
 {
   const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
@@ -255,8 +343,8 @@ console.log('\n[schema.sql 单独建库（权威源：空库直接建出最终�
   let ok = true
   try { fresh.exec(schemaSql) } catch (e) { ok = false; console.log('   ', e.message) }
   t('schema.sql 能在空库上跑通', ok)
-  t('schema.sql 建出 8 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表）',
-    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 8)
+  t('schema.sql 建出 9 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表 + audio_tasks）',
+    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 9)
   t('schema.sql 幂等：重复执行不报错', ok && (() => {
     try { fresh.exec(schemaSql); return true } catch { return false }
   })())

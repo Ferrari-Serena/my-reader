@@ -8,6 +8,8 @@
  *   ③ 端到端 —— PUT→GET 往返（mp3 字节一致 / timings 一致 / index 一定 no-store）、跨账号隔离
  *   ④ Range —— 206 长度与 Content-Range、后缀式、越界 416
  *   ⑤ 配额与限流 —— 单文件上限、本数上限、音频总量上限（含 R2 list cursor 循环）、上传限流
+ *   ⑥ 清空该书音频（D25／D25-f）—— 只删音频、正文保留、空索引必写、本数／字节放回；
+ *      同趟作废 D1 的行（有章在跑 → 409，作废失败 → 503，两种都不许动 R2）
  *
  * 为什么要端到端：这块是「会话 → 账号主码 → R2 键」的活，只测纯函数测不出「闸漏了」
  * 或「键里写错账号」。用 node:sqlite 适配器冒充 D1、用 Map 冒充 R2（含 list 分页），
@@ -175,8 +177,8 @@ t('不认识的文件名一律 null',
   && classifyFile('a/b.mp3') === null && classifyFile('') === null
   && classifyFile('.mp3') === null && classifyFile('ch-01.MP3') === null)
 t('单文件上限常量 = 8 MB（手抄 MAX_BOOK_BYTES）', MAX_AUDIO_FILE_BYTES === 8 * 1024 * 1024)
-t('默认配额常量：500 MB / 20 本 / 120 次每分',
-  DEFAULT_MAX_ACCOUNT_BYTES === 500 * 1024 * 1024 && DEFAULT_MAX_BOOKS === 20 && DEFAULT_UPLOAD_PER_MIN === 120)
+t('默认配额常量：1 GiB（D23 由 500 MiB 上调）/ 20 本 / 120 次每分',
+  DEFAULT_MAX_ACCOUNT_BYTES === 1024 * 1024 * 1024 && DEFAULT_MAX_BOOKS === 20 && DEFAULT_UPLOAD_PER_MIN === 120)
 
 // ═══ ② 会话闸 ════════════════════════════════════════════════════════════════
 
@@ -331,9 +333,16 @@ console.log('\n[bookaudio — 输入闸]')
   t('mp3 超上限 → 413',
     (await handleBookAudio(req('PUT', audioPath(BID, 'ch-01.mp3'), { cookie: TOKEN_A, headers: { 'Content-Type': 'audio/mpeg' }, body: new Uint8Array(MAX_AUDIO_FILE_BYTES + 1) }), env)).status === 413)
   t('拒收的请求一个字节都没落盘', audio.keys().length === 0 && audio.puts === 0)
-  t('不支持的方法不在这里接（返回 null 交回主路由）',
-    (await handleBookAudio(req('POST', audioPath(BID, 'ch-01.mp3'), { cookie: TOKEN_A, body: '{}' }), env)) === null
-    && (await handleBookAudio(req('DELETE', audioPath(BID, 'ch-01.mp3'), { cookie: TOKEN_A }), env)) === null)
+  t('不认识的方法不在这里接（返回 null 交回主路由）',
+    (await handleBookAudio(req('POST', audioPath(BID, 'ch-01.mp3'), { cookie: TOKEN_A, body: '{}' }), env)) === null)
+  // D25 起 DELETE 归本路由管：单章 / 单文件那种形状**不做删除** → 405（Allow 只列真正支持的两个动词）
+  t('DELETE 单章 / 单文件 → 405 Allow: PUT, GET（D25-d：不做单章删）',
+    await (async () => {
+      const a = await handleBookAudio(req('DELETE', audioPath(BID, 'ch-01.mp3'), { cookie: TOKEN_A }), env)
+      const b = await handleBookAudio(req('DELETE', indexPath(BID), { cookie: TOKEN_A }), env)
+      return a.status === 405 && a.headers.get('Allow') === 'PUT, GET'
+        && b.status === 405 && b.headers.get('Allow') === 'PUT, GET'
+    })())
   t('前缀不越界 → null（/api/bookX… / /api/audio/…）',
     (await handleBookAudio(req('GET', '/api/bookX' + BID + '/audio/ch-01.mp3', { cookie: TOKEN_A }), env)) === null
     && (await handleBookAudio(req('GET', '/api/audio/x/y.mp3', { cookie: TOKEN_A }), env)) === null)
@@ -422,6 +431,189 @@ console.log('\n[index.js — 分发与 CORS 先后]')
   t('经主入口：不支持的动词落到 404', wrongMethod.status === 404)
   t('经主入口：不相干的路径不受影响（仍是 404）', badPath.status === 404)
   t('老 /api/audio 路由没被吃掉（空桶 → 404，且不因书路由而 401）', legacy.status === 404)
+}
+
+// ═══ ⑨ D25 清空该书音频 ══════════════════════════════════════════════════════
+
+console.log('\n[bookaudio — D25 清空该书音频：DELETE /api/book/<bookId>/audio]')
+{
+  const BID_EMPTY = 'bk_0f0e0d0c0b0a0908' // 从没生成过任何对象的书
+  const clearPath = id => `${ROUTE_PREFIX}${id}/audio`
+  const bodyKey = id => `books/${CODE_A}/${id}.json`
+  const underBook = id => k => k.startsWith(`user/${CODE_A}/${id}/`)
+  const { env, env: { AUDIO: audio } } = await newEnv()
+  // 正控的先决条件：先按用户正常路径把「这本」用起来（两章 mp3 ＋ timings ＋ 索引），
+  // 再往同一个桶里放一份 BYO 正文 —— 那份**必须活到最后**（D25 的分界线就在这）。
+  for (const f of ['ch-01.mp3', 'ch-02.mp3']) {
+    await handleBookAudio(req('PUT', audioPath(BID, f), { cookie: TOKEN_A, headers: { 'Content-Type': 'audio/mpeg' }, body: MP3 }), env)
+  }
+  await handleBookAudio(req('PUT', audioPath(BID, 'ch-01.timings.json'), { cookie: TOKEN_A, body: JSON.stringify(TIMINGS) }), env)
+  await handleBookAudio(req('PUT', indexPath(BID), { cookie: TOKEN_A, body: JSON.stringify(INDEX) }), env)
+  const BODY = JSON.stringify({ id: BID, chapters: [{ id: 'ch-01', paragraphs: [{ text: '正文在' }] }] })
+  await audio.put(bodyKey(BID), BODY)
+  // 边界样本：同账号**另一本**书的音频 ＋ **别的账号**同一本书的音频 —— 这次 DELETE 都不许碰到
+  await audio.put(audioObjectKey(CODE_A, BID2, 'ch-01.mp3'), MP3)
+  await audio.put(audioObjectKey(CODE_B, BID, 'ch-01.mp3'), MP3)
+  const before = audio.keys().length
+  t('清空前：这一本名下 4 件（2 mp3 ＋ 1 timings ＋ 1 索引）',
+    audio.keys().filter(underBook(BID)).length === 4)
+
+  t('无会话 DELETE → 401',
+    (await handleBookAudio(req('DELETE', clearPath(BID)), env)).status === 401)
+  t('`<bookId>/audio` 的 GET / PUT → 405 Allow: DELETE（这个形状只服务清空）',
+    await (async () => {
+      const g = await handleBookAudio(req('GET', clearPath(BID), { cookie: TOKEN_A }), env)
+      const p = await handleBookAudio(req('PUT', clearPath(BID), { cookie: TOKEN_A, body: '{}' }), env)
+      return g.status === 405 && g.headers.get('Allow') === 'DELETE'
+        && p.status === 405 && p.headers.get('Allow') === 'DELETE'
+    })())
+
+  const cleared = await handleBookAudio(req('DELETE', clearPath(BID), { cookie: TOKEN_A }), env)
+  const clearedJson = await cleared.json()
+  t('DELETE → 200 且 ok / removedAudioObjects=4 / indexCleared=true',
+    cleared.status === 200 && clearedJson.ok === true && clearedJson.bookId === BID
+    && clearedJson.removedAudioObjects === 4 && clearedJson.indexCleared === true)
+  t('下载物全没了：该前缀下 4 件音频已清，只剩 1 份空索引',
+    audio.keys().filter(underBook(BID)).join() === audioObjectKey(CODE_A, BID, INDEX_FILE))
+  t('清空后 GET mp3 → 404（音频真的没了）',
+    (await handleBookAudio(req('GET', audioPath(BID, 'ch-01.mp3'), { cookie: TOKEN_A }), env)).status === 404)
+  t('清空后 GET timings → 404',
+    (await handleBookAudio(req('GET', audioPath(BID, 'ch-01.timings.json'), { cookie: TOKEN_A }), env)).status === 404)
+
+  const idxAfter = await handleBookAudio(req('GET', indexPath(BID), { cookie: TOKEN_A }), env)
+  t('索引**回写成空**（不是删掉）：200 且 {book, withAudio: [], missing: {}}',
+    idxAfter.status === 200 && eq(await idxAfter.json(), { book: BID, withAudio: [], missing: {} }))
+  t('空索引仍 no-store（前端靠它把已清空翻成「没有音频」）',
+    idxAfter.headers.get('Cache-Control') === 'no-store')
+
+  // ← 本条是正控：D25 的意义就在「只删音频、正文与笔记不动」
+  t('**正文仍在**：`books/<code>/<bookId>.json` 没被动，字节逐字一致',
+    audio.keys().includes(bodyKey(BID))
+    && new TextDecoder().decode(audio.raw(bodyKey(BID)).bytes) === BODY)
+  t('边界只到 `user/<code>/<bookId>/`：同账号别的书不受影响',
+    audio.keys().includes(audioObjectKey(CODE_A, BID2, 'ch-01.mp3')))
+  t('跨账号隔离：B 的同一本书音频仍在',
+    audio.keys().includes(audioObjectKey(CODE_B, BID, 'ch-01.mp3')))
+  t('没多删：对象总数 = 清空前 − 4 ＋ 1 份空索引', audio.keys().length === before - 3)
+
+  const again = await handleBookAudio(req('DELETE', clearPath(BID), { cookie: TOKEN_A }), env)
+  const againJson = await again.json()
+  t('可重入：再 DELETE 一次 → 200 且前缀下仍只剩 1 份空索引（状态收敛）',
+    again.status === 200 && againJson.ok === true && audio.keys().filter(underBook(BID)).length === 1
+    && eq(await (await handleBookAudio(req('GET', indexPath(BID), { cookie: TOKEN_A }), env)).json(),
+      { book: BID, withAudio: [], missing: {} }))
+
+  // 「空索引必须写」的第二种入口：这本**一个对象都没有**（从没生成过）也要落一份空索引 ——
+  // 索引整份缺失在前端读作「没生成过 ⇒ 不妄断」，反而会去点并不存在的 mp3。
+  const bare = await handleBookAudio(req('DELETE', clearPath(BID_EMPTY), { cookie: TOKEN_A }), env)
+  const bareIdx = await handleBookAudio(req('GET', indexPath(BID_EMPTY), { cookie: TOKEN_A }), env)
+  t('从没生成过的书也清 → 200 / removedAudioObjects=0 / 仍落一份空索引（缺失 ≠ 空）',
+    bare.status === 200 && (await bare.json()).removedAudioObjects === 0
+    && bareIdx.status === 200 && eq(await bareIdx.json(), { book: BID_EMPTY, withAudio: [], missing: {} }))
+  t('清空一本不动它账号级兄弟：A 的 BID2 与 B 的都还在（收尾正控）',
+    audio.keys().includes(audioObjectKey(CODE_A, BID2, 'ch-01.mp3'))
+    && audio.keys().includes(audioObjectKey(CODE_B, BID, 'ch-01.mp3'))
+    && audio.keys().includes(bodyKey(BID)))
+}
+
+console.log('\n[bookaudio — D25-b 清空后额度自动放回：本数]')
+{
+  const BID3 = 'bk_3333333333333333'
+  const { env } = await newEnv({ AUDIO_MAX_BOOKS: '1' })
+  const P = (id, f) => handleBookAudio(req('PUT', audioPath(id, f), { cookie: TOKEN_A, headers: { 'Content-Type': 'audio/mpeg' }, body: MP3 }), env)
+  const clear = id => handleBookAudio(req('DELETE', `${ROUTE_PREFIX}${id}/audio`, { cookie: TOKEN_A }), env)
+
+  // 反向对照先跑：**只有索引、没有 mp3** 的书不占本数 —— 这就是「清空能放回额度」的原因
+  const idxOnly = await handleBookAudio(req('PUT', indexPath(BID3), { cookie: TOKEN_A, body: JSON.stringify({ book: BID3, withAudio: [], missing: {} }) }), env)
+  t('只写索引不占本数：这本之后另开一本仍然 200（口径改前是 403）',
+    idxOnly.status === 200 && (await P(BID, 'ch-01.mp3')).status === 200)
+
+  const blocked = await P(BID2, 'ch-01.mp3')
+  t('上限 1 本：第 2 本 → 403 本数超限', blocked.status === 403 && (await blocked.json()).error === 'book limit reached')
+  t('清空第 1 本 → 200', (await clear(BID)).status === 200)
+  t('本数随清空放回：第 2 本 → 200（D25-b）', (await P(BID2, 'ch-01.mp3')).status === 200)
+}
+
+console.log('\n[bookaudio — D25-b 清空后额度自动放回：字节]')
+{
+  const BID3 = 'bk_3333333333333333'
+  // 每章 200 字节、上限 500：清空后留下的空索引（约 45 B）余量足够再放一章
+  const { env } = await newEnv({ AUDIO_MAX_ACCOUNT_BYTES: '500' })
+  const A = (id, n) => handleBookAudio(req('PUT', audioPath(id, 'ch-01.mp3'), { cookie: TOKEN_A, headers: { 'Content-Type': 'audio/mpeg' }, body: new Uint8Array(n) }), env)
+  t('两本各 200 字节 → 200', (await A(BID, 200)).status === 200 && (await A(BID2, 200)).status === 200)
+  const blocked = await A(BID3, 200)
+  t('第 3 本 200 字节 → 403 总量超限', blocked.status === 403 && (await blocked.json()).error === 'audio storage limit reached')
+  t('清空第 1 本 → 200', (await handleBookAudio(req('DELETE', `${ROUTE_PREFIX}${BID}/audio`, { cookie: TOKEN_A }), env)).status === 200)
+  t('字节随前缀清空放回：第 3 本 200 字节 → 200（留下的空索引不挡）', (await A(BID3, 200)).status === 200)
+}
+
+console.log('\n[bookaudio — D25-f 清空要同趟作废 D1 的行：有章在跑 → 409，谁也不许动]')
+{
+  const clearPath = id => `${ROUTE_PREFIX}${id}/audio`
+  const INS = `INSERT INTO audio_tasks (code, book_id, chapter_id, title, char_count, status, attempts, created_at, updated_at)
+      VALUES (?, ?, ?, 'C', 100, ?, ?, ?, ?)`
+  const ins = (db, ch, status, attempts = 1) => db.prepare(INS).run(CODE_A, BID, ch, status, attempts, NOW, NOW)
+  const putMp3 = (env, id = BID) =>
+    handleBookAudio(req('PUT', audioPath(id, 'ch-01.mp3'), { cookie: TOKEN_A, headers: { 'Content-Type': 'audio/mpeg' }, body: MP3 }), env)
+  const clear = (env, id = BID) => handleBookAudio(req('DELETE', clearPath(id), { cookie: TOKEN_A }), env)
+
+  // ── 正控：跑完的（done）与跑挂的（failed）→ 清空时一并作废，行**不删** ──
+  {
+    const { env, db } = await newEnv()
+    await putMp3(env)
+    ins(db, 'ch-01', 'done')
+    ins(db, 'ch-02', 'failed', 3)
+    const res = await clear(env)
+    const body = await res.json()
+    t('清空 → 200 且 tasksPurged=2（done 与 failed 都作废）', res.status === 200 && body.tasksPurged === 2)
+    t('行**没删**（还在，配额靠行记）、状态 purged、purged_at 落值', (() => {
+      const rows = db.prepare('SELECT status, purged_at FROM audio_tasks WHERE code=? AND book_id=?').all(CODE_A, BID)
+      return rows.length === 2 && rows.every(r => r.status === 'purged' && typeof r.purged_at === 'number')
+    })())
+    const res2 = await clear(env)
+    t('再清一次 → tasksPurged=0（收敛，不报错）', res2.status === 200 && (await res2.json()).tasksPurged === 0)
+    t('从没建过任务的书 → tasksPurged=0（不是 -1、也不是出错）', await (async () => {
+      const r = await clear(env, BID2)
+      return r.status === 200 && (await r.json()).tasksPurged === 0
+    })())
+  }
+
+  // ── 反控：有章在跑（running／pending）→ 409，**R2、索引、D1 三处全原样** ──
+  {
+    const { env, db } = await newEnv()
+    const audio = env.AUDIO
+    await putMp3(env)
+    await handleBookAudio(req('PUT', indexPath(BID), { cookie: TOKEN_A, body: JSON.stringify(INDEX) }), env)
+    ins(db, 'ch-01', 'done')
+    ins(db, 'ch-02', 'running')
+    ins(db, 'ch-03', 'pending', 0)
+    const before = audio.keys().slice().sort().join('|')
+
+    const res = await clear(env)
+    const body = await res.json()
+    t('有 running／pending → 409 tasks-running、open=2（前端据此说「还有 2 章在生成」）',
+      res.status === 409 && body.error === 'tasks-running' && body.open === 2)
+    t('409 时 R2 **一件不动**（mp3 与索引都还在，键序逐字一致）', audio.keys().slice().sort().join('|') === before)
+    t('409 时索引**没被回写成空**（还是原来那份）', await (async () => {
+      const r = await handleBookAudio(req('GET', indexPath(BID), { cookie: TOKEN_A }), env)
+      return r.status === 200 && eq(await r.json(), INDEX)
+    })())
+    t('409 时 D1 也原样：done 的那行**不许先被作废**（全有或全无）',
+      db.prepare("SELECT status FROM audio_tasks WHERE code=? AND chapter_id='ch-01'").get(CODE_A).status === 'done')
+  }
+
+  // ── 作废失败（DB 抖）→ 503，同样一件不动：作废与清空同进同退 ──
+  {
+    const { env } = await newEnv()
+    await putMp3(env)
+    // 只让**碰 audio_tasks 的那几条**炸：会话闸（查 sessions）得照常，否则 401 会先把 DELETE 拦掉
+    const realDb = env.DB
+    const broken = { ...env, DB: { prepare(sql) { if (sql.includes('audio_tasks')) throw new Error('db down'); return realDb.prepare(sql) } } }
+    const res = await clear(broken)
+    t('DB 读不了 → 503 task purge failed（不敢清：行留 done 而音频没了就再也生成不了）',
+      res.status === 503 && (await res.json()).error === 'task purge failed')
+    t('503 时 R2 也没动（mp3 还在）', env.AUDIO.keys().includes(audioObjectKey(CODE_A, BID, 'ch-01.mp3')))
+  }
 }
 
 console.log('\n[块 E — 按前缀清（audiostore.js）：删书 / 注销都用它]')

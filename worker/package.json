@@ -4,6 +4,6 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "node verify-worker.mjs && node verify-auth.mjs && node verify-authapi.mjs && node verify-sql.mjs && node verify-audioalias.mjs && node verify-booksync.mjs && node verify-bookaudio.mjs"
+    "test": "node verify-worker.mjs && node verify-auth.mjs && node verify-authapi.mjs && node verify-sql.mjs && node verify-audioalias.mjs && node verify-booksync.mjs && node verify-bookaudio.mjs && node verify-audiogen.mjs"
   }
 }

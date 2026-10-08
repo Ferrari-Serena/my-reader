@@ -13,6 +13,8 @@
  * POST/GET /api/auth/*  → 账号与会话（见 authapi.js）
  * PUT/GET/DELETE /api/sync/book/<bookId> → 账号级 BYO 书体（书体走 R2，需有效会话；见 booksync.js）
  * PUT/GET /api/book/<bookId>/audio/<file> → BYO 朗读音频（需有效会话；见 bookaudio.js）
+ * DELETE /api/book/<bookId>/audio → **清空该书音频**（只删音频、正文保留，D25）
+ * POST/GET /api/gen/book/<bookId> → 服务端合成（提交章节 / 查进度；需有效会话；见 audiogen.js）
  * GET /health           → { status: 'ok' }
  * GET /api/metrics      → 只读计数（第 4 步 4.8）；需 Authorization: Bearer <METRICS_TOKEN>，
  *                          未配置 secret 一律 404（见 monitor.js 与 handleMetrics）
@@ -24,6 +26,7 @@ import { handleSync } from './sync.js'
 import { handleBookSync } from './booksync.js'
 import { handleBookAudio } from './bookaudio.js'
 import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
+import { handleAudioGen, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
 import { parseRange } from './range.js'
 import { audioRequestPlan } from './audioalias.js'
 import { corsFor } from './cors.js'
@@ -61,16 +64,33 @@ export default {
   },
 
   /**
-   * Cron 入口（wrangler.toml 的 [triggers]）：注销冷静期到期真删。
-   * 清理逻辑在 authapi.js 的 purgeDeletedAccounts（与端点共用同一套 SQL 常量）。
+   * Cron 入口（wrangler.toml 的 [triggers]）：**按 `event.cron` 分派** —— 两条触发器语义
+   * 完全不同，**绝不合成一个分支**（合了就是「每分钟 tick 也跑一遍注销真删」）。
+   *   '17 3 * * *' → 注销冷静期到期真删（purgeDeletedAccounts，逻辑在 authapi.js）
+   *   '* * * * *'  → 服务端合成巡检（runAudioGenTick，一章一任务、串行；逻辑在 audiogen.js）
+   * 认不出的 cron 一律**什么都不做**（宁可漏跑，不可误删）。
    */
   async scheduled(event, env, ctx) {
-    try {
-      const r = await purgeDeletedAccounts(env, Date.now())
-      console.log('scheduled purge:', JSON.stringify(r))
-    } catch (e) {
-      console.error('scheduled purge failed:', e && e.message, e && e.stack)
+    const cron = String((event && event.cron) || '')
+    if (cron === PURGE_CRON) {
+      try {
+        const r = await purgeDeletedAccounts(env, Date.now())
+        console.log('scheduled purge:', JSON.stringify(r))
+      } catch (e) {
+        console.error('scheduled purge failed:', e && e.message, e && e.stack)
+      }
+      return
     }
+    if (cron === TICK_CRON) {
+      try {
+        const r = await runAudioGenTick(env, Date.now())
+        console.log('scheduled audio gen:', JSON.stringify(r))
+      } catch (e) {
+        console.error('scheduled audio gen failed:', e && e.message, e && e.stack)
+      }
+      return
+    }
+    console.log('scheduled: unknown cron, nothing done:', JSON.stringify(cron))
   },
 }
 
@@ -95,9 +115,14 @@ async function handleRequest(request, env, url) {
     const bookRes = await handleBookSync(request, env)
     if (bookRes !== null) return bookRes
 
-    // BYO 音频分发（第 17 步 D17）：/api/book/<bookId>/audio/*
+    // BYO 音频分发（第 17 步 D17 上传口 ／ 块 C 由服务端直接写进同一套键）：/api/book/<bookId>/audio/*
     const bookAudioRes = await handleBookAudio(request, env)
     if (bookAudioRes !== null) return bookAudioRes
+
+    // 服务端合成分发（第 17 步 块 C）：/api/gen/book/<bookId>（提交 / 状态）
+    // 会话闸与 /api/book/* 同一份判定；URL 里不带 code（由会话反推）
+    const genRes = await handleAudioGen(request, env)
+    if (genRes !== null) return genRes
 
     // 账号端点分发（匹配 /api/auth/*）
     const authRes = await handleAuth(request, env)

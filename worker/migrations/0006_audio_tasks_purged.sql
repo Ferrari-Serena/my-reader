@@ -1,0 +1,15 @@
+-- 0006 · audio_tasks 加 purged_at（第 17 步 块 D，设计定案 D25-f）—— 「音频已清空」的时刻
+--
+-- **一次性 `ALTER TABLE`，不要重跑**（SQLite 的 ADD COLUMN 没有 IF NOT EXISTS）；
+--   重跑报 `duplicate column name: purged_at`。
+--
+-- 为什么加这一列（D25-f，2026-10-08 Ferrari 裁 A）：书级「清空该书音频」（D25）只删
+--   `user/<code>/<bookId>/`，D1 里那一章的行还留着 `status='done'` —— 于是清空之后再提交
+--   会被判 `already-done`，「删音频再生成」（D21-h）名存实亡。裁 A ＝ **不删行、改状态**：
+--     · `done`／`failed` → `status='purged'` ＋ 落 `purged_at` ⇒ 这一章回到「可重新生成」；
+--     · **行必须留着** —— 日配额按行求和（见 0005），删行就等于「清空即免额度」；
+--     · 重提时把行置回 `pending` ＋ 清空 `purged_at`，并把 `created_at` 重置到本次
+--       （配额按 `created_at` 归属日算，不重置就会把额度的账挂到过去的某一天）。
+--   `pending`／`running` 的行不许被作废：清空撞上正在生成的章，会把产物写回一个刚清空的
+--   目录 —— 调用方（bookaudio.js 的 clearBookAudio）先看 `open` 再决定清不清。
+ALTER TABLE audio_tasks ADD COLUMN purged_at INTEGER;

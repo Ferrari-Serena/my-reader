@@ -13,13 +13,19 @@ binding = "AUDIO"
 bucket_name = "my-reader-audio"
 
 # M-W API Key 用 secret，不进代码：npx wrangler secret put MW_API_KEY
+# DeepInfra（服务端合成，块 C）同样走 secret：npx wrangler secret put DEEPINFRA_API_KEY
 
 # 最小监控（第 4 步 4.8）：打开 Workers Logs，让 index.js 记的结构化请求日志
 # （一行 JSON，5xx 走 console.error）可在 Dashboard 里检索、按状态码/路由过滤与告警。
 [observability]
 enabled = true
 
-# 注销冷静期到期真删（第 2 步 F 块）：每天 03:17 UTC 跑一次 purgeDeletedAccounts
-# （见 src/index.js 的 scheduled 与 src/authapi.js）。改这里要重新 `wrangler deploy` 才生效。
+# Cron 触发器（`scheduled()` 里按 `event.cron` 分派 —— 两条语义不同，**不合流**，见 src/index.js）：
+#   · 17 3 * * *  → 注销冷静期到期真删 purgeDeletedAccounts（第 2 步 F 块，每天 03:17 UTC 一次）
+#   · * * * * *   → 服务端合成巡检 runAudioGenTick（第 17 步 块 C，每分钟，D24-b）
+# ⚠️ 每分钟这条**必须挂在本就存在的 my-reader-tts 上、不新建 worker** —— 新建 worker 的
+#    cron 冷启动实测 ≈80 min（老 worker ≈10 min），首跑会晚约一小时（Phase1 §13.10 d）。
+# Free 允许 5 个触发器/账号，这里用 2 个；每分钟一 tick ≈ 1,440 次/天 ＝ 日限 100,000 的 1.4%。
+# 改这里要重新 `wrangler deploy` 才生效。
 [triggers]
-crons = ["17 3 * * *"]
+crons = ["17 3 * * *", "* * * * *"]

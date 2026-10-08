@@ -101,3 +101,29 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
   used_at    INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens (user_id, kind);
+
+-- ── 服务端合成任务表（第 17 步 块 C；增量迁移：migrations/0005_audio_tasks.sql、
+--    0006_audio_tasks_purged.sql）──
+-- 一章一行；主键 =（账号主码, book_id, chapter_id）。状态机与配额口径写在 0005 的注释里。
+-- `purged_at`（0006）＝ 音频被「清空该书音频」清掉的那一刻，只有 `status='purged'` 时非空。
+CREATE TABLE IF NOT EXISTS audio_tasks (
+  code        TEXT    NOT NULL,
+  book_id     TEXT    NOT NULL,
+  chapter_id  TEXT    NOT NULL,
+  title       TEXT    NOT NULL DEFAULT '',
+  char_count  INTEGER NOT NULL DEFAULT 0,
+  status      TEXT    NOT NULL DEFAULT 'pending',
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL,
+  started_at  INTEGER,
+  heartbeat   INTEGER,
+  finished_at INTEGER,
+  error       TEXT,
+  bytes       INTEGER,
+  audio_ms    INTEGER,
+  purged_at   INTEGER,
+  PRIMARY KEY (code, book_id, chapter_id)
+);
+CREATE INDEX IF NOT EXISTS idx_audio_tasks_claim ON audio_tasks (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_audio_tasks_code_created ON audio_tasks (code, created_at);

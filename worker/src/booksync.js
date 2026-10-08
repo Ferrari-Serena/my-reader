@@ -4,6 +4,9 @@
  *   PUT    /api/sync/book/<bookId>   书体（JSON 文本）→ R2 `books/<code>/<bookId>.json`
  *   GET    /api/sync/book/<bookId>   → 书体原文（application/json）
  *   DELETE /api/sync/book/<bookId>   → 删 R2 对象 ＋ 给元信息写墓碑（kind='book'）
+ *   ⚠️ 别与 `bookaudio.js` 的 `DELETE /api/book/<bookId>/audio` 混：**那条只清音频、正文保留**
+ *      （D25「用户主动腾空间」），**这条是删掉整本书**（连带云端正文，D14-c）。语义相反、路由不同，
+ *      **不许合并**（D25-c）。
  *
  * **边界＝账号（D14-b）**，三条路都要有效会话：
  *   无会话（含只持 8 位码的未登录设备）→ 401

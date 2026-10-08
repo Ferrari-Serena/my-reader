@@ -18,18 +18,33 @@
 
 ## 测试
 
-五套纯逻辑测试（合计 280 条），CI 在部署前跑；本地也可单跑：
+`reader` 12 套 ＋ `worker` 8 套，合计 2,285 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
 
 ```bash
-cd reader && npm test   # verify-core / verify-sync / smoke-test
-cd worker && npm test   # verify-worker / verify-sql
+cd reader && npm test   # 12 套（verify-*.mjs ＋ smoke-test.mjs）
+cd worker && npm test   # 8 套（verify-*.mjs）
 ```
 
 - `reader/verify-core.mjs` — 词典 / 分词 / 词组 / 存储核心
 - `reader/verify-sync.mjs` — 同步合并、keepalive 预算裁剪、进度迁移、脏词持久化
+- `reader/verify-booksync.mjs` — BYO 书体上云的前端一半（租户闸 / 原文 / 元信息 / 发布编排）
+- `reader/verify-import.mjs` — BYO 导入解析层（错误口径 / 格式识别 / 编号 / 出口净化）
+- `reader/verify-books.mjs` — BYO 书库与书架聚合（聚合口径 / 入库净化 / 删除）
+- `reader/verify-importui.mjs` — 导入界面层纯逻辑（先验检查 / 进度换算 / 按钮门）
 - `reader/smoke-test.mjs` — 生词本读写冒烟（含 0.6 备份包导出/回导）
+- `reader/verify-authui.mjs` — 账号界面层纯逻辑（邮箱/密码校验 / 二次确认 / 错误码文案）
+- `reader/verify-audio.mjs` — 云端音频读取侧（路径 / 就绪索引 / timings 口径 / 清空音频后的读侧口径）
+- `reader/verify-genui.mjs` — 服务端合成的客户端（提交章节 / 状态 / 清空音频＋入口三态与文案）
+- `reader/verify-generate.mjs` — 生成后处理（段内切块 / 段间静音 / timings / WAV→mp3）
+- `reader/verify-hotswitch.mjs` — 浏览器朗读 → 云端音色就地热切
 - `worker/verify-worker.mjs` — Worker 路由 / 缓存 / CORS / 限流纯函数
-- `worker/verify-sql.mjs` — 用 `node:sqlite` 真跑 D1 SQL（同步 / 限流）
+- `worker/verify-auth.mjs` — `auth.js` 纯逻辑（base64url / tokenHash / 会话上限）
+- `worker/verify-authapi.mjs` — 认证接口（cookie 解析 / Origin 闸 / 真 SQLite 跑真 SQL）
+- `worker/verify-sql.mjs` — 用 `node:sqlite` 真跑 D1 SQL（同步 / 限流 / 音频任务表迁移链）
+- `worker/verify-audioalias.mjs` — 音频访问口径（下架书 404 / BYO 别名映射）
+- `worker/verify-booksync.mjs` — `booksync.js` 服务端契约（第 16 步 D14）
+- `worker/verify-bookaudio.mjs` — 书籍音频上传/读取路由 ＋ 配额 ＋ 书级清空音频（D25）
+- `worker/verify-audiogen.mjs` — 音频任务表与合成端点（第 17 步 D24）
 
 ## 部署
 

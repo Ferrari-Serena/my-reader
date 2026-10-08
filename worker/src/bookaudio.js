@@ -6,6 +6,12 @@
  *   GET    /api/book/<bookId>/audio/<file>              回音频 / timings（支持 Range → 206/416）
  *   GET    /api/book/<bookId>/audio-index.json          回就绪索引（**no-store**，前端轮询靠它翻 pending）
  *   PUT    /api/book/<bookId>/audio-index.json          客户端显式上传索引
+ *   DELETE /api/book/<bookId>/audio                    **清空该书音频**（D25：只删 user/<code>/<bookId>/
+ *                                                      下的 mp3 ＋ timings，再回写空 audio-index.json；
+ *                                                      **绝不碰** books/<code>/<bookId>.json 那份正文）。
+ *                                                      D25-f：同趟把该书 D1 的 `done`／`failed`
+ *                                                      行作废成 `purged`（可重新生成、配额照记）；
+ *                                                      该书还有章在跑 → **409，谁也不清**
  *
  * **边界＝账号**（与第 16 步 D14 同一道闸）：三条路都要有效会话。
  *   无会话（含只持 8 位码的未登录设备）→ 401
@@ -35,8 +41,22 @@
  * 窗口计数手法，见 authapi.js 的 attemptCount/noteAttempt）。超配额回 403，超限流回 429，
  * 前端都退回浏览器 TTS。
  *
- * 不做：DELETE（删书／注销清 `user/<code>/` 前缀属块 E）；服务端合成（D17 已取消，
- * 本文件零算力、不引 Workers AI、不引 Queue）。
+ * **两种 DELETE 语义相反、不许合并**（D25-c）：
+ *   · 本文件 `DELETE /api/book/<bookId>/audio` ＝ **用户主动腾空间**：只删音频，**正文与笔记不动**
+ *     （正文仍是 `books/<code>/<bookId>.json`），做完回写空索引 ⇒ 额度随 R2 前缀清空自动放回。
+ *   · `booksync.js` 的 `DELETE /api/sync/book/<bookId>` ＝ **删掉这本书**：连带删云端正文（D14-c）。
+ * **D25-f（2026-10-08 Ferrari 裁 A）—— 清空之后这一章必须真的回到「可生成」**：只删 R2 是不够的，
+ *   D1 里 `done` 的那一行会让重新提交被判 `already-done`（D21-h 的「删音频再生成」名存实亡）。
+ *   故清空前先把 `done`／`failed` 作废成 `purged`（见 `audiogen.js` 的 `purgeBookTasks`）：
+ *     · 行**不删** —— 日配额按行求和，删行＝清空即免额度；
+ *     · 有 `pending`／`running` 就**拒绝清空**（409）—— 中途清空会让在跑那一章把 mp3 写回
+ *       一个刚清空的目录，用户看到「清了又有」；
+ *     · 作废失败（读表／写表抖了）也**拒绝清空**（503）—— 行留 `done` 而音频没了，这一章
+ *       就再没人能生成了（服务端判 already-done，没有回头的路）。
+ * 单章删音频不做（粒度过细，D25-d）；单章「重新生成」也不做（D21-h）—— 要重来就走
+ * 书级「清空该书音频」再提交（清空后这些章就是「未生成」的章）。别加一条单章清除的路。
+ * 注销真删导致的前缀清理（`purgeAccountAudio`）属 D22／块 E，同样不在这里。
+ * 服务端合成不在此文件（块 C 的 `audiogen.js`；D17 端上那套已降级为离线兜底）。
  */
 
 import { corsFor } from './cors.js'
@@ -46,6 +66,12 @@ import { isBookId } from './sync.js'
 import { attemptCount, noteAttempt } from './authapi.js'
 // 块 E：键布局 ＋ 「按前缀清」搬到 audiostore.js（三处共用；authapi 不能反向引本文件，见该文件头注）
 import { USER_PREFIX, audioObjectKey, audioPrefixFor, bookAudioPrefixFor, purgePrefix } from './audiostore.js'
+// D25-f：清空音频要同趟把 D1 的任务行作废 —— 与 `audiogen.js` **互为反向 import**（它引本文件的
+// `audioObjectKey`／`INDEX_FILE`）。这个环是**有意留的**：两边都只在**函数体里**用对方（运行期），
+// 没有一处依赖对方在模块求值期就绪；且两边都是函数声明 ⇒ 绑定提升。两种加载顺序都真跑过
+// （verify-audiogen 先引 audiogen、verify-bookaudio 先引 bookaudio）。拆环要把 `INDEX_FILE`
+// 挪进 audiostore.js，代价大于收益，不动。
+import { purgeBookTasks } from './audiogen.js'
 
 export const ROUTE_PREFIX = '/api/book/'
 /** 键布局与清理的真身在 `audiostore.js`；这里**原样再导出**，调用方与自检不必改 import。 */
@@ -54,9 +80,9 @@ export { USER_PREFIX, audioObjectKey }
 export const INDEX_FILE = 'audio-index.json'
 /** 单个上传文件大小上限：一章 48 kbps mp3 ≈ 5 MB；8 MB 留余量，同时挡住当网盘用（手抄 MAX_BOOK_BYTES） */
 export const MAX_AUDIO_FILE_BYTES = 8 * 1024 * 1024
-/** 单账号音频总量上限（§13.7 R9；可 env.AUDIO_MAX_ACCOUNT_BYTES 覆盖） */
-export const DEFAULT_MAX_ACCOUNT_BYTES = 500 * 1024 * 1024
-/** 单账号「有音频的书」本数上限（§13.7 R9；可 env.AUDIO_MAX_BOOKS 覆盖） */
+/** 单账号音频总量上限（§13.7 R9；**D23 由 500 MiB 上调到 1 GiB**；可 env.AUDIO_MAX_ACCOUNT_BYTES 覆盖） */
+export const DEFAULT_MAX_ACCOUNT_BYTES = 1024 * 1024 * 1024
+/** 单账号「有音频的书」本数上限（§13.7 R9；可 env.AUDIO_MAX_BOOKS 覆盖）—— 「有音频」＝至少有 mp3／timings，只有空索引不算（D25-b 裁 A） */
 export const DEFAULT_MAX_BOOKS = 20
 /** 上传端点每账号滑动窗口（次／分钟；可 env.AUDIO_UPLOAD_PER_MIN 覆盖） */
 export const DEFAULT_UPLOAD_PER_MIN = 120
@@ -114,6 +140,11 @@ async function gate(request, env, cors, url) {
  * 按账号算用量（本数 ＋ 字节总量）：列举 `user/<code>/` 下全部对象。
  * ⚠️ R2 list **每页上限 1000**，必须按 cursor 循环，否则只数到第一页。
  * 列举失败 → 返回 null（**fail-open**：不因为列举失败而挡住正常上传）。
+ *
+ * **本数只数「真有音频」的书**（`audio-index.json` 不算，2026-10-08 D25-b 裁 A）：
+ * 索引是清空／生成后**我们自己写的状态标记**，不是用户内容 —— 把它算进本数的话，
+ * 「清空该书音频」就腾不出本数槽位（实测：上限 2 本时清空一本，第 3 本照样 403），
+ * 与 D25「用户主动腾空间」的动机直接冲突。**字节**照旧把索引算进去（它真占存储）。
  */
 async function accountUsage(env, code) {
   const prefix = audioPrefixFor(code)
@@ -126,8 +157,11 @@ async function accountUsage(env, code) {
       const page = await env.AUDIO.list(cursor ? { prefix, cursor } : { prefix })
       const objs = (page && page.objects) || []
       for (const o of objs) {
-        const bid = String(o.key).slice(prefix.length).split('/')[0]
-        if (bid) books.add(bid)
+        const rest = String(o.key).slice(prefix.length)
+        const cut = rest.indexOf('/')
+        const bid = cut < 0 ? rest : rest.slice(0, cut)
+        const name = cut < 0 ? '' : rest.slice(cut + 1)
+        if (bid && name && name !== INDEX_FILE) books.add(bid)
         const size = Number(o.size) || 0
         sizes.set(o.key, size)
         totalBytes += size
@@ -169,15 +203,60 @@ export function purgeAccountAudio(env, code) {
 }
 
 /**
+ * DELETE 的实现（D25「清空该书音频」）：① D1 行作废 → ② 清 `user/<code>/<bookId>/` → ③ 回写空索引。
+ *
+ * ① 先作废 D1 的行（D25-f）：两道闸都不许过 —— `pending`／`running` 在跑 → 409；读表／写表
+ *   失败 → 503。**两种都不清**：清空与作废必须同进同退（理由见文件头 D25-f 那段）。
+ *
+ * ②③ 顺序：**先清前缀、后写空索引** —— 与块 C「索引最后写」同向。反过来的话，清空崩在中途
+ * 会留下「索引说还有音频、对象已经没了」，播放器点下去就是 404；按现顺序最坏也只是
+ * 「索引说没有、对象还在」（用户看到「没有音频」⇒ 退回浏览器朗读，空间下次再腾）。
+ *
+ * ⚠️ 空索引**必须写**：索引整份缺失在前端读作「这本没生成过 ⇒ 不妄断，按有音频处理」，
+ * 播放器会去点一个并不存在的 mp3 → 404。写一份 `{ withAudio: [], missing: {} }` 才是
+ * 「明确说没有」。
+ *
+ * **恒不抛**（`purgePrefix` 自己吞异常）；`removedAudioObjects = -1` 表示清理出错（已记日志）。
+ */
+async function clearBookAudio(env, cors, code, bookId) {
+  // ① D1 行作废（D25-f）
+  const purge = await purgeBookTasks(env, code, bookId)
+  if (purge.refused) {
+    return json(cors, {
+      error: 'tasks-running', bookId, open: purge.open,
+      note: 'wait for the running chapters to finish, then clear again',
+    }, 409)
+  }
+  if (!purge.ok) return json(cors, { error: 'task purge failed', bookId }, 503)
+
+  // ② 清前缀
+  const removed = await purgeBookAudio(env, code, bookId)
+  // ③ 回写空索引
+  let indexCleared = false
+  try {
+    await env.AUDIO.put(audioObjectKey(code, bookId, INDEX_FILE),
+      JSON.stringify({ book: bookId, withAudio: [], missing: {} }),
+      { httpMetadata: { contentType: 'application/json' } })
+    indexCleared = true
+  } catch (e) {
+    console.error('audio index clear failed:', e && e.message)
+  }
+  const ok = removed >= 0 && indexCleared
+  return json(cors, {
+    ok, bookId, removedAudioObjects: removed, indexCleared, tasksPurged: purge.purged,
+  }, ok ? 200 : 500)
+}
+
+/**
  * 主入口：匹配就返回 Response，不匹配返回 null（让主路由继续 fallthrough）。
- * 只接 GET / PUT；OPTIONS 由主路由在最前面答掉（预检到不了这里）。
+ * 接 GET / PUT / DELETE（DELETE 只用于 D25 的清空该书音频）；OPTIONS 由主路由在最前面答掉。
  */
 export async function handleBookAudio(request, env) {
   const url = new URL(request.url)
   if (!url.pathname.startsWith(ROUTE_PREFIX)) return null
 
   const method = request.method
-  if (method !== 'GET' && method !== 'PUT') return null
+  if (method !== 'GET' && method !== 'PUT' && method !== 'DELETE') return null
 
   const cors = corsFor(request, env)
 
@@ -186,14 +265,19 @@ export async function handleBookAudio(request, env) {
   const { res, acct } = await gate(request, env, cors, url)
   if (res) return res
 
-  // 路径形状：<bookId>/audio-index.json 或 <bookId>/audio/<file>
+  // 路径形状：<bookId>/audio-index.json ｜ <bookId>/audio/<file> ｜ <bookId>/audio（D25：只服务 DELETE）
   const raw = url.pathname.slice(ROUTE_PREFIX.length)
   const parts = raw.split('/')
   let bookId = ''
   let file = ''
+  let clearAll = false
   if (parts.length === 2 && parts[1] === INDEX_FILE) {
     bookId = parts[0]
     file = INDEX_FILE
+  } else if (parts.length === 2 && parts[1] === 'audio') {
+    // D25：整本一个形状的路径只给 DELETE；其余动词在这个形状上回 405（见下）
+    bookId = parts[0]
+    clearAll = true
   } else if (parts.length === 3 && parts[1] === 'audio') {
     bookId = parts[0]
     file = parts[2]
@@ -203,11 +287,22 @@ export async function handleBookAudio(request, env) {
   try { bookId = decodeURIComponent(bookId) } catch { /* 非法编码按原样 */ }
   try { file = decodeURIComponent(file) } catch { /* 非法编码按原样 */ }
   if (!isBookId(bookId)) return json(cors, { error: 'invalid bookId' }, 400)
-  const info = classifyFile(file)
+  const info = clearAll
+    ? { kind: 'book-audio-all', ch: '', contentType: 'application/json' }
+    : classifyFile(file)
   if (!info) return json(cors, { error: 'invalid file' }, 400)
 
   const code = acct.code
   const key = audioObjectKey(code, bookId, file)
+
+  // ── DELETE（D25：书级「清空该书音频」；D25-f：同趟作废 D1 的行）────────────────
+  // 只接整本那一种形状；单章／单文件的删除不做（D25-d 粒度过细）。
+  if (method === 'DELETE') {
+    if (!clearAll) return json(cors, { error: 'method not allowed' }, 405, { Allow: 'PUT, GET' })
+    return clearBookAudio(env, cors, code, bookId)
+  }
+  // `<bookId>/audio` 只服务 DELETE：GET 没有「整本一个响应」这件事，PUT 更不该有
+  if (clearAll) return json(cors, { error: 'method not allowed' }, 405, { Allow: 'DELETE' })
 
   // ── GET ────────────────────────────────────────────────────────────────────
   if (method === 'GET') {
