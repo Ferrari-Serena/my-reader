@@ -22,6 +22,8 @@ import {
   SHELF_NOTE_LINES, SHELF_NOTE_COLLAPSED, SHELF_NOTE_KEYS,
   withAudioCount, shelfIndexStale, genEntryTo,
   loadShelfNoteOpen, markShelfNoteSeen, saveShelfNoteOpen,
+  clearAudioConfirm, clearEntryState, clearResultText,
+  CLEAR_AUDIO_LABEL, CLEAR_AUDIO_BUSY_LABEL, QUOTA_TIP_CLEAR,
 } from './src/utils/genApi.js'
 import { AUDIO_ROUTE } from './src/utils/audioCloud.js'
 
@@ -123,9 +125,12 @@ console.log('\n[genApi — 归一：形状坏了也不抛、不编]')
       return d.queued.length === 1 && d.requeued.length === 0 && d.skipped[0].reason === 'already-done'
         && d.skipped[0].chapterId === 'ch-02'
     })())
-  t('清空答复归一',
-    eq(normalizeClear({ ok: true, bookId: BID, removedAudioObjects: 3, indexCleared: true }),
-      { ok: true, bookId: BID, removedAudioObjects: 3, indexCleared: true }))
+  t('清空答复归一（含 D25-f 的 tasksPurged）',
+    eq(normalizeClear({ ok: true, bookId: BID, removedAudioObjects: 3, indexCleared: true, tasksPurged: 2 }),
+      { ok: true, bookId: BID, removedAudioObjects: 3, indexCleared: true, tasksPurged: 2 }))
+  t('清空答复缺字段 → 给「不知道」的哨兵值（-1），**不编 0**',
+    normalizeClear({ ok: true }).tasksPurged === -1
+    && normalizeClear({ ok: true }).removedAudioObjects === -1)
 }
 
 // ═══ ⑤ 章级状态 ═══
@@ -474,6 +479,84 @@ console.log('\n[D-3 My Books — 常驻条／索引新鲜度／折叠记忆／�
   t('书卡不自己判定、不引 genApi 之外的东西（判定与文案只有一份）',
     !/genEntryState\s*\(/.test(card) && !card.includes('withAudioCount')
     && !/from\s+['"][^'"]*genApi/.test(card))
+}
+
+// ═══ ⑬ 书级「清空该书音频」（第 17 步 D 的 D4 ／ D25）═══
+console.log('\n[genApi — D4 清空该书音频：确认原话 / 出不出按钮 / 结果四档]')
+t('确认原话写明「只删音频 —— 正文与笔记不动」＋「清空后可以重新生成」',
+  clearAudioConfirm('The Giver').includes('只删音频')
+  && clearAudioConfirm('The Giver').includes('正文与笔记不动')
+  && clearAudioConfirm('The Giver').includes('可以重新生成')
+  && clearAudioConfirm('The Giver').includes('The Giver'))
+t('确认原话没有书名也给得出（印不出 undefined）',
+  clearAudioConfirm('').includes('这本书') && !clearAudioConfirm(undefined).includes('undefined'))
+t('出不出按钮：未登录不出／没有音频不出／清空中转「清空中…」并禁用',
+  clearEntryState({ loggedIn: false, withAudioCount: 3 }) === null
+  && clearEntryState({ loggedIn: true, withAudioCount: 0 }) === null
+  && clearEntryState({ loggedIn: true, withAudioCount: null }) === null
+  && eq(clearEntryState({ loggedIn: true, withAudioCount: 3 }), { label: CLEAR_AUDIO_LABEL, busy: false })
+  && eq(clearEntryState({ loggedIn: true, withAudioCount: 3, clearing: true }),
+    { label: CLEAR_AUDIO_BUSY_LABEL, busy: true }))
+t('额度不够那句尾注指向「书架清空某本书的音频」这个动作',
+  QUOTA_TIP_CLEAR.includes('清空') && QUOTA_TIP_CLEAR.includes('书架'))
+{
+  const book = { id: BID, title: 'The Giver' }
+  const okLine = clearResultText(book, {
+    ok: true, status: 200,
+    data: normalizeClear({ ok: true, bookId: BID, removedAudioObjects: 3, indexCleared: true, tasksPurged: 2 }),
+  })
+  t('成了：报「删掉几个文件」＋「几章回到可重新生成」＋ 正文没动',
+    okLine.ok === true && okLine.text.includes('删掉 3 个音频文件')
+    && okLine.text.includes('2 章回到') && okLine.text.includes('正文与笔记没动'))
+  const legacy = clearResultText(book, { ok: true, status: 200, data: normalizeClear({ ok: true, bookId: BID }) })
+  t('回执缺字段（旧 worker）→ 不报数字，也绝不印出 -1',
+    legacy.ok === true && !legacy.text.includes('-1') && !legacy.text.includes('删掉'))
+  const r409 = clearResultText(book, { ok: false, status: 409, open: 3 })
+  t('409：用回执里的 open 说「还有 3 章正在生成」，并声明什么都没动',
+    r409.ok === false && r409.text.includes('还有 3 章正在生成') && r409.text.includes('什么都没动'))
+  const r409b = clearResultText(book, { ok: false, status: 409, open: -1 })
+  t('409 但回执里没有 open → 说「还有章正在生成」，**不编数字**',
+    r409b.text.includes('还有章正在生成') && !/\d+ 章正在生成/.test(r409b.text))
+  const r503 = clearResultText(book, { ok: false, status: 503 })
+  t('503：说「任务没作废掉，音频没动」',
+    r503.text.includes('任务没作废掉') && r503.text.includes('音频没动'))
+  const rTimeout = clearResultText(book, { ok: false, status: 0, reason: 'timeout' })
+  t('超时 → 说清「超时 ＋ 音频没动」', rTimeout.text.includes('超时') && rTimeout.text.includes('音频没动'))
+  const rOther = clearResultText(book, { ok: false, status: 500 })
+  t('其它 HTTP → 原样报码 ＋ 声明没动音频', rOther.text.includes('500') && rOther.text.includes('音频没动'))
+}
+{
+  const f = fakeFetch(() => mkRes(200, { ok: true, bookId: BID, removedAudioObjects: 3, indexCleared: true, tasksPurged: 1 }))
+  const r = await clearBookAudioRemote(BID, { fetchImpl: f })
+  t('清空 200 的 tasksPurged 读得到（D25-f 的回执不再被扔掉）', r.ok === true && r.data.tasksPurged === 1)
+}
+{
+  const f = fakeFetch(() => mkRes(409, { error: 'tasks-running', bookId: BID, open: 2 }))
+  const r = await clearBookAudioRemote(BID, { fetchImpl: f })
+  t('清空 409 → 带出在跑章数 `open`（那句要报真数字）＋ 原样留 error',
+    r.ok === false && r.status === 409 && r.open === 2 && r.error === 'tasks-running')
+  const r2 = await clearBookAudioRemote(BID, { fetchImpl: fakeFetch(() => mkRes(503, { error: 'task purge failed' })) })
+  t('清空 503 → open 缺省 -1（不编），错误码原样留', r2.status === 503 && r2.open === -1 && r2.error === 'task purge failed')
+}
+{
+  const list = readFileSync(join(__dirname, 'src/views/BookListView.vue'), 'utf8')
+  const card = readFileSync(join(__dirname, 'src/components/BookCard.vue'), 'utf8')
+  const gen = readFileSync(join(__dirname, 'src/views/GenerateAudioView.vue'), 'utf8')
+  t('书架：**先问一句**再发（window.confirm ＋ 原话只有 genApi 那一份）',
+    list.includes('window.confirm(clearAudioConfirm(') && list.includes('await clearBookAudioRemote(book.id)'))
+  t('书架：清空成功后清掉本机那份「有音频」并重取这本书（入口才会退回「去生成音频」）',
+    list.includes('clearAudioIndex(book.id)') && list.includes('refreshCachedCounts()')
+    && list.includes('await loadGenInfo(book.id)'))
+  t('书架：结果原样交给 clearResultText（结算话术不在视图里重写一份）',
+    list.includes('clearResultText(book, r)') && !list.includes('已清空《'))
+  t('书卡：按钮在卡片 link **之外**（与生成入口同一条结构约束）；结果行与按钮各自独立',
+    card.indexOf('class="book-clear"') > card.indexOf('</router-link>')
+    && card.includes('v-if="clear || clearNote"') && card.includes('v-if="clear"') && card.includes('v-if="clearNote"'))
+  t('书卡不自己判定（出不出、文案全在 genApi）',
+    !/clearEntryState\s*\(/.test(card) && !/clearResultText\s*\(/.test(card)
+    && !card.includes('withAudioCount') && !/from\s+['"][^'"]*genApi/.test(card))
+  t('生成页那两句额度文案引同一份尾注 QUOTA_TIP_CLEAR（预算闸 ＋ 403），不各写一句',
+    (gen.match(/QUOTA_TIP_CLEAR/g) || []).length >= 3)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

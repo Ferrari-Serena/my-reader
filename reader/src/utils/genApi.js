@@ -135,6 +135,8 @@ export function normalizeClear(body) {
     bookId: String(b.bookId || ''),
     removedAudioObjects: num(b.removedAudioObjects, -1),
     indexCleared: !!b.indexCleared,
+    /** 被作废成 `purged` 的任务行数（D25-f）。-1 ＝ 回执里没有这个字段，**不编数字** */
+    tasksPurged: num(b.tasksPurged, -1),
   }
 }
 
@@ -364,6 +366,79 @@ export const GEN_PAGE_NOTES = [
   '生成的音频只存在你自己的账号空间，仅个人使用。',
 ]
 
+// ── 纯逻辑⑥ 书级「清空该书音频」（第 17 步块 D 的 D4 ／ D25）────────────────────
+// 服务端两道闸在 `worker/src/bookaudio.js`：还有章在跑 → 409（一个字都不清）；任务行作废没跑成
+// → 503（也不清）。前端**不许**自己判「大概能清吧」—— 403／409／503 一律原样读回来、照实说。
+
+/** 按钮上的字（书架书卡；**一份**，别处要用就引这里） */
+export const CLEAR_AUDIO_LABEL = '清空该书音频'
+/** 正在清空时按钮上的字 */
+export const CLEAR_AUDIO_BUSY_LABEL = '清空中…'
+
+/**
+ * 额度不够时那句尾注（D4）：把「腾空间」落到**能点的那件事**上 —— 书架的「清空该书音频」。
+ * 生成页的预算闸与 403 两条都用它，免得两处各写一句慢慢漂开。
+ */
+export const QUOTA_TIP_CLEAR = '想马上腾出额度，可在书架清空某本书的音频。'
+
+/**
+ * 二次确认的原话（D4）。两件事必须写在这里、且只有这一份：
+ *   ① **只删音频** —— 正文与笔记不动（不写清，用户不敢点）；
+ *   ② 清空后这些章**可以重新生成**（D25-f 已把 `done`／`failed` 的行作废成 `purged`）。
+ */
+export function clearAudioConfirm(title) {
+  const name = String(title || '').trim() || '这本书'
+  return `清空《${name}》的全部音频？\n\n只删音频 —— 正文与笔记不动；清空后这些章可以重新生成。`
+}
+
+/**
+ * 书卡上要不要出「清空该书音频」。`null` ＝ 不出：
+ *   · 未登录：音频在账号里，未登录既看不见也删不掉；
+ *   · 已知一章音频都没有（`withAudioCount` 不是正数）：没什么可清，别摆一个点了也白跑的按钮。
+ * `clearing` ＝ 这一本正在清（按钮转「清空中…」并禁用）。
+ */
+export function clearEntryState({ loggedIn, withAudioCount, clearing } = {}) {
+  if (!loggedIn) return null
+  if (!(num(withAudioCount) > 0)) return null
+  return { label: clearing ? CLEAR_AUDIO_BUSY_LABEL : CLEAR_AUDIO_LABEL, busy: !!clearing }
+}
+
+/**
+ * 清空的结果 → 一句话（＋ 这句是「成了」还是「没成」）。每一档都要说清**动了什么、没动什么**：
+ *   200 → 删了几个文件 ＋ 几章回到「可重新生成」（回执里缺字段就不报数字，**不编**）；
+ *   409 → 还有 N 章正在生成（取回执里的 `open`）—— 什么都没动；
+ *   503 → 任务没作废掉，音频没动；
+ *   其余 → 原样报 HTTP 码／网络，并声明「音频没动」。
+ */
+export function clearResultText(book, result) {
+  const r = result || {}
+  const d = r.data || {}
+  const name = String((book && (book.title || book.id)) || '').trim() || '这本书'
+  if (r.ok) {
+    const bits = []
+    if (num(d.removedAudioObjects, -1) >= 0) bits.push(`删掉 ${d.removedAudioObjects} 个音频文件`)
+    if (num(d.tasksPurged, -1) >= 0) bits.push(`${d.tasksPurged} 章回到「可重新生成」`)
+    return { ok: true, text: `已清空《${name}》的音频${bits.length ? '：' + bits.join('，') : ''}。正文与笔记没动。` }
+  }
+  if (r.status === 409) {
+    const open = num(r.open, -1)
+    return {
+      ok: false,
+      text: open > 0
+        ? `《${name}》还有 ${open} 章正在生成 —— 等它们跑完再清空（现在什么都没动）。`
+        : `《${name}》还有章正在生成 —— 等它们跑完再清空（现在什么都没动）。`,
+    }
+  }
+  if (r.status === 503) return { ok: false, text: '任务没作废掉，音频没动 —— 稍后重试。' }
+  if (r.status === 401) return { ok: false, text: '登录已过期 —— 重新登录后再清空（音频没动）。' }
+  if (r.status === 403) return { ok: false, text: '账号状态不对，这次没清成（音频没动）—— 退出重登再试。' }
+  if (r.status === 404) return { ok: false, text: '这本书不在你的账号里（音频没动）。' }
+  if (!r.status) {
+    return { ok: false, text: `没联系上服务端（${r.reason === 'timeout' ? '超时' : '网络'}），音频没动 —— 稍后重试。` }
+  }
+  return { ok: false, text: `没清成（HTTP ${r.status}），音频没动 —— 稍后重试。` }
+}
+
 // ── 网络（恒不抛；拿不到就退回「没有在跑」）─────────────────────────────────
 
 async function requestJson(fetchImpl, url, init, timeoutMs) {
@@ -415,13 +490,19 @@ export async function submitGenChapters(bookId, chapterIds, { fetchImpl = global
   }
 }
 
-/** 清空该书音频（D25）。**只删音频**：正文与笔记不动 */
+/**
+ * 清空该书音频（D25／D4）。**只删音频**：正文与笔记不动。
+ * 失败时把服务端的两种拒绝原样带出来 —— `409`（`open` ＝ 还有几章在跑）与 `503`（作废没跑成），
+ * 两种都**什么都没动**；文案交给 `clearResultText`，这里不自己编。
+ */
 export async function clearBookAudioRemote(bookId, { fetchImpl = globalThis.fetch, timeoutMs = GEN_TIMEOUT_MS } = {}) {
   if (!bookId) return { ok: false, status: 0, reason: 'bad-input', error: null, data: null }
   const r = await requestJson(fetchImpl, clearBookAudioPath(bookId), { method: 'DELETE' }, timeoutMs)
   return {
     ok: r.ok, status: r.status, reason: r.reason || null,
     error: (r.body && r.body.error) || null,
+    /** 409 回执里的「在跑／排队章数」（D4 那句要报真数字）。-1 ＝ 回执没这个字段 */
+    open: num(r.body && r.body.open, -1),
     data: r.ok ? normalizeClear(r.body) : null,
   }
 }

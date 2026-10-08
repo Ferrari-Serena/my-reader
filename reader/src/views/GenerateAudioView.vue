@@ -135,7 +135,8 @@ import { useAuth } from '../composables/useAuth.js'
 import {
   CH_STATE, CH_STATE_LABEL, GEN_PAGE_NOTES, GEN_POLL_MS, MAX_CHAPTERS_PER_SUBMIT,
   chapterRowState, chapterSelectable, fetchGenStatus, normalizeQuota, quotaLeftText,
-  queueLine, rangeSelection, skipReasonText, submitGenChapters, submitResultLine
+  queueLine, rangeSelection, skipReasonText, submitGenChapters, submitResultLine,
+  QUOTA_TIP_CLEAR
 } from '../utils/genApi.js'
 
 const route = useRoute()
@@ -205,7 +206,9 @@ const quotaText = computed(() => quotaLeftText(genStatus.value ? genStatus.value
 const chaptersLeft = computed(() => normalizeQuota(genStatus.value ? genStatus.value.quota : null).chaptersLeft)
 const blockedByQuota = computed(() => (
   !!selectedIds.value.length && chaptersLeft.value !== null && selectedIds.value.length > chaptersLeft.value))
-const blockedText = computed(() => `今天只剩 ${chaptersLeft.value} 章可生成 —— 少勾几章，或明天再来。`)
+// 额度不够的两句（预算闸 ＋ 403）都指向**能点的那件事**（D4）：书架的「清空该书音频」
+const blockedText = computed(() =>
+  `今天只剩 ${chaptersLeft.value} 章可生成 —— 少勾几章，或明天再来。${QUOTA_TIP_CLEAR}`)
 const canSubmit = computed(() => (
   !submitting.value && !!selectedIds.value.length && !blockedByQuota.value && !needLogin.value))
 
@@ -332,7 +335,7 @@ async function submit() {
     submitError.value = r.status === 401
       ? '登录状态过期了，请重新登录再试。'
       : r.status === 403
-        ? '今天的额度不够 —— 少勾几章，或明天再来。'
+        ? `今天的额度不够 —— 少勾几章，或明天再来。${QUOTA_TIP_CLEAR}`
         : '没提交成功（网络或服务端抖动），稍后再试。'
     return
   }

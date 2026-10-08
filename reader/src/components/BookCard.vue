@@ -25,6 +25,19 @@
       :class="'book-gen-' + gen.kind"
       :to="gen.to"
     >{{ gen.label }}</router-link>
+    <!-- 「清空该书音频」（第 17 步块 D 的 D4／D25）：与生成入口同一条结构约束 —— 按钮在书卡
+         `router-link` **之外**（`button` 不能嵌 `a`，iOS Safari 会连导航一起触发）。
+         结果那一行（`clearNote`）与按钮各自独立：清完按钮会消失，这句话要留住。 -->
+    <div v-if="clear || clearNote" class="book-clear-wrap">
+      <button
+        v-if="clear"
+        type="button"
+        class="book-clear"
+        :disabled="clear.busy"
+        @click="$emit('clear', book)"
+      >{{ clear.label }}</button>
+      <p v-if="clearNote" class="book-clear-note" :class="clearNote.ok ? 'ok' : 'bad'">{{ clearNote.text }}</p>
+    </div>
     <!-- 只对自带书出删除（公开书库那栏删不了） -->
     <button
       v-if="removable && book.kind === 'byo'"
@@ -48,10 +61,18 @@ const props = defineProps({
    * 生成入口（第 17 步块 D-3）：`{ kind, label, to }`（`genEntryState` 的结果 ＋ 父级补的 `to`）。
    * `null` ＝ 不给入口（公开书、或这本书没资格）。本组件**不判定**，只画。
    */
-  gen: { type: Object, default: null }
+  gen: { type: Object, default: null },
+
+  /**
+   * 「清空该书音频」（第 17 步块 D 的 D4）：`{ label, busy }`（`genApi.clearEntryState` 的结果）。
+   * `null` ＝ 不出这个按钮（未登录／这本书还没有音频）。本组件**不判定**，只画。
+   */
+  clear: { type: Object, default: null },
+  /** 清空的结果那一行 `{ ok, text }`（`genApi.clearResultText`）。与按钮各自独立显示。 */
+  clearNote: { type: Object, default: null }
 })
 
-defineEmits(['remove'])
+defineEmits(['remove', 'clear'])
 
 // book-index.json 里的 coverUrl 是站点相对路径（books/<id>/cover.svg）。
 // 将来 BASE_URL 若从 '/' 挪回子路径，这里跟着走，不会指到域名根上。
@@ -106,6 +127,42 @@ const coverSrc = computed(() => {
   border-left-color: var(--border-color, #e5e5e5);
   color: var(--text-secondary, #6e6e73);
 }
+
+/* 「清空该书音频」：次级动作，平时低调；悬停才转危险色（与「删书」同一条颜色口径） */
+.book-clear-wrap {
+  margin-top: 6px;
+}
+
+.book-clear {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary, #6e6e73);
+  font-size: 12px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.book-clear:hover:not(:disabled) {
+  border-color: var(--danger-color, #d92d20);
+  color: var(--danger-color, #d92d20);
+}
+
+.book-clear:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.book-clear-note {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.book-clear-note.ok { color: var(--text-secondary, #6e6e73); }
+.book-clear-note.bad { color: var(--danger-color, #d92d20); }
 
 .book-remove {
   position: absolute;

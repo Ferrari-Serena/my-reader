@@ -97,7 +97,10 @@
             :book="book"
             removable
             :gen="genOf(book)"
+            :clear="clearOf(book)"
+            :clear-note="clearNoteOf(book)"
             @remove="removeBook"
+            @clear="clearAudio"
           />
         </div>
       </section>
@@ -137,10 +140,11 @@ import { useNotes } from '../composables/useNotes'
 import { missingBookGroups } from '../utils/notes.js'
 import BookCard from '../components/BookCard.vue'
 import { useAuth } from '../composables/useAuth.js'
-import { loadAudioIndex, saveAudioIndex } from '../sync/audioIndexCache.js'
+import { clearAudioIndex, loadAudioIndex, saveAudioIndex } from '../sync/audioIndexCache.js'
 import { fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
 import {
   GEN_POLL_MS, SHELF_NOTE_COLLAPSED, SHELF_NOTE_LINES,
+  clearAudioConfirm, clearBookAudioRemote, clearEntryState, clearResultText,
   fetchGenStatus, genEntryState, genEntryTo, loadShelfNoteOpen, markShelfNoteSeen,
   saveShelfNoteOpen, shelfIndexStale, withAudioCount
 } from '../utils/genApi.js'
@@ -255,6 +259,62 @@ function genOf(book) {
   })
   if (e.kind === 'none') return null
   return { ...e, to: genEntryTo(e.kind, book.id) }
+}
+
+// ── 书级「清空该书音频」（第 17 步块 D 的 D4）────────────────────────────────
+// 判定与文案都在 genApi（`clearEntryState`／`clearAudioConfirm`／`clearResultText`），这里只负责
+// 「先问一句 → 发一次 DELETE → 把结果原样说出来 → 成了就重取这本书的数」。
+
+const clearingIds = ref(new Set())   // 正在清的书（按钮转「清空中…」并禁用；一次只清一本）
+const clearNotes = ref({})           // bookId → { ok, text }：就地那一行结果
+
+/** 书卡上要不要出「清空该书音频」（判定在 genApi；这里只把三个输入凑齐） */
+function clearOf(book) {
+  const info = genInfo.value[book.id] || null
+  return clearEntryState({
+    loggedIn: !!auth.user.value,
+    withAudioCount: info ? info.withAudioCount : cachedCounts.value[book.id],
+    clearing: clearingIds.value.has(book.id)
+  })
+}
+
+/** 结果那一行 —— 与按钮各自独立：清完按钮就没了，这句话要留住 */
+function clearNoteOf(book) { return clearNotes.value[book.id] || null }
+
+function setClearing(bookId, on) {
+  const s = new Set(clearingIds.value)
+  if (on) s.add(bookId)
+  else s.delete(bookId)
+  clearingIds.value = s
+}
+
+/**
+ * 清空一本书的音频（D4）。**只删音频**：正文与笔记不动。
+ *
+ * 先问一句（不可逆的那类动作都先问，与「删书」／词表页「全清」同一姿态；点取消就什么都不做）。
+ * 服务端两道闸原样读回来：还有章在跑 → **409**（说「还有 N 章正在生成」）；任务行作废没跑成
+ * → **503**（一个字没动）。成没成、动了什么都没动什么，全交给 `clearResultText` 说 —— 不自己编话。
+ */
+async function clearAudio(book) {
+  const name = (book && (book.title || book.id)) || ''
+  if (!window.confirm(clearAudioConfirm(name))) return
+  setClearing(book.id, true)
+  clearNotes.value = { ...clearNotes.value, [book.id]: null }
+  try {
+    const r = await clearBookAudioRemote(book.id)
+    clearNotes.value = { ...clearNotes.value, [book.id]: clearResultText(book, r) }
+    if (r.ok) {
+      // 本机那份「有音频」当场过期：删掉缓存再重问一次台账，入口才会退回「去生成音频」
+      clearAudioIndex(book.id)
+      refreshCachedCounts()
+      await loadGenInfo(book.id)
+    }
+  } catch {
+    // `clearBookAudioRemote` 恒不抛；这里只兜「之后那几句」自己的意外
+    clearNotes.value = { ...clearNotes.value, [book.id]: { ok: false, text: '清空没走完（音频可能没动）—— 稍后重试。' } }
+  } finally {
+    setClearing(book.id, false)
+  }
 }
 
 // 只有「有章在排队／在跑」的书才值得再问（空闲不空转；后台标签页不发）

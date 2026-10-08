@@ -18,7 +18,7 @@
 
 ## 测试
 
-`reader` 13 套 ＋ `worker` 8 套，合计 2,368 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
+`reader` 13 套 ＋ `worker` 8 套，合计 2,389 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
 
 ```bash
 cd reader && npm test   # 13 套（verify-*.mjs ＋ smoke-test.mjs）
@@ -35,7 +35,7 @@ cd worker && npm test   # 8 套（verify-*.mjs）
 - `reader/smoke-test.mjs` — 生词本读写冒烟（含 0.6 备份包导出/回导）
 - `reader/verify-authui.mjs` — 账号界面层纯逻辑（邮箱/密码校验 / 二次确认 / 错误码文案）
 - `reader/verify-audio.mjs` — 云端音频读取侧（路径 / 就绪索引 / timings 口径 / 清空音频后的读侧口径）
-- `reader/verify-genui.mjs` — 服务端合成的客户端（提交章节 / 状态 / 清空音频 ＋ 入口三态、My Books 常驻条与书级入口）
+- `reader/verify-genui.mjs` — 服务端合成的客户端（提交章节 / 状态 / 清空该书音频 ＋ 入口三态、My Books 常驻条与书级入口；D4 清空的确认原话与结果四档）
 - `reader/verify-generate.mjs` — 生成后处理（段内切块 / 段间静音 / timings / WAV→mp3）
 - `reader/verify-hotswitch.mjs` — 浏览器朗读 → 云端音色就地热切
 - `worker/verify-worker.mjs` — Worker 路由 / 缓存 / CORS / 限流纯函数
