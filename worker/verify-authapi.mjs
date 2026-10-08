@@ -700,7 +700,9 @@ console.log('\n[authapi — 端到章：注销 / 冷静期撤销 / 到期真删�
   const bidE = 'bk_0011223344556677'
   audioStore.set(`user/${mainCode}/${bidE}/ch-01.mp3`, 1)
   audioStore.set(`user/${mainCode}/${bidE}/audio-index.json`, 1)
+  audioStore.set(`books/${mainCode}/${bidE}.json`, 1)          // D22：注销真删也要清 BYO 正文
   audioStore.set('user/OTHER789/deadbeef/ch-01.mp3', 1)
+  audioStore.set('books/OTHER789/deadbeef.json', 1)            // 别的账号的正文，不许动
   const purge = await purgeDeletedAccounts(env, T)
   t('到期真删：清掉 1 个账号', purge.purged === 1)
   t('到期真删：users 行没了', userOf('del@qq.com') == null)
@@ -709,6 +711,9 @@ console.log('\n[authapi — 端到章：注销 / 冷静期撤销 / 到期真删�
   t('块 E：到期真删连带清掉账号空间的音频（user/<code>/ 下 2 件都清）',
     [...audioStore.keys()].filter((k) => k.startsWith(`user/${mainCode}/`)).length === 0)
   t('块 E：**别的账号**的音频不许动', audioStore.has('user/OTHER789/deadbeef/ch-01.mp3'))
+  t('D22：到期真删连带清掉账号空间的 BYO 正文（books/<code>/ 下清空）',
+    [...audioStore.keys()].filter((k) => k.startsWith(`books/${mainCode}/`)).length === 0)
+  t('D22：**别的账号**的 BYO 正文不许动', audioStore.has('books/OTHER789/deadbeef.json'))
 
   // 未到期的账号不受影响
   await handleAuth(post('/api/auth/register', { email: 'keep@qq.com', password: PW }), env)

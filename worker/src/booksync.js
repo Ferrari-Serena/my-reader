@@ -30,10 +30,13 @@ import { sessionTenant } from './syncgate.js'
 import { recordKey, SQL_TOMB_UPSERT } from './sync.js'
 // 块 E：删书连带清音频 —— 键布局与「按前缀清」在 bookaudio.js／audiostore.js，这里只调用
 import { purgeBookAudio } from './bookaudio.js'
+// 2026-10-08 D22：`books/` 前缀常量收编到 audiostore.js（authapi 不能引本文件，会成环），
+// 这里只 re-export，对外契约（BOOK_PREFIX）不变
+import { BOOK_BODY_PREFIX, bookBodyPrefixFor } from './audiostore.js'
 
 export const ROUTE_PREFIX = '/api/sync/book/'
-/** R2 键前缀（与内置书音频的 `<bookId>/…` 分开，一眼看得出是 BYO 正文） */
-export const BOOK_PREFIX = 'books/'
+/** R2 键前缀（与内置书音频的 `<bookId>/…` 分开，一眼看得出是 BYO 正文）；来源在 audiostore.js */
+export const BOOK_PREFIX = BOOK_BODY_PREFIX
 /** 书体大小上限：一本 EPUB 转出的 JSON 约 0.5–1.5 MB；8 MB 留足余量，同时挡住当网盘用 */
 export const MAX_BOOK_BYTES = 8 * 1024 * 1024
 
@@ -42,7 +45,7 @@ const BOOK_ID_RE = /^bk_[0-9a-f]{16}$/
 export function isBookId(v) { return typeof v === 'string' && BOOK_ID_RE.test(v) }
 
 /** 书体在 R2 里的键：账号主码是**目录**，也就是租户边界 */
-export function bookObjectKey(code, bookId) { return `${BOOK_PREFIX}${code}/${bookId}.json` }
+export function bookObjectKey(code, bookId) { return `${bookBodyPrefixFor(code)}${bookId}.json` }
 
 function json(cors, data, status = 200, extra = {}) {
   return new Response(JSON.stringify(data), {

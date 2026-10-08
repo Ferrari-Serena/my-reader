@@ -10,10 +10,14 @@
  * 所以把「键怎么拼」＋「按前缀清」放这里，本文件**不 import 任何本地模块**，谁都引得到。
  *
  * `user/` 前缀即权限边界（结构性隔离，不靠路由里的 if 兜）—— 见 `bookaudio.js` 头注。
- * 本文件只认这一个前缀，**不碰** `books/`（BYO 正文）与内置书音频（`<bookId>/…`）。
+ * 本文件同时持有 `books/`（BYO 正文）的键布局（2026-10-08 D22：注销真删要连正文一起清，
+ * 而 `authapi.js` 不能引 `booksync.js` —— 同上会成环，故前缀常量收编到这里）；**仍不碰**
+ * 内置书音频（`<bookId>/…`）。
  */
 
 export const USER_PREFIX = 'user/'
+/** BYO 正文（书体）前缀 —— 与内置书音频的 `<bookId>/…` 分开 */
+export const BOOK_BODY_PREFIX = 'books/'
 
 /** 一个账号的音频前缀（租户边界） */
 export function audioPrefixFor(code) { return `${USER_PREFIX}${code}/` }
@@ -21,6 +25,8 @@ export function audioPrefixFor(code) { return `${USER_PREFIX}${code}/` }
 export function bookAudioPrefixFor(code, bookId) { return `${audioPrefixFor(code)}${bookId}/` }
 /** 对象在 R2 里的键：账号主码是**目录**，也就是租户边界 */
 export function audioObjectKey(code, bookId, file) { return `${bookAudioPrefixFor(code, bookId)}${file}` }
+/** 一个账号的 BYO 正文（书体）前缀 —— 注销真删时按它清（D22） */
+export function bookBodyPrefixFor(code) { return `${BOOK_BODY_PREFIX}${code}/` }
 
 /**
  * 清掉某前缀下的全部对象。**恒不抛** —— 它是删书／注销的收尾动作，一次 R2 打嗝不该把

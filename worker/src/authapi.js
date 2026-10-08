@@ -43,7 +43,7 @@ import {
   checkPasswordPolicy, needsRehash, csrfToken, csrfMatches,
 } from './auth.js'
 // 块 E：注销真删要清账号空间的音频 —— 键布局在 audiostore.js（本文件不能引 bookaudio.js，会成环）
-import { audioPrefixFor, purgePrefix } from './audiostore.js'
+import { audioPrefixFor, bookBodyPrefixFor, purgePrefix } from './audiostore.js'
 
 /** 登录失败滑窗与阈值（同一 (scope,key) 桶内计数） */
 export const LOGIN_WINDOW_MS = 15 * 60 * 1000
@@ -726,9 +726,14 @@ export async function purgeDeletedAccounts(env, nowMs = Date.now()) {
       stmts.push(env.DB.prepare(SQL_PURGE_SYNC_DATA).bind(u.sync_code))
       stmts.push(env.DB.prepare(SQL_PURGE_SYNC_PROGRESS).bind(u.sync_code))
     }
-    // 块 E（判据 5）：账号空间里的 BYO 朗读音频（`user/<code>/`）一并清 —— 注销是**真删**，
-    // 音频是正文的派生物，没有独立保留的理由。恒不抛：一次 R2 打嗝不该堵住整批注销。
-    if (u.sync_code) await purgePrefix(env, audioPrefixFor(u.sync_code))
+    // 块 E（判据 5）＋ D22：账号空间里的 BYO 朗读音频（`user/<code>/`）与 BYO 正文
+    // （`books/<code>/`）一并清 —— 注销是**真删**，音频是正文的派生物、正文本身也是账号的
+    // 云数据，都没有独立保留的理由（2026-10-08 Ferrari 裁 D22：原来只清音频，漏了正文）。
+    // 恒不抛：一次 R2 打嗝不该堵住整批注销。
+    if (u.sync_code) {
+      await purgePrefix(env, audioPrefixFor(u.sync_code))
+      await purgePrefix(env, bookBodyPrefixFor(u.sync_code))
+    }
     stmts.push(env.DB.prepare(SQL_DELETE_USER_SESSIONS).bind(u.id))
     stmts.push(env.DB.prepare(SQL_DELETE_USER_TOKENS).bind(u.id))
     if (u.email) stmts.push(env.DB.prepare(SQL_CLEAR_EMAIL_ATTEMPTS).bind(u.email))
