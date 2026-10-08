@@ -132,33 +132,10 @@
         @jump="jumpToChapter"
       />
 
-      <!-- 底部停靠区（2026-10-07 Ferrari 裁 A）：生成入口 ＋ 展开后的面板 ＋ 播放器条在**同一个
-           fixed 容器**里排队 —— 入口跟着播放器走、面板从播放器正上方长出来，不必滚到章末找。
-           容器高度由 ResizeObserver 写进 --dock-h，正文据此留白，免得最后几行被压住。 -->
+      <!-- 底部停靠区（2026-10-07 Ferrari 裁 A；2026-10-08 第 17 步块 D-1 收窄）：只剩播放器条 ——
+           章内生成入口与生成面板都**撤出阅读器**（D21-b：入口只在 My Books 页）。容器高度由
+           ResizeObserver 写进 --dock-h，正文据此留白，免得最后几行被压住。 -->
       <div ref="bottomDockRef" class="bottom-dock">
-        <!-- 第 17 步块 D：BYO 书 ＋ 已登录才挂。这里只判粗条件（免得非 BYO 的读者白拉一块懒加载
-             chunk）；「已就绪 / 无 WebGPU / 够不够格」由面板里的 audioGenGate 细判，口径只一处。
-             ⚠️ 收起 ≠ 卸载：组件一直在，生成与就绪轮询才不会被自己的展开状态掐断。 -->
-        <GenAudioPanel
-          v-if="isByoBook && !!authUser"
-          :open="genOpen"
-          :book-id="bookId"
-          :chapter="currentChapter"
-          :audio-index="audioIndex"
-          :is-byo="isByoBook"
-          :logged-in="!!authUser"
-          @ready="onCloudAudioReady"
-          @browser-tts="onBrowserTts"
-          @status="onPanelStatus"
-        />
-
-        <button
-          v-if="genEntry && GEN_ENTRY_ENABLED"
-          class="gen-entry"
-          :aria-expanded="genOpen ? 'true' : 'false'"
-          @click="genOpen = !genOpen"
-        >{{ genOpen ? '收起' : '本章可以生成真人朗读' }}</button>
-
         <AudioPlayer
           ref="audioPlayerRef"
           :chapter-text="currentChapterText"
@@ -243,7 +220,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ChapterNav from '../components/ChapterNav.vue'
 import AudioPlayer from '../components/AudioPlayer.vue'
@@ -253,6 +230,7 @@ import { usePhrases } from '../composables/usePhrases'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
 import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { chapterAudioPath, chapterTimingsUrl, fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
+import { GEN_POLL_MS, fetchGenStatus, isChapterPending, chapterGenState, CH_STATE } from '../utils/genApi.js'
 import { loadAudioIndex, saveAudioIndex } from '../sync/audioIndexCache.js'
 import { buildParagraphStarts } from '../utils/ttsChunks.js'
 import { useSync } from '../composables/useSync'
@@ -266,10 +244,6 @@ import NoteEditor from '../components/NoteEditor.vue'
 import NotesPanel from '../components/NotesPanel.vue'
 import { useNotes } from '../composables/useNotes'
 import { NOTE_COLORS, DEFAULT_NOTE_COLOR, resolveAnchor, snapToWords, noteMarksForChapter, groupNotesByChapter, noteStatus } from '../utils/notes.js'
-
-// 第 17 步块 D · 生成面板：**动态** import —— 主包不许静态引 src/generate/（体积＋lamejs 的
-// LGPL 边界，见 verify-generate.mjs 的卫生断言）。面板与 kokoro-js 一起落在懒加载 chunk 里。
-const GenAudioPanel = defineAsyncComponent(() => import('../generate/GenAudioPanel.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -536,7 +510,7 @@ const chapterParagraphStarts = computed(() => chapterSpeech.value.starts)
 //   · BYO 书 → /api/book/<bookId>/audio/<chapterId>.mp3（**账号空间**，需会话；见 utils/audioCloud.js）
 const AUDIO_BASE = '/api/audio'
 const isByoBook = computed(() => isBookId(bookId.value))
-// 账号会话：面板只在「BYO 书 + 已登录」时挂（生成要写账号空间，未登录服务端 401）。
+// 账号会话：章内轮询只在「BYO 书 + 已登录」时跑（生成入口与面板已撤出阅读器，见下面 startGenPoll）。
 // 与 App.vue 共用同一份单例（useAuth 是 module-level state），这里只取 user。
 const { user: authUser } = useAuth()
 // 云端音频「生成好了」的世代号：+1 让 mp3／timings 的 URL 变一下，绕开服务端的
@@ -586,7 +560,7 @@ async function loadTimings(chId) {
 }
 
 /**
- * 第 17 步块 D／D-3：这一章的云端音频刚就绪（面板 @ready，或它的就绪轮询命中）。
+ * 第 17 步块 D／D-3：这一章的云端音频刚就绪（章内轮询命中，见下面 genPollOnce）。
  * ① 回执里带的就是**合并后的索引** —— 直接落盘，不必再拉一次；
  * ② `audioVersion` +1：URL 变一下，绕开 immutable 缓存 ＋ 让 timings 重拉
  *    （旧那份是「还没有音频」时缓存的 null）；
@@ -617,35 +591,87 @@ async function onCloudAudioReady({ index, chapterId: chId } = {}) {
   await audioPlayerRef.value?.hotSwitch?.(sec)
 }
 
-/** 面板里点「改用浏览器朗读」：交给播放器自己那套兜底（与 404 降级同一条路） */
-function onBrowserTts() {
-  audioPlayerRef.value?.useBrowserTTS?.()
+// ---- 章内云端状态轮询（第 17 步块 D-1；2026-10-08）----
+// 2026-10-07 D21 把生成入口收进 My Books 页之后，阅读器章内那块生成面板也跟着**撤掉**（§13.5
+// 处置表「从阅读器章内撤下」）；但「云端音色就绪 → 就地热切」那条**留**（§13.1 判据 1）：点播放
+// 仍由浏览器 TTS 起手，这一章在服务端跑完就接过去，位置按段落接。
+//
+// 轮询从 GenAudioPanel 搬进主包 —— 主包**不许静态引 `src/generate/`**（verify-generate.mjs 的
+// 卫生断言），所以走 `utils/genApi.js`（服务端台账：这本书哪几章在排队／在跑）。一次 tick 只问
+// **一个**端点，它同时回答两件事：
+//   ① 这一章在排队／在跑吗 → 播放器副标题写「· Generating…」（cloudGenerating）；
+//   ② 台账说这一章 `done` 了 → 手上这份索引可能还是旧的（别的设备刚生成完／本机缓存旧）
+//      ⇒ 再拉**一次**索引确认，命中就 onCloudAudioReady 就地热切。
+// 「可以关掉页面，后端继续生成」那句文案的兑现物也在这条路上：状态存服务端任务表、不是前端内存。
+const genStatus = ref(null)
+/** 这一章此刻在服务端排队／在跑吗（播放器副标题据此写「· Generating…」） */
+const cloudGenerating = computed(() => isChapterPending(genStatus.value, currentChapter.value?.id || ''))
+let genPollTimer = null
+let genPollBusy = false
+let genPullKey = '' // 「台账 done ⇒ 拉一次索引」按（书／章）只拉一次：索引坏掉时不会变成死循环
+
+function stopGenPoll() {
+  if (genPollTimer) { clearInterval(genPollTimer); genPollTimer = null }
 }
 
-// 面板状态（第 17 步块 D-3）：只用来决定播放器副标题要不要写「· Generating…」。
-// 带 chapterId 一起收 —— 切章后旧状态自然失效，不用另设清空钩子。
-const panelStatus = ref({ chapterId: '', running: false, pending: false })
-function onPanelStatus(next) {
-  panelStatus.value = next || { chapterId: '', running: false, pending: false }
-}
-const cloudGenerating = computed(() => {
-  const st = panelStatus.value
-  return !!st.running && !!st.pending && st.chapterId === (currentChapter.value?.id || '')
+/** 索引未知（null）＝**不妄断**：继续轮询（宁可多问一次，也不把「不知道」当「已就绪」） */
+const chapterKnownReady = computed(() => {
+  const id = currentChapter.value?.id || ''
+  if (!id) return true
+  if (!audioIndex.value) return false
+  return chapterHasAudio(audioIndex.value, id)
 })
 
-// ---- 底部停靠区：生成入口 ＋ 面板 ＋ 播放器（2026-10-07 Ferrari 裁 A）----
-// 面板收起时只是不渲染、组件仍在，所以「这一章能不能生成」只有面板里的闸说了算 ——
-// 这里只接它的外报（entry），主包不再重写一份判定。
-// 2026-10-08 · 第 17 步 D21：生成入口**撤出阅读器**，改挂 My Books 页（Phase1 §13.8 ④
-// 「入口只在 My Books 页」）。入口按钮默认关；面板**仍挂着** —— 它还是「浏览器朗读 →
-// 云端音色」就绪热切的那条轮询（§13.5 处置表：留）。块 D 在 My Books 页重建入口时复用
-// GenAudioPanel；届时把这个开关与下面那个按钮一起处置。
-const GEN_ENTRY_ENABLED = false
-const genOpen = ref(false)
-const genEntry = computed(() => !!panelStatus.value.entry)
+async function genPollOnce() {
+  const book = bookId.value
+  const id = currentChapter.value?.id || ''
+  if (!book || !id || !isByoBook.value || !authUser.value) return
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return // 后台不空转
+  if (chapterKnownReady.value) { stopGenPoll(); return }
+  if (genPollBusy) return
+  genPollBusy = true
+  try {
+    const r = await fetchGenStatus(book)
+    // 过期答复（已经切章／换书／登出）一律丢弃 —— 别把上一章的状态写到这一章头上
+    if (book !== bookId.value || id !== (currentChapter.value?.id || '')) return
+    if (!r.ok) return // 401／网络抖动：下个 tick 再来
+    genStatus.value = r.data
+    // hasAudio 传 false 是刻意的：索引那一路上面单独判过，这里只问「台账的行怎么说」——
+    // 行 `done` 就落进 `stale`，正是「台账说好了、手上这份索引还没跟上」那个信号。
+    const key = book + '/' + id
+    if (chapterGenState(r.data.chapters[id], false) === CH_STATE.stale && genPullKey !== key) {
+      genPullKey = key
+      const cloud = await fetchCloudIndex(book)
+      if (book !== bookId.value || id !== (currentChapter.value?.id || '')) return
+      if (cloud.ok && cloud.index && chapterHasAudio(cloud.index, id)) {
+        await onCloudAudioReady({ index: cloud.index, chapterId: id })
+      }
+    }
+    if (chapterKnownReady.value) stopGenPoll()
+  } catch { /* 恒不抛：下个 tick 再来 */ }
+  finally { genPollBusy = false }
+}
 
-// 停靠区是 fixed 的，正文底部要按它的**实际高度**留白：面板展开时比播放器条高得多，
-// 写死 88px 会把最后几行压在条底下。ResizeObserver 一量就写进 --dock-h（.reader-view 用它）。
+function startGenPoll() {
+  stopGenPoll()
+  genStatus.value = null // 换书／切章后旧台账立刻失效（别让上一章的行串到这一章）
+  genPullKey = ''
+  const id = currentChapter.value?.id || ''
+  if (!isByoBook.value || !authUser.value || !id || chapterKnownReady.value) return
+  genPollOnce() // 立刻问一次 —— 别等 6 s 才知道「生成中」
+  genPollTimer = setInterval(genPollOnce, GEN_POLL_MS)
+}
+
+// 换书／切章／登录态／索引一变就重判（索引到位前 chapterKnownReady 判不实，所以它也在名单里）
+watch(
+  [() => bookId.value, () => currentChapter.value?.id, () => authUser.value, () => audioIndex.value],
+  startGenPoll,
+  { immediate: true }
+)
+onBeforeUnmount(stopGenPoll)
+
+// 停靠区是 fixed 的，正文底部要按它的**实际高度**留白：撤掉面板后只剩播放器条，但仍不写死高度
+// （副标题随状态换行会让条变高）。ResizeObserver 一量就写进 --dock-h（.reader-view 用它）。
 const bottomDockRef = ref(null)
 const dockH = ref(88)
 const dockVars = computed(() => ({ '--dock-h': dockH.value + 'px' }))
@@ -1255,14 +1281,14 @@ onBeforeUnmount(() => {
   max-width: var(--reader-width, 760px);
   margin: 0 auto;
   /* 底部留白跟着停靠区的**实测**高度走（--dock-h 由 ReaderView 的 ResizeObserver 写）：
-     面板一展开，这里就自动让位，最后几行不会被压在条底下。
+     播放器条的高度随状态文案换行而变，这里就跟着让位，最后几行不会被压在条底下。
      ⚠️ 底部口径只此一处（--dock-pad）：下面三个断点只改左右内边距 ——
-     2026-10-07 实测：断点里写死底部 88px 会盖掉这里，桌面宽度下面板展开时正文被压住。 */
+     2026-10-07 实测：断点里写死底部 88px 会盖掉这里，条一变高正文就被压住。 */
   --dock-pad: calc(var(--dock-h, 88px) + 16px);
   padding: 0 16px var(--dock-pad);
 }
 
-/* 底部停靠区（2026-10-07 裁 A）：入口 ＋ 面板 ＋ 播放器条同处一个 fixed 栈 */
+/* 底部停靠区（2026-10-07 裁 A；2026-10-08 块 D-1 收窄）：只剩播放器条，仍是 fixed 栈 */
 .bottom-dock {
   position: fixed;
   bottom: 0;
@@ -1271,20 +1297,6 @@ onBeforeUnmount(() => {
   z-index: 150;
   background: var(--bg-primary, #fff);
 }
-.gen-entry {
-  display: block;
-  width: 100%;
-  padding: 8px 16px;
-  border: 0;
-  border-top: 1px solid var(--border-color, #d2d2d7);
-  background: var(--panel-bg, #fafafa);
-  color: var(--accent-color, #1a73e8);
-  font-size: 13px;
-  text-align: center;
-  cursor: pointer;
-}
-.gen-entry:hover { text-decoration: underline; }
-
 .loading-state,
 .error-state {
   text-align: center;

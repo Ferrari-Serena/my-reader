@@ -611,10 +611,17 @@ console.log('\n[生成器 — 主包卫生（kokoro-js / onnx / lamejs 不得进
   }
   t(`主包源码（除 src/generate/）与生成器**静态**零耦合（动态 import 放行；扫了 ${files.length} 个文件）`, hits.length === 0, hits.join('; '))
 
-  // 正控：放行口**确实在用** —— 否则上面那条可以靠「根本没有面板」蒙过去
-  const rvSrc = readFileSync(join(__dirname, 'src/views/ReaderView.vue'), 'utf8')
-  t('ReaderView 用 defineAsyncComponent ＋ 动态 import 取生成面板（放行口在用）',
-    /defineAsyncComponent\(\s*\(\)\s*=>\s*import\(\s*['"][^'"]*generate\/GenAudioPanel\.vue['"]\s*\)/.test(rvSrc))
+  // 正控（2026-10-08 第 17 步块 D-1 改）：面板撤出阅读器后，主包**再没有**任何一处 import 进
+  // generate/ 了 —— 原来那条「放行口在用」的正控盯的就是 ReaderView 里那句动态 import，锚没了。
+  // 改成**咬自己**（AGENTS.md：闸必须能咬自己）：把两类样本直接喂给 STATIC_GEN_RE ——
+  // 静态引该红、动态 import 该放行。闸的形状对得上，上面那条「零耦合」才不是空跑。
+  t('闸咬自己 — 静态引 generate/ 的三种写法都抓得住',
+    STATIC_GEN_RE.test(`import { hasWebGPU } from '../generate/engine.js'`) &&
+    STATIC_GEN_RE.test(`import x from '../generate/audioEncode.js'`) &&
+    STATIC_GEN_RE.test(`export { a } from '../generate/audioGenGate.js'`))
+  t('闸咬自己 — 动态 import 照旧放行（赋值里的 import( 不算静态引）',
+    !STATIC_GEN_RE.test(`const P = defineAsyncComponent(() => import('../generate/GenAudioPanel.vue'))`) &&
+    !STATIC_GEN_RE.test(`const m = await import('./generate/chapterGen.js')`))
   t('生成面板住在 src/generate/ 下（与闸／编排同一个卫生豁免区）',
     readdirSync(join(__dirname, in_dir)).includes('GenAudioPanel.vue'))
 
@@ -632,46 +639,88 @@ console.log('\n[生成器 — 主包卫生（kokoro-js / onnx / lamejs 不得进
 // 才是打包器认的图，构造函数、别名、间接 re-export 都绕不过它。
 console.log('\n[生成器 — 构建级卫生（entry chunk 不许带生成器：kokoro／lamejs／面板文案）]')
 {
-  const OUT = '.verify-dist'
-  const outPath = join(__dirname, OUT)
-  const drop = () => { try { rmSync(outPath, { recursive: true, force: true }) } catch { /* 没建起来就算了 */ } }
-  drop()
-  let buildErr = null
-  try {
-    execFileSync(process.execPath,
-      [join(__dirname, 'node_modules', 'vite', 'bin', 'vite.js'), 'build',
-        '--config', 'vite.verify.config.mjs', '--logLevel', 'warn'],
-      { cwd: __dirname, stdio: 'pipe' })
-  } catch (e) {
-    buildErr = e
-  }
-  if (buildErr) {
-    const why = String((buildErr.stdout || '') + (buildErr.stderr || '') || buildErr.message || '').trim().slice(0, 400)
-    t('构建成功（构建闸的前提；这条失败时下面几条不作数）', false, why)
-  } else {
-    const mfPath = [join(outPath, '.vite', 'manifest.json'), join(outPath, 'manifest.json')].find((x) => existsSync(x))
-    t('构建产出了 manifest（拿它找 entry chunk，不靠猜文件名）', !!mfPath)
-    const mf = JSON.parse(readFileSync(mfPath, 'utf8'))
-    const chunk = (f) => readFileSync(join(outPath, f), 'utf8')
-    const entries = Object.entries(mf).filter(([, v]) => v.isEntry)
-    t('manifest 里恰好一个入口', entries.length === 1, String(entries.length))
-    const lazy = Object.entries(mf).filter(([, v]) => !v.isEntry)
-    // 针：engine.js 的 MODEL_ID 常量／audioEncode.js 的 vendor 路径／重库名／面板标题。
-    // 都是**字符串字面量或属性名**，压缩后照旧活着 —— 不靠注释（注释会被剥掉）。
-    const NEEDLES = ['Kokoro-82M', 'lame.min.js', 'onnxruntime', 'kokoro', 'lamejs', 'MPEGMode', '云端音色朗读']
-    const hits = []
-    for (const [, v] of entries) {
-      const txt = chunk(v.file)
-      for (const n of NEEDLES) if (txt.includes(n)) hits.push(`${v.file} → ${n}`)
+  const OUT_APP = '.verify-dist'
+  const OUT_PROBE = '.verify-dist-probe'
+  const outApp = join(__dirname, OUT_APP)
+  const outProbe = join(__dirname, OUT_PROBE)
+  const drop = () => {
+    for (const d of [outApp, outProbe]) {
+      try { rmSync(d, { recursive: true, force: true }) } catch { /* 没建起来就算了 */ }
     }
-    t(`entry chunk（${entries[0] ? entries[0][1].file : '?'}）不带生成器（kokoro／lamejs／面板都不在）`, hits.length === 0, hits.join('; '))
-    // 正控（两条一起才有意义）：面板确实被拆成懒加载 chunk —— 否则上面那条也是空跑
-    t('生成面板确实被拆成懒加载 chunk（不是被整体删掉了）', lazy.length > 0)
-    t('懒加载 chunk 里找得到面板（正控：证明上面那条抓到的是真货）',
-      lazy.some(([, v]) => chunk(v.file).includes('云端音色朗读')))
-    t('懒加载 chunk 里找得到引擎（kokoro 也在那一侧）',
-      lazy.some(([, v]) => chunk(v.file).includes('Kokoro-82M')))
   }
+  const viteBin = join(__dirname, 'node_modules', 'vite', 'bin', 'vite.js')
+  const build = (entry, out) => {
+    try {
+      execFileSync(process.execPath, [viteBin, 'build', '--config', 'vite.verify.config.mjs', '--logLevel', 'warn'],
+        { cwd: __dirname, stdio: 'pipe', env: { ...process.env, VERIFY_ENTRY: entry, VERIFY_OUT: out } })
+      return null
+    } catch (e) { return e }
+  }
+  const why = (e) => String((e.stdout || '') + (e.stderr || '') || e.message || '').trim().slice(0, 400)
+  drop()
+  // **两次**构建。不能合并成「一次构建、两个 HTML 入口」：实测那样两个入口会**共享 chunk**
+  // （kokoro 被塞进 probe chunk，而 app 入口静态 `import` 了它 ⇒ app 白下 2.2 MB）。
+  const errApp = build('index.html', OUT_APP)
+  const errProbe = build('kokoro-probe.html', OUT_PROBE)
+  t('构建成功：app 入口（构建闸的前提；这条失败时下面几条不作数）', !errApp, errApp ? why(errApp) : '')
+  t('构建成功：对照入口 kokoro-probe.html（正控的前提）', !errProbe, errProbe ? why(errProbe) : '')
+  const readManifest = (outPath) => {
+    const q = [join(outPath, '.vite', 'manifest.json'), join(outPath, 'manifest.json')].find((x) => existsSync(x))
+    return q ? JSON.parse(readFileSync(q, 'utf8')) : null
+  }
+  const mfApp = errApp ? null : readManifest(outApp)
+  const mfProbe = errProbe ? null : readManifest(outProbe)
+  t('两次构建都产出了 manifest（拿它找入口，不靠猜文件名）', !!mfApp && !!mfProbe)
+  // 入口键：每次构建**恰好一个** `isEntry`（HTML 入口的键就是那个 html 路径）
+  const entryKeyOf = (mf) => Object.keys(mf).filter((k) => mf[k].isEntry)
+  const appKeys = mfApp ? entryKeyOf(mfApp) : []
+  const probeKeys = mfProbe ? entryKeyOf(mfProbe) : []
+  t('每次构建的 manifest 里恰好一个入口（app ／ 对照各一个）',
+    appKeys.length === 1 && probeKeys.length === 1,
+    JSON.stringify({ app: appKeys, probe: probeKeys }))
+  // 沿 manifest 的 `imports`（**静态**依赖）走完整条链；`dynamicImports` 是懒加载口，不跟。
+  // ⚠️ 光读「入口那一个文件」**会漏**：静态图里的模块会被拆进**共享 chunk**。2026-10-08 实测 ——
+  // 给主包注入一条 `import {…} from '../generate/engine.js'` 之后，kokoro 落进 `_engine-*.js`，
+  // app 入口那个文件本身一个字都不含 ⇒ 只读入口文件 = 假绿。这就是这条 walk 的来由。
+  // `.html` 键跳过：HTML 入口不是谁 import 的模块（Rolldown 会把**别的** HTML 入口塞进 imports，实测过）。
+  const staticFiles = (mf, key) => {
+    const seen = new Set()
+    const walk = (k, root) => {
+      if (!k || seen.has(k) || !mf[k]) return
+      if (!root && /\.html$/.test(k)) return // 别的 HTML 入口不是谁 import 的模块（实测 Rolldown 会写进来）
+      seen.add(k)
+      for (const dep of (mf[k].imports || [])) walk(dep, false)
+    }
+    walk(key, true)
+    return [...seen].map((k) => mf[k].file)
+  }
+  // 针：engine.js 的 MODEL_ID 常量／audioEncode.js 的 vendor 路径／重库名／面板标题。
+  // 都是**字符串字面量或属性名**，压缩后照旧活着 —— 不靠注释（注释会被剥掉）。
+  const NEEDLES = ['Kokoro-82M', 'lame.min.js', 'onnxruntime', 'kokoro', 'lamejs', 'MPEGMode', '云端音色朗读']
+  const readAll = (outPath) => (files) => files.map((f) => readFileSync(join(outPath, f), 'utf8')).join('\n')
+
+  if (mfApp) {
+    const appFiles = staticFiles(mfApp, appKeys[0])
+    const hits = []
+    for (const f of appFiles) {
+      const txt = readFileSync(join(outApp, f), 'utf8')
+      for (const n of NEEDLES) if (txt.includes(n)) hits.push(`${f} → ${n}`)
+    }
+    t(`app 入口的**静态图**（${appFiles.length} 个文件）不带生成器（kokoro／lamejs／面板都不在）`,
+      hits.length === 0, hits.join('; '))
+    t('app 入口的静态图里连面板标题串都没有（面板撤下之后没留尾巴）',
+      !readAll(outApp)(appFiles).includes('云端音色朗读'))
+  }
+  if (mfProbe) {
+    const probeFiles = staticFiles(mfProbe, probeKeys[0])
+    // 正控（两条一起才有意义）：生成器**确实打得进产物** —— 否则上面那条是空跑（针全是哑针）
+    t('对照入口的静态图里找得到引擎（正控：证明上面那几条抓到的是真货）',
+      probeFiles.length >= 1 && readAll(outProbe)(probeFiles).includes('Kokoro-82M'))
+    t('对照入口里 kokoro 那条链真的在（onnxruntime ＋ lamejs 同图）',
+      readAll(outProbe)(probeFiles).includes('onnxruntime') && readAll(outProbe)(probeFiles).includes('lamejs'))
+  }
+  t('生成面板源文件仍在卫生豁免区（D21-k：保留代码、默认关）',
+    readdirSync(join(__dirname, in_dir)).includes('GenAudioPanel.vue'))
   drop()
 }
 

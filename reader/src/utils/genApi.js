@@ -20,6 +20,12 @@ import { AUDIO_ROUTE } from './audioCloud.js'
 export const GEN_ROUTE = '/api/gen/book/'
 /** 单次请求超时（提交与状态都用它；清空也一样 —— 都是小请求） */
 export const GEN_TIMEOUT_MS = 10000
+
+/**
+ * 阅读器「云端就绪 → 就地热切」的轮询节拍（§13.2：5–10 s）。
+ * 章内那块 GenAudioPanel 撤掉之后（第 17 步块 D-1），这条轮询由 `ReaderView` 用本模块跑。
+ */
+export const GEN_POLL_MS = 6000
 /** 一次提交最多几章 —— 与 worker 的 `DAILY_CHAPTERS` **同值手抄**（超了服务端回 400） */
 export const MAX_CHAPTERS_PER_SUBMIT = 5
 /** 章 id 形状 —— 与 worker 的 `CHAPTER_ID_RE` 同形（`ch-01` / `ch-100`） */

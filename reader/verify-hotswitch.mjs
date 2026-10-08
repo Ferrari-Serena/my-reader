@@ -2,8 +2,9 @@
  * 第 17 步 · 块 D-3 —— 「浏览器朗读 → 云端音色」就地热切的自检（不依赖浏览器）。
  *   src/utils/ttsChunks.js          纯逻辑：段落表 / chunk 偏移 / 偏移→段落
  *   src/components/AudioPlayer.vue   来源级：三态源名、静默起播的顺序、放行口
- *   src/generate/GenAudioPanel.vue   来源级：就绪轮询（间隔 / 收口 / no-store / 后台不发）
- *   src/views/ReaderView.vue         来源级：段落表同源、@ready 的接线顺序
+ *   src/generate/GenAudioPanel.vue   来源级：端上那套自己的就绪轮询（默认关，代码保留）
+ *   src/views/ReaderView.vue         来源级：段落表同源、@ready 的接线顺序、
+ *                                    第 17 步块 D-1 的章内轮询（撤面板后搬进主包 · 走 utils/genApi）
  * 用法: node verify-hotswitch.mjs
  */
 
@@ -174,9 +175,31 @@ t('图片书既不发文本也不发段落表',
 t('两个新 prop 绑到播放器',
   view.includes(':paragraph-starts="chapterParagraphStarts"') &&
   view.includes(':cloud-pending="cloudGenerating"'))
-t('面板 status 有人接', view.includes('@status="onPanelStatus"'))
-t('面板状态带 chapterId 比对（切章不串台）',
-  view.includes("st.chapterId === (currentChapter.value?.id || '')"))
+// —— 2026-10-08 第 17 步块 D-1：章内生成面板撤出阅读器，就绪轮询搬进主包（走 utils/genApi）——
+const gen = read('src/utils/genApi.js')
+{
+  const m = /export const GEN_POLL_MS = (\d+)/.exec(gen)
+  t('轮询节拍落在 5–10 s（§13.2）且常量在主包 genApi',
+    !!m && +m[1] >= 5000 && +m[1] <= 10000, m ? m[1] : '缺 GEN_POLL_MS')
+}
+t('tick 只问一个端点：服务端台账（genApi.fetchGenStatus），不绕回懒加载面板',
+  view.includes('await fetchGenStatus(book)') && view.includes("from '../utils/genApi.js'"))
+t('这一章在排队／在跑 → 播放器副标题写 Generating（台账说了算）',
+  view.includes("const cloudGenerating = computed(() => isChapterPending(genStatus.value, currentChapter.value?.id || ''))"))
+t('台账说 done ⇒ 再拉一次索引确认（hasAudio 传 false 是刻意的）',
+  view.includes('chapterGenState(r.data.chapters[id], false) === CH_STATE.stale'))
+t('那份索引按（书／章）只拉一次（坏索引不会变成死循环）',
+  view.includes('genPullKey !== key') && view.includes('genPullKey = key'))
+t('拉了索引确认后走同一条热切（onCloudAudioReady）',
+  /chapterHasAudio\(cloud\.index, id\)[\s\S]{0,200}onCloudAudioReady\(\{ index: cloud\.index, chapterId: id \}\)/.test(view))
+t('过期答复丢弃（切章／换书／登出后不写回）',
+  view.includes("if (book !== bookId.value || id !== (currentChapter.value?.id || '')) return"))
+t('标签页在后台不发请求', view.includes("document.visibilityState === 'hidden'"))
+t('已就绪 → 停轮询（不空转）', view.includes('if (chapterKnownReady.value) stopGenPoll()'))
+t('索引未知（null）→ 不妄断，继续轮询', view.includes('if (!audioIndex.value) return false'))
+t('只在 BYO 书 ＋ 已登录 ＋ 有章 时才问',
+  /if \(!book \|\| !id \|\| !isByoBook\.value \|\| !authUser\.value\) return/.test(view))
+t('卸载时收掉定时器', /onBeforeUnmount\(stopGenPoll\)/.test(view))
 t('@ready：先问「念到哪一段」', view.includes('audioPlayerRef.value?.ttsParagraphId?.()'))
 t('没在朗读 → 不热切', view.includes('if (pid === null || pid === undefined) return'))
 t('就绪的是别的章 → 只落索引', view.includes('if (id !== currentChapter.value?.id) return'))
@@ -203,18 +226,16 @@ console.log('\n[第 17 步块 E — 索引缓存：预取垫首帧 / 拉回写�
   t('缓存模块在主包侧、不引生成器',
     !/(^|\n)\s*(import|export)[^\n]*generate/.test(read('src/sync/audioIndexCache.js')))
 
-  // —— 2026-10-07 Ferrari 裁 A：入口进播放器条、点开才展开 ——
-  t('生成入口 ＋ 面板 ＋ 播放器同处一个停靠区',
-    view.includes('<div ref="bottomDockRef" class="bottom-dock">') &&
-    view.includes('v-if="genEntry && GEN_ENTRY_ENABLED"'))
-  t('入口默认关（2026-10-08 · D21：入口撤出阅读器、改挂 My Books 页）',
-    view.includes('const GEN_ENTRY_ENABLED = false'))
-  t('入口文案就是裁的那句；展开时变「收起」',
-    view.includes('genOpen ? \'收起\' : \'本章可以生成真人朗读\''))
-  t('入口可见性来自面板外报（主包不重写闸判定）',
-    view.includes('const genEntry = computed(() => !!panelStatus.value.entry)'))
-  t('收起 ≠ 卸载：面板一直挂着，生成与轮询不会被展开状态掐断',
-    view.includes(':open="genOpen"') && panel.includes('!!props.open && !!chapterId.value'))
+  // —— 2026-10-08 第 17 步块 D-1：生成入口与生成面板**都撤出阅读器**（D21-b：入口只在 My Books 页）——
+  t('停靠区还在，但只剩播放器条', view.includes('<div ref="bottomDockRef" class="bottom-dock">') &&
+    view.includes(':cloud-pending="cloudGenerating"'))
+  t('模板里没有 <GenAudioPanel>、脚本里没有 defineAsyncComponent／旧入口开关',
+    !view.includes('<GenAudioPanel') && !view.includes('defineAsyncComponent') &&
+    !view.includes('GEN_ENTRY_ENABLED') && !view.includes('genOpen'))
+  t('主包不再动态 import 生成面板（那块 kokoro chunk 不再跟着阅读器下）',
+    !view.includes("import('../generate/") && !view.includes("generate/GenAudioPanel"))
+  t('面板本体仍在卫生豁免区（D21-k：保留代码、默认关）',
+    panel.includes('云端音色朗读') && panel.includes('const POLL_MS = 6000'))
   // 2026-10-07 真机实测踩过：留白口径只写在基础规则里，三个断点又各写死一个底部值 →
   // 桌面宽度下媒体查询盖掉它，面板展开时正文被压住。所以这里**逐个 .reader-view 块**查：
   // 每一条 padding 的底值都必须走 --dock-pad，谁写死一个 px 就红。
