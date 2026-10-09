@@ -9,6 +9,7 @@
  * 不自动重载的理由：读到一半整页刷新会丢滚动位置与播放进度（真机验收要盯这条）。
  */
 import { ref } from 'vue'
+import { appVersion } from './feedback.js'
 
 /** 横幅文案与按钮：组件与单测读同一份，免得两边各抄一遍抄歪 */
 export const SW_UPDATE_MSG = 'A new version is ready.'
@@ -64,6 +65,24 @@ function watchRegistration(reg, nav) {
 }
 
 /**
+ * 注册用的脚本 URL：**带上构建版本当查询串**（`/sw.js?v=<commit>`）。
+ *
+ * 非带不可（2026-10-09 实测）：`/sw.js` 会被 **CF 边缘**缓存 —— 裸请求就是
+ * `cf-cache-status: HIT` ＋ `max-age=14400`，带 `Cache-Control: no-cache` 也照样 HIT；
+ * 而 `updateViaCache:'none'` 只管**浏览器**那层 HTTP 缓存，**管不到边缘**。后果两档：
+ *   ① 部署后十来分钟内，新访客装到**上一版** sw.js —— 更新横幅要等边缘过期才来；
+ *   ② 更糟：上一版壳清单指向**已删的旧 hash chunk**，install 逐条 add 全 404（被吞）——
+ *      壳缓存残缺，页面上却看不出来。
+ * 换 URL ＝ 换缓存键 ⇒ 新版那次注册在边缘必 MISS、必回源，**部署即生效**。
+ *
+ * 版本为空（dev / 裸 node / 构建未注入）退回裸 `/sw.js`：空查询串只会白换一个缓存键。
+ */
+function registerUrl() {
+  const v = appVersion()
+  return v ? '/sw.js?v=' + encodeURIComponent(v) : '/sw.js'
+}
+
+/**
  * 注册 SW。返回注册 Promise（拿不到时兑现 `null`）—— 注册失败（老浏览器 / 私有模式 /
  * 被策略挡）**一律吞**，离线能力没了不该连读书一起挂。
  * `options` 只为单测留口（`navigator` / `window` / `force`）。
@@ -79,7 +98,7 @@ export function startServiceWorker(options = {}) {
     if (_reloading && win.location && win.location.reload) win.location.reload()
   })
 
-  return nav.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+  return nav.serviceWorker.register(registerUrl(), { updateViaCache: 'none' })
     .then((reg) => {
       watchRegistration(reg, nav)
       return reg

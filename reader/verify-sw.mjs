@@ -386,11 +386,20 @@ SW.resetSwUpdate()
 let registered = null
 const navA = fakeNav({ registerImpl: async (url, opts) => { registered = { url, opts }; return fakeReg() } })
 const winA = fakeWin()
+// 构建版本在真机上由 vite 的 `__APP_VERSION__` 注入（裸 node 没有 ⇒ 走 '' 那条支路）。
+// 这里把假版本挂到 globalThis，正好也验一遍 `appVersion()` 的取号路径。
+globalThis.__APP_VERSION__ = 'test-build-abc123'
 const pA = SW.startServiceWorker({ force: true, navigator: navA, window: winA })
 await pA
-t('注册的是 /sw.js', registered && registered.url === '/sw.js')
+t('注册的是 /sw.js 且带构建版本查询串（换缓存键，躲开 CF 边缘缓存）',
+  registered && registered.url === '/sw.js?v=test-build-abc123')
 t('带 updateViaCache:"none"（挡的是「CF 缓存了一份旧 sw.js，浏览器永远看不到新版本」）',
   registered && registered.opts && registered.opts.updateViaCache === 'none')
+delete globalThis.__APP_VERSION__
+let bareUrl = null
+const navA0 = fakeNav({ registerImpl: async (url) => { bareUrl = url; return fakeReg() } })
+await SW.startServiceWorker({ force: true, navigator: navA0, window: fakeWin() })
+t('构建版本为空（dev／裸 node／未注入）时不带查询串，退回裸 /sw.js', bareUrl === '/sw.js')
 
 SW.resetSwUpdate()
 const navB = fakeNav({ registerImpl: async () => fakeReg() })
