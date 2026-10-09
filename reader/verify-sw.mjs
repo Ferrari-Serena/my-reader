@@ -281,6 +281,65 @@ const env10c = loadSw({ fetchImpl: async () => { throw new Error('offline') } })
 const sEv3 = fire(env10c, 'fetch', fetchEv(mkReq('/books/bk/chapters.json')))
 t('没缓存过的 + 离线：504（不假装读到了书）', (await sEv3.response).status === 504)
 
+// ═══ ⑫ 块 B：运行时缓存的边界与体量闸 ═══
+console.log('\n[sw — 运行时缓存：边界与体量闸]')
+
+// 壳清单里的大件（phrases.json 367 KB）：由壳供给 —— 不打网络，也不在 runtime 存第二份
+const env11 = loadSw({ precache: ['/index.html', '/assets/index-abc.js', '/data/phrases.json'] })
+await settle(fire(env11, 'install', mkEvent()))
+env11.calls.fetches.length = 0
+const pEv = fire(env11, 'fetch', fetchEv(mkReq('/data/phrases.json')))
+const pRes = await pEv.response
+// 快照要在 settle 之前取：突变版会把「后台更新」也算成一次网络请求，settle 之后就看不出来了
+const netForShell = env11.calls.fetches.length
+await settle(pEv)
+t('壳里有的（phrases.json）：命中即回', !!pRes && pRes.status === 200)
+t('…也不再打一遍网络（省一次 367 KB）', netForShell === 0)
+t('…更不在 runtime 里存第二份', !env11.stores.has('mr-runtime-v1'))
+
+// 壳里没有的产物（按需才下的懒加载件，如 pdf worker 的 .mjs）：首次抓到就落 runtime
+const env12 = loadSw()
+env12.calls.fetches.length = 0
+const aEv = fire(env12, 'fetch', fetchEv(mkReq('/assets/pdf.worker-AbC123.mjs')))
+await aEv.response
+await settle(aEv)
+t('壳里没有的产物：走网络', env12.calls.fetches.some((u) => u.includes('pdf.worker')))
+t('…并落 runtime（下次离线也有）', env12.stores.get('mr-runtime-v1').has(ORIGIN + '/assets/pdf.worker-AbC123.mjs'))
+env12.calls.fetches.length = 0
+const aEv2 = fire(env12, 'fetch', fetchEv(mkReq('/assets/pdf.worker-AbC123.mjs')))
+await aEv2.response
+t('…第二次直接吃缓存，不再打网络', env12.calls.fetches.length === 0)
+
+// 体量闸：runtime 同样只留 400 条（无界增长的缓存＝迟早把用户磁盘吃满）
+const env13 = loadSw()
+env13.stores.set('mr-runtime-v1', new Map())
+const rStore = env13.stores.get('mr-runtime-v1')
+for (let i = 0; i < 400; i++) rStore.set(ORIGIN + '/books/bk/f' + i + '.json', new Response('{}', { status: 200 }))
+const capEv = fire(env13, 'fetch', fetchEv(mkReq('/books/bk/fresh.json')))
+await capEv.response
+await settle(capEv)
+t('runtime 写进新抓到的那条', rStore.has(ORIGIN + '/books/bk/fresh.json'))
+t('runtime 锁回 400 条、最老的被丢', rStore.size === 400 && !rStore.has(ORIGIN + '/books/bk/f0.json'))
+
+// 音频：连缓存都不进（离线不支持听书 —— 块 B 明写的边界，不是漏做）
+const env14 = loadSw()
+const mp3Ev = fire(env14, 'fetch', fetchEv(mkReq('/books/bk/audio/ch-01.mp3')))
+t('音频请求连 respondWith 都不调', mp3Ev.response === undefined)
+t('音频不会凭空建出 runtime 缓存', !env14.stores.has('mr-runtime-v1'))
+
+// 壳清单里那条 install 时没抓到（404 被吞掉）：运行时请求它也不该炸，照实走网络
+let holeServed = false
+const env15 = loadSw({
+  precache: ['/index.html', '/data/phrases.json'],
+  fetchImpl: async (u) => {
+    if (u.endsWith('/data/phrases.json') && !holeServed) { holeServed = true; return new Response('', { status: 404 }) }
+    return new Response('{"net":true}', { status: 200 })
+  },
+})
+await settle(fire(env15, 'install', mkEvent()))
+const holeEv = fire(env15, 'fetch', fetchEv(mkReq('/data/phrases.json')))
+const holeRes = await holeEv.response
+t('壳里有名分但实际缺席：运行时照实走网络、不抛', !!holeRes && holeRes.status === 200)
 // ═══ ⑪ 页面侧：注册与横幅 ═══
 console.log('\n[sw — 页面侧]')
 function fakeNav({ controller = null, registerImpl } = {}) {

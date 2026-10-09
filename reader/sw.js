@@ -11,8 +11,13 @@
  * 路线（决策见 Phase1 §14）：
  *   - App shell 预缓存；**不含** `/models/**`（本机 449 MB、CI 根本没有）、`/vendor/**`、
  *     `/books/**`、音频 —— 那些要么太大、要么按需才该下。
- *   - `/books/**`、`/data/**` 等静态 JSON 走 **stale-while-revalidate**：先给上次抓到的那份，
- *     后台把这趟的新版落盘。离线时「上次读过的书还能读」就是这条路。
+ *   - 壳清单里的（`index.html`、`/assets/*`、图标、`phrases.json`）走**纯 cache-first**：
+ *     本次部署内它们不会变（BUILD 版本化），所以不打网络、也不在 runtime 里存第二份。
+ *   - `/books/**` 等静态 JSON 走 **stale-while-revalidate**：先给上次抓到的那份，后台把这趟的
+ *     新版落盘。书 JSON 的 URL 不随部署变、内容会变（第 12 步扩充公版书就是这情形）——
+ *     所以不能 cache-first，否则一本书会**永远**停在第一次抓到的版本。
+ *     两条缓存都有体量闸（runtime 400 条 ／ 词典 3000 条，按插入序丢最老）。
+ *   - **音频不缓存**（一本 50 MB）：离线**不支持听书**，这是块 B 明写的边界，不是漏做。
  *   - `/api/dict/<word>`：成功即入缓存（有上限），失败回缓存 ⇒ 离线查过的词能查。
  *   - **其余 `/api/*` 一律不拦**（auth / sync / gen / feedback 直连网络，失败就失败 ——
  *     现有 UI 已经按「离线不该炸」写过）。缓存一份 `/api/auth/me` 或同步响应只会更糟。
@@ -29,9 +34,14 @@ const SHELL_CACHE = SHELL_PREFIX + BUILD
 const RUNTIME_CACHE = 'mr-runtime-v1'
 const DICT_CACHE = 'mr-dict-v1'
 const DICT_MAX = 3000
+const RUNTIME_MAX = 400
 
-/** 壳资源（带 hash ⇒ 内容不变，cache-first 安全） */
-const SHELL_ASSET_RE = /^\/(assets\/|favicon\.svg$|icon-\d+\.png$|manifest\.json$)/
+/** 壳清单的成员判定（每次 fetch 都要问一遍，数组 includes 是线性扫） */
+const PRECACHE_SET = new Set(PRECACHE)
+
+/** 产物目录（`/assets/**`）：带 hash ⇒ 内容不变，cache-first 安全。只是兜底 ——
+ *  真正说了算的是「壳清单里有没有它」 */
+const SHELL_ASSET_RE = /^\/assets\//
 const DICT_RE = /^\/api\/dict\//
 const API_RE = /^\/api\//
 const AUDIO_RE = /\/audio\//
@@ -48,7 +58,12 @@ function decide(url, request) {
   if (API_RE.test(url.pathname)) return 'bypass'
   if (AUDIO_RE.test(url.pathname)) return 'bypass'
   if (request.mode === 'navigate') return 'shell'
-  if (SHELL_ASSET_RE.test(url.pathname)) return 'shell-static'
+  // 壳清单里有的：**纯 cache-first** —— 不打网络、也不写 runtime。
+  //   壳缓存每次部署整份换新（BUILD 版本化），它在本次部署内不会变；再抓一遍既白花流量，
+  //   又会把 `phrases.json`（367 KB）这类大件在 runtime 里存成第二份。
+  if (PRECACHE_SET.has(url.pathname)) return 'shell-static'
+  // 壳里没有的 `/assets/**`（例如按需才下的懒加载件）：cache-first，miss 时走网络并落 runtime。
+  if (SHELL_ASSET_RE.test(url.pathname)) return 'asset'
   return 'swr'
 }
 
@@ -86,7 +101,8 @@ async function putCache(name, request, response) {
   if (!cache) return
   try {
     await cache.put(request, response)
-    if (name === DICT_CACHE) await trimCache(cache, DICT_MAX)
+    const max = name === DICT_CACHE ? DICT_MAX : (name === RUNTIME_CACHE ? RUNTIME_MAX : 0)
+    if (max) await trimCache(cache, max)
   } catch { /* 配额满 / 私有模式：缓存写失败不该影响这次请求 */ }
 }
 
@@ -116,11 +132,24 @@ self.addEventListener('fetch', (event) => {
 
   if (how === 'bypass') return
 
+  // 壳清单里的：命中即回；**没命中也不写缓存**（壳缓存属于它自己的那个 BUILD）
   if (how === 'shell-static') {
     event.respondWith((async () => {
       const hit = await caches.match(event.request)
       if (hit) return hit
       return fetch(event.request)
+    })())
+    return
+  }
+
+  // 壳里没有的产物（按需才下的懒加载件）：首次抓到就落 runtime，下次离线也有
+  if (how === 'asset') {
+    event.respondWith((async () => {
+      const hit = await caches.match(event.request)
+      if (hit) return hit
+      const res = await fetch(event.request)
+      if (cacheable(res)) event.waitUntil(putCache(RUNTIME_CACHE, event.request, res.clone()))
+      return res
     })())
     return
   }
