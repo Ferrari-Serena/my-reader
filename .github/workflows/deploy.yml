@@ -77,15 +77,22 @@ jobs:
 
       # 部署后清 Cloudflare 缓存，避免旧 index.html 引用已删除的 hash chunk
       # 需要仓库 secrets: CF_ZONE_ID + CF_API_TOKEN（权限 Zone.Cache Purge）
+      # 这一格**只报告、不拦部署**（continue-on-error）：没配 secret、或清了但没成功，都要**看得见**
+      # —— 未配 secret 打 warning、响应体整段打出来、`success` 不是 true 也打 warning。
       - name: Purge Cloudflare Cache
         if: success()
         continue-on-error: true
         run: |
-          if [ -n "${{ secrets.CF_ZONE_ID }}" ] && [ -n "${{ secrets.CF_API_TOKEN }}" ]; then
-            curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
-              -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              --data '{"purge_everything":true}'
-          else
-            echo "CF secrets not configured, skipping cache purge"
+          if [ -z "${{ secrets.CF_ZONE_ID }}" ] || [ -z "${{ secrets.CF_API_TOKEN }}" ]; then
+            echo "::warning::CF secrets not configured (CF_ZONE_ID / CF_API_TOKEN) — cache purge SKIPPED"
+            exit 0
           fi
+          body="$(curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}')"
+          echo "purge response: $body"
+          case "$body" in
+            *'"success":true'*) echo "cache purged" ;;
+            *) echo "::warning::cache purge did not report success: $body" ;;
+          esac
