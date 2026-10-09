@@ -22,7 +22,7 @@
 
 ```bash
 cd reader && npm test   # 14 套（verify-*.mjs ＋ smoke-test.mjs）
-cd worker && npm test   # 8 套（verify-*.mjs）
+cd worker && npm test   # 9 套（verify-*.mjs）
 ```
 
 - `reader/verify-core.mjs` — 词典 / 分词 / 词组 / 存储核心

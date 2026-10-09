@@ -37,7 +37,7 @@ jobs:
         run: npm test
         working-directory: reader
 
-      # worker 的八套测试只用 node 内置模块（node:sqlite 等），零依赖，不必 npm ci
+      # worker 的九套测试只用 node 内置模块（node:sqlite 等），零依赖，不必 npm ci
       - name: Worker tests (verify-worker / verify-auth / verify-authapi / verify-sql / verify-audioalias / verify-booksync / verify-bookaudio / verify-audiogen)
         run: npm test
         working-directory: worker
