@@ -41,7 +41,7 @@ import { corsFor } from './cors.js'
 import { sessionTenant } from './syncgate.js'
 import { isBookId } from './sync.js'
 import { bookObjectKey } from './booksync.js'
-import { audioObjectKey, INDEX_FILE } from './bookaudio.js'
+import { audioObjectKey, INDEX_FILE, storageState } from './bookaudio.js'
 
 export const ROUTE_PREFIX = '/api/gen/'
 
@@ -680,10 +680,11 @@ async function genStatus(env, cors, code, bookId, now) {
     } catch { /* 位次读不到就报 0：它是展示项，不是判定项 */ }
   }
   const quota = await quotaLeft(env, code, now)
+  const storage = await storageState(env, code)
   return json(cors, {
     ok: true, bookId, chapters, summary,
     queue: { ahead: queueAhead, position: queueAhead + 1 },
-    quota,
+    quota, storage,
   }, 200, { 'Cache-Control': NO_STORE })
 }
 
@@ -767,6 +768,17 @@ async function genSubmit(request, env, cors, code, bookId, now) {
     }, 403)
   }
 
+  // 账号存储闸（1 GiB）：与上传端点同一个 `storageState` 口径。满了就**不收** —— 收了也会在起跑前
+  // 被下面那道闸跳掉，提前回 403 才能让用户当场知道该去清空哪本书（而不是等一分钟看它不动）。
+  const storage = await storageState(env, code)
+  if (storage.full) {
+    return json(cors, {
+      error: 'audio storage limit reached',
+      used: storage.usedBytes,
+      limit: storage.limitBytes,
+    }, 403)
+  }
+
   const queued = []
   for (const c of fresh) {
     try {
@@ -844,9 +856,19 @@ export async function runAudioGenTick(env, now = Date.now(), opts = {}) {
   if (!first) return out
   const code = String(first.code)
 
+  // 存量存储闸（1 GiB）：满了就**这一 tick 整个不跑**（任务留 pending，用户清空某本书的音频后
+  // 下一 tick 自动续上）。跑到一半才失败＝白烧 DeepInfra 的字符钱，而且那章还得整个重跑。
+  // `storageState` 自己 fail-open（列举失败回 full:false）；这里再兜一层，别让一次抖动杀掉巡检。
+  try {
+    const storage = await storageState(env, code)
+    if (storage.full) { out.stopped = 'storage-full'; out.storage = storage; return out }
+  } catch (e) {
+    console.error('audio gen storage check failed (fail-open):', e && e.message)
+  }
+
   const wall0 = Date.now()
   const bookCache = new Map()
-  let spent = 3 // 回收 2 条 + 书体读 1 次的余量
+  let spent = 5 // 回收 2 条 + 书体读 1 次 + 存储列举 1–2 页的余量
   let tried = 0
 
   // 待跑清单一次读一小把（limitK + 3 留重领被抢的余量）；**本 tick 试过的章跳过** ——

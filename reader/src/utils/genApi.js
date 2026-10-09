@@ -87,6 +87,32 @@ export function normalizeQuota(q) {
   }
 }
 
+/**
+ * 账号**存储**归一（与「额度」是两条账）：`{ usedBytes, limitBytes, full }`。
+ * 服务端读不到用量时回 `usedBytes: -1`、`full: false`（fail-open）—— 这里**照实留 -1**，
+ * 让 UI 说「不知道」，**不编 0**（0 会被读成「一点都没占」）。旧 worker 没这个字段 → 全 -1。
+ */
+export function normalizeStorage(s) {
+  const o = (s && typeof s === 'object' && !Array.isArray(s)) ? s : {}
+  return {
+    usedBytes: num(o.usedBytes, -1),
+    limitBytes: num(o.limitBytes, -1),
+    full: !!o.full,
+  }
+}
+
+/** 字节数 → 人话（KB／MB／GB）；不知道（-1）回空串，免得拼出「-1 B」 */
+export function formatBytes(n) {
+  const v = num(n, -1)
+  if (!(v >= 0)) return ''
+  if (v < 1024) return `${Math.round(v)} B`
+  const units = ['KB', 'MB', 'GB']
+  let x = v
+  let i = -1
+  do { x /= 1024; i++ } while (x >= 1024 && i < units.length - 1)
+  return `${x >= 100 ? Math.round(x) : x.toFixed(1)} ${units[i]}`
+}
+
 /** `GET` 的答复 → 归一形态（章表 ＋ 汇总 ＋ 队列 ＋ 额度） */
 export function normalizeGenStatus(body, bookId = '') {
   const b = (body && typeof body === 'object' && !Array.isArray(body)) ? body : {}
@@ -113,6 +139,7 @@ export function normalizeGenStatus(body, bookId = '') {
     },
     queue: { ahead: num(q.ahead), position: num(q.position) },
     quota: normalizeQuota(b.quota),
+    storage: normalizeStorage(b.storage),
   }
 }
 
@@ -307,12 +334,34 @@ export function saveShelfNoteOpen(open, storage = globalThis.localStorage) {
   try { if (storage) storage.setItem(SHELF_NOTE_KEYS.open, open ? '1' : '0') } catch { /* 同上 */ }
 }
 
+/**
+ * 每日额度**重置**口径（2026-10-09：与「存储空间」是两条账，别再混在一句话里说）。
+ * 额度按 UTC 天重置 ＝ 北京时间早上 8 点；清空某本书的音频只腾**空间**、**不退**当天的额度。
+ * 额度行／预算闸／403 三处共用，免得各写一句慢慢漂开（旧 D4 那句「想马上腾出额度…」就是这么错的）。
+ */
+export const QUOTA_RESET_NOTE = '额度按 UTC 天重置（＝北京时间早上 8 点），到点自动回满。'
+/** 「空间 ≠ 额度」那句提醒（用户最容易误会的一处：以为清空音频能把额度拿回来） */
+export const SPACE_VS_QUOTA_NOTE = '清空某本书的音频只腾出存储空间，不退还今天的额度。'
+
 /** 剩余额度一句话（D21-e：**不写死具体章数**、也不承诺永久免费 —— 只写「体验期免费」） */
 export function quotaLine(quota) {
   const q = normalizeQuota(quota)
   if (q.chaptersLeft === null) return '今日额度稍后可见（体验期免费，单账号每日限额）'
-  if (q.chaptersLeft <= 0) return '今天的额度用完了 —— 明天再来，或先清空某本书的音频腾空间'
+  if (q.chaptersLeft <= 0) return `今天的额度用完了 —— ${QUOTA_RESET_NOTE}`
   return `今天还可生成 ${q.chaptersLeft} 章（体验期免费，单账号每日限额）`
+}
+
+/**
+ * 账号**存储**一句话（生成页；2026-10-09）。只有满了才出这句 —— 没满不占版面。
+ * 读不到用量（服务端 fail-open 回 `usedBytes:-1`）时不编数字，只说满了。
+ */
+export function storageLine(storage) {
+  const s = normalizeStorage(storage)
+  if (!s.full) return ''
+  const used = formatBytes(s.usedBytes)
+  const limit = formatBytes(s.limitBytes)
+  const bit = used && limit ? `（已用 ${used} ／ 上限 ${limit}）` : ''
+  return `账号音频空间满了${bit} —— 生成会等你先腾出空间：在书架清空某本书的音频就能继续。`
 }
 
 /** 剩余额度的一句话（**只有数**，给生成页底部「本次将生成 N 章（今天剩余 M 章）」用） */
@@ -376,19 +425,36 @@ export const CLEAR_AUDIO_LABEL = '清空该书音频'
 export const CLEAR_AUDIO_BUSY_LABEL = '清空中…'
 
 /**
- * 额度不够时那句尾注（D4）：把「腾空间」落到**能点的那件事**上 —— 书架的「清空该书音频」。
- * 生成页的预算闸与 403 两条都用它，免得两处各写一句慢慢漂开。
+ * 提交没成 → 一句话。**403 有两张脸**，靠服务端的 `error` 码分开说 ——
+ * 把「空间满了」说成「额度不够」会让用户去等明天（其实是去清空一本书的事）：
+ *   · `daily quota exceeded`        → 今天的额度不够（按 UTC 天重置；清空音频不退额度）
+ *   · `audio storage limit reached` → 账号音频空间满了（清空某本书的音频就能继续）
+ * 视图只把 `error`／`used`／`limit` 交进来，文案一份放这儿。
  */
-export const QUOTA_TIP_CLEAR = '想马上腾出额度，可在书架清空某本书的音频。'
+export function submitErrorText(result) {
+  const r = result || {}
+  if (r.status === 403 && String(r.error || '') === 'audio storage limit reached') {
+    const used = formatBytes(r.used)
+    const limit = formatBytes(r.limit)
+    const bit = used && limit ? `（已用 ${used} ／ 上限 ${limit}）` : ''
+    return `账号音频空间满了${bit} —— 在书架清空某本书的音频，就能继续生成。`
+  }
+  if (r.status === 403) return `今天的额度不够 —— 少勾几章，或明天再来。${QUOTA_RESET_NOTE}${SPACE_VS_QUOTA_NOTE}`
+  if (r.status === 401) return '登录状态过期了，请重新登录再试。'
+  if (!r.status) return '没提交成功（网络或服务端抖动），稍后再试。'
+  return `没提交成功（HTTP ${r.status}），稍后再试。`
+}
 
 /**
  * 二次确认的原话（D4）。两件事必须写在这里、且只有这一份：
  *   ① **只删音频** —— 正文与笔记不动（不写清，用户不敢点）；
  *   ② 清空后这些章**可以重新生成**（D25-f 已把 `done`／`failed` 的行作废成 `purged`）。
+ *   ③ 清空**只腾空间、不退额度**（2026-10-09 补：这是最容易被误会的一件事 —— 以为清空能把
+ *      今天的额度拿回来再去生成；两条账各管各的，写在这里省得用户白点一趟）。
  */
 export function clearAudioConfirm(title) {
   const name = String(title || '').trim() || '这本书'
-  return `清空《${name}》的全部音频？\n\n只删音频 —— 正文与笔记不动；清空后这些章可以重新生成。`
+  return `清空《${name}》的全部音频？\n\n只删音频 —— 正文与笔记不动；清空后这些章可以重新生成。\n注意：${SPACE_VS_QUOTA_NOTE}`
 }
 
 /**
@@ -405,7 +471,7 @@ export function clearEntryState({ loggedIn, withAudioCount, clearing } = {}) {
 
 /**
  * 清空的结果 → 一句话（＋ 这句是「成了」还是「没成」）。每一档都要说清**动了什么、没动什么**：
- *   200 → 删了几个文件 ＋ 几章回到「可重新生成」（回执里缺字段就不报数字，**不编**）；
+ *   200 → 删了几个文件 ＋ 几章回到「未生成」（＝可再生成；回执里缺字段就不报数字，**不编**）；
  *   409 → 还有 N 章正在生成（取回执里的 `open`）—— 什么都没动；
  *   503 → 任务没作废掉，音频没动；
  *   其余 → 原样报 HTTP 码／网络，并声明「音频没动」。
@@ -417,7 +483,7 @@ export function clearResultText(book, result) {
   if (r.ok) {
     const bits = []
     if (num(d.removedAudioObjects, -1) >= 0) bits.push(`删掉 ${d.removedAudioObjects} 个音频文件`)
-    if (num(d.tasksPurged, -1) >= 0) bits.push(`${d.tasksPurged} 章回到「可重新生成」`)
+    if (num(d.tasksPurged, -1) >= 0) bits.push(`${d.tasksPurged} 章回到「未生成」（可再生成）`)
     return { ok: true, text: `已清空《${name}》的音频${bits.length ? '：' + bits.join('，') : ''}。正文与笔记没动。` }
   }
   if (r.status === 409) {
@@ -486,6 +552,9 @@ export async function submitGenChapters(bookId, chapterIds, { fetchImpl = global
   return {
     ok: r.ok, status: r.status, reason: r.reason || null,
     error: (r.body && r.body.error) || null,
+    /** 403「空间满了」回执里的两个字节数（生成页要报「已用 X ／ 上限 Y」）。-1 ＝ 回执没这个字段 */
+    used: num(r.body && r.body.used, -1),
+    limit: num(r.body && r.body.limit, -1),
     data: r.ok ? normalizeSubmit(r.body) : null,
   }
 }

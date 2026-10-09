@@ -28,7 +28,7 @@ import {
   DAILY_CHAPTERS, DAILY_CHARS, MAX_ATTEMPTS, STALE_MS, K_PER_TICK,
   purgeBookTasks, isPendingStatus, TASK_PURGED, SQL_PURGE_BOOK_TASKS, SQL_TASK_REPURGE,
 } from './src/audiogen.js'
-import { audioObjectKey, INDEX_FILE } from './src/bookaudio.js'
+import { audioObjectKey, INDEX_FILE, handleBookAudio } from './src/bookaudio.js'
 import { bookObjectKey } from './src/booksync.js'
 import { tokenHash } from './src/auth.js'
 
@@ -382,8 +382,11 @@ console.log('\n[audiogen — 配额双闸（5 章/天 ＋ ≤80,000 字符/天�
 console.log('\n[audiogen — 失败可重提（D21-h：不给「重新生成」，但永久失败的章能重来）]')
 {
   const { env, db } = await newEnv()
+  // 用**真实时钟**当锚点：日配额按「今天」求和，写死 NOW 的那一行一旦跨天就被算成「昨天」，
+  // `chaptersUsed` 从 1 掉成 0 → 假红（2026-10-09 实测复现）。
+  const R = Date.now()
   db.prepare(`INSERT INTO audio_tasks (code, book_id, chapter_id, title, char_count, status, attempts, created_at, updated_at, error)
-      VALUES (?, ?, 'ch-01', 'Chapter 1', ?, 'failed', 3, ?, ?, 'boom')`).run(CODE_A, BID, CHAR_ONE, NOW, NOW)
+      VALUES (?, ?, 'ch-01', 'Chapter 1', ?, 'failed', 3, ?, ?, 'boom')`).run(CODE_A, BID, CHAR_ONE, R, R)
   const r = await handleAudioGen(req('POST', genPath(BID), { cookie: TOKEN_A, body: JSON.stringify({ chapters: ['ch-01'] }) }), env)
   const b = await r.json()
   t('失败章重提 → requeued（同一行重置为 pending，不新增行）',
@@ -510,9 +513,11 @@ console.log('\n[audiogen — 子请求预算护栏（Free 50/invocation）]')
   }
   await bucket.put(bookObjectKey(CODE_A, BID), JSON.stringify(bookWithChars(8, 40000)))
   const tick = await runAudioGenTick(env, NOW, { fetchImpl: fakeDI().fetchImpl, limitK: 10 })
+  // 边界＝6 章（不是 7）：tick 起跑前多了一次「存储列举」（1–2 页，`spent` 从 3 抬到 5）——
+  // 这条断言量的是**子请求预算的边界**，加了账就要跟着挪，不是把测试凑绿。
   t('逼近 50 子请求就先停（余下留 pending，不是丢任务）',
-    tick.stopped === 'subreq-budget' && tick.claimed === 7 && tick.done === 7)
-  t('剩下的仍是 pending', db.prepare("SELECT COUNT(*) AS n FROM audio_tasks WHERE status='pending'").get().n === 1)
+    tick.stopped === 'subreq-budget' && tick.claimed === 6 && tick.done === 6)
+  t('剩下的仍是 pending', db.prepare("SELECT COUNT(*) AS n FROM audio_tasks WHERE status='pending'").get().n === 2)
 }
 
 // ═══ ⑥ 失败 / 重试 / 僵尸回收 ════════════════════════════════════════════════
@@ -733,6 +738,86 @@ console.log('\n[audiogen — 僵尸回收（心跳超 5 分钟判死）]')
   const tick3 = await runAudioGenTick(env3, NOW, { fetchImpl: fakeDI().fetchImpl })
   t('心跳还新鲜 → 不回收、不抢（cron 重叠也不会双跑同一章）',
     tick3.recycled === 0 && tick3.dead === 0 && tick3.claimed === 0)
+}
+
+// ═══ ⑧ 账号存储闸（1 GiB）：提交 403 ＋ 状态报数字 ＋ 起跑跳闸 ═════════════════
+// 上限一律用 env 覆盖压成**百字节级**（真上限 1 GiB 造不出来，也没必要造：
+// 判定读的就是 `AUDIO_MAX_ACCOUNT_BYTES`，与上传端点同一份口径）。
+
+console.log('\n[audiogen — 存储闸：满 → 提交 403（与上传端点同一个字符串）]')
+{
+  const { env, db, bucket } = await newEnv({ AUDIO_MAX_ACCOUNT_BYTES: '100' })
+  await bucket.put(bookObjectKey(CODE_A, BID), JSON.stringify(bookWithChars(2, 100)))
+  const post = (chapters, e = env) =>
+    handleAudioGen(req('POST', genPath(BID), { cookie: TOKEN_A, body: JSON.stringify({ chapters }) }), e)
+  // 预置 100 字节 ＝ 恰好到上限（一章 mp3 的形状，只是把字节数压小）
+  await bucket.put(audioObjectKey(CODE_A, BID, 'ch-01.mp3'), new Uint8Array(100))
+
+  const r = await post(['ch-02'])
+  const b = await r.json()
+  t('已满 → 403 且 error=audio storage limit reached（与上传端点**同一个字符串**）',
+    r.status === 403 && b.error === 'audio storage limit reached')
+  t('回执带上 used / limit 两个真数字（生成页要报「已用 X ／ 上限 Y」）', b.used === 100 && b.limit === 100)
+  t('**什么都没收**：任务表照旧 0 行（收了也是白排队，一分钟后再被起跑闸跳掉）',
+    db.prepare('SELECT COUNT(*) AS n FROM audio_tasks').get().n === 0)
+
+  // 反向对照：上限抬到 200 → 同一次提交 200（证明不是恒 403）
+  t('反向对照：上限抬到 200 → 同一章提交 200',
+    (await post(['ch-02'], { ...env, AUDIO_MAX_ACCOUNT_BYTES: '200' })).status === 200)
+}
+
+console.log('\n[audiogen — 存储闸：状态端点报数字]')
+{
+  const { env, bucket } = await newEnv({ AUDIO_MAX_ACCOUNT_BYTES: '1000' })
+  await bucket.put(audioObjectKey(CODE_A, BID, 'ch-01.mp3'), new Uint8Array(300))
+  const s = await (await handleAudioGen(req('GET', genPath(BID), { cookie: TOKEN_A }), env)).json()
+  t('GET 状态回 storage{usedBytes,limitBytes,full}（未满也报，好让用户提前看见）',
+    s.storage && s.storage.usedBytes === 300 && s.storage.limitBytes === 1000 && s.storage.full === false)
+}
+
+console.log('\n[audiogen — 存储闸：清空某本书 → 空间放回、提交又能过（用户那一趟）]')
+{
+  const { env, bucket } = await newEnv({ AUDIO_MAX_ACCOUNT_BYTES: '100' })
+  await bucket.put(bookObjectKey(CODE_A, BID), JSON.stringify(bookWithChars(2, 100)))
+  await bucket.put(audioObjectKey(CODE_A, BID, 'ch-01.mp3'), new Uint8Array(100))
+  const post = (chapters) =>
+    handleAudioGen(req('POST', genPath(BID), { cookie: TOKEN_A, body: JSON.stringify({ chapters }) }), env)
+
+  t('先确认满了 → 403', (await post(['ch-02'])).status === 403)
+  const del = await handleBookAudio(req('DELETE', `/api/book/${BID}/audio`, { cookie: TOKEN_A }), env)
+  t('书架「清空该书音频」→ 200', del.status === 200)
+  t('清空后**空间**放回 → 同一章提交 200（额度不放回，空间放回，两条账互不相干）',
+    (await post(['ch-02'])).status === 200)
+}
+
+console.log('\n[audiogen — 存储闸：读不到用量 → fail-open，不挡正常提交]')
+{
+  const { env, bucket } = await newEnv({ AUDIO_MAX_ACCOUNT_BYTES: '1' })
+  await bucket.put(bookObjectKey(CODE_A, BID), JSON.stringify(bookWithChars(1, 100)))
+  env.AUDIO.list = async () => { throw new Error('r2 list boom') }
+  const r = await handleAudioGen(req('POST', genPath(BID), { cookie: TOKEN_A, body: JSON.stringify({ chapters: ['ch-01'] }) }), env)
+  t('列举失败：阈值**故意压到 1 字节**也照样 200（fail-open，与上传路径同姿态）', r.status === 200)
+  const s = await (await handleAudioGen(req('GET', genPath(BID), { cookie: TOKEN_A }), env)).json()
+  t('状态里的 storage 退成 usedBytes=-1 ／ full=false（照实说「不知道」，不编 0）',
+    s.storage.usedBytes === -1 && s.storage.full === false && s.storage.limitBytes === 1)
+}
+
+console.log('\n[audiogen — 存储闸：起跑前跳闸（任务留 pending，不烧钱）]')
+{
+  const { env, db, bucket } = await newEnv({ withBook: false, AUDIO_MAX_ACCOUNT_BYTES: '100' })
+  await bucket.put(bookObjectKey(CODE_A, BID), JSON.stringify(bookWithChars(2, 100)))
+  await bucket.put(audioObjectKey(CODE_A, BID, 'ch-01.mp3'), new Uint8Array(100))
+  db.prepare(`INSERT INTO audio_tasks (code, book_id, chapter_id, title, char_count, status, attempts, created_at, updated_at)
+      VALUES (?, ?, 'ch-02', 'C2', 100, 'pending', 0, ?, ?)`).run(CODE_A, BID, NOW, NOW)
+
+  const di = fakeDI()
+  const tick = await runAudioGenTick(env, NOW, { fetchImpl: di.fetchImpl })
+  t('已满 → 这一 tick 整个不跑（stopped=storage-full、一章也没领）',
+    tick.stopped === 'storage-full' && tick.claimed === 0)
+  t('DeepInfra 一帧都没打（跑完才发现写不进去＝白烧字符钱，这条闸就是为它守的）', di.calls.length === 0)
+  t('任务留 pending、attempts 不涨（清空后下一 tick 自动续上，不是判死）',
+    (() => { const r = one(db, "SELECT status, attempts FROM audio_tasks WHERE chapter_id='ch-02'"); return r.status === 'pending' && r.attempts === 0 })())
+  t('跳闸时也回带 storage（调用方不必再列举一次）', !!tick.storage && tick.storage.full === true)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

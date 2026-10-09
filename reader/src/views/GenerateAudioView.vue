@@ -29,6 +29,10 @@
         暂时读不到已生成的清单 —— 已经生成过的章这会儿可能显示成「未生成」。重复提交不会白扣额度。
       </p>
 
+      <!-- 账号存储满了（**不等于**额度不够）：出在最上面 —— 它是「现在什么都生成不了」的硬原因，
+           且指向能点的那件事（书架的「清空该书音频」）。数字全部来自服务端，前端不自算。 -->
+      <p v-if="storageText" class="gen-msg gen-msg-bad">{{ storageText }}</p>
+
       <!-- 进度：只复读服务端任务表（D21-g）。没有前端自算秒数的假进度条 —— 服务端耗时一波动，条就卡住或回跳。 -->
       <section v-if="progressVisible" class="gen-card gen-progress">
         <p class="gen-progress-head">
@@ -136,7 +140,7 @@ import {
   CH_STATE, CH_STATE_LABEL, GEN_PAGE_NOTES, GEN_POLL_MS, MAX_CHAPTERS_PER_SUBMIT,
   chapterRowState, chapterSelectable, fetchGenStatus, normalizeQuota, quotaLeftText,
   queueLine, rangeSelection, skipReasonText, submitGenChapters, submitResultLine,
-  QUOTA_TIP_CLEAR
+  storageLine, submitErrorText, QUOTA_RESET_NOTE
 } from '../utils/genApi.js'
 
 const route = useRoute()
@@ -206,11 +210,17 @@ const quotaText = computed(() => quotaLeftText(genStatus.value ? genStatus.value
 const chaptersLeft = computed(() => normalizeQuota(genStatus.value ? genStatus.value.quota : null).chaptersLeft)
 const blockedByQuota = computed(() => (
   !!selectedIds.value.length && chaptersLeft.value !== null && selectedIds.value.length > chaptersLeft.value))
-// 额度不够的两句（预算闸 ＋ 403）都指向**能点的那件事**（D4）：书架的「清空该书音频」
+// 额度不够那句（预算闸）：只说**额度**这一条账的事（2026-10-09 修正 —— 旧文案把「清空音频」
+// 当成额度不够的解，其实清空只腾空间、不退额度，是错的指路）
 const blockedText = computed(() =>
-  `今天只剩 ${chaptersLeft.value} 章可生成 —— 少勾几章，或明天再来。${QUOTA_TIP_CLEAR}`)
+  `今天只剩 ${chaptersLeft.value} 章可生成 —— 少勾几章，或明天再来。${QUOTA_RESET_NOTE}`)
+
+// 账号**存储**（另一条账）：满了就别让用户白点提交 —— 服务端也会回 403，这里先不出手。
+// 报的是服务端复读的字节数，前端不自算（列举在服务端那边，前端算不出来也不该猜）。
+const storageText = computed(() => storageLine(genStatus.value ? genStatus.value.storage : null))
+const blockedByStorage = computed(() => !!(genStatus.value && genStatus.value.storage && genStatus.value.storage.full))
 const canSubmit = computed(() => (
-  !submitting.value && !!selectedIds.value.length && !blockedByQuota.value && !needLogin.value))
+  !submitting.value && !!selectedIds.value.length && !blockedByQuota.value && !blockedByStorage.value && !needLogin.value))
 
 // ── 勾选（单章／多章／区间／全选未生成；一次最多 MAX_CHAPTERS_PER_SUBMIT 章）───
 
@@ -332,11 +342,7 @@ async function submit() {
   submitting.value = false
   if (id !== bookId.value) return
   if (!r.ok) {
-    submitError.value = r.status === 401
-      ? '登录状态过期了，请重新登录再试。'
-      : r.status === 403
-        ? `今天的额度不够 —— 少勾几章，或明天再来。${QUOTA_TIP_CLEAR}`
-        : '没提交成功（网络或服务端抖动），稍后再试。'
+    submitError.value = submitErrorText(r)
     return
   }
   submitLine.value = submitResultLine(r.data)

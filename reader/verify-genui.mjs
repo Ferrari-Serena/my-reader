@@ -23,7 +23,8 @@ import {
   withAudioCount, shelfIndexStale, genEntryTo,
   loadShelfNoteOpen, markShelfNoteSeen, saveShelfNoteOpen,
   clearAudioConfirm, clearEntryState, clearResultText,
-  CLEAR_AUDIO_LABEL, CLEAR_AUDIO_BUSY_LABEL, QUOTA_TIP_CLEAR,
+  CLEAR_AUDIO_LABEL, CLEAR_AUDIO_BUSY_LABEL,
+  QUOTA_RESET_NOTE, SPACE_VS_QUOTA_NOTE, storageLine, submitErrorText, formatBytes, normalizeStorage,
 } from './src/utils/genApi.js'
 import { AUDIO_ROUTE } from './src/utils/audioCloud.js'
 
@@ -194,13 +195,14 @@ t('章数/索引数缺失不炸（当 0）',
   genEntryState({ isByo: true, loggedIn: true }).kind === 'start')
 
 // ═══ ⑦ 文案（D21-e／g／l）═══
-console.log('\n[genApi — 文案：不写死额度、不自算秒数、指向清空音频]')
+console.log('\n[genApi — 文案：不写死额度、不自算秒数、空间与额度两条账分开说]')
 t('额度有数 → 报数且写「体验期免费」',
   quotaLine({ chaptersLeft: 3 }).includes('3 章') && quotaLine({ chaptersLeft: 3 }).includes('体验期免费'))
 t('额度读不到 → 「稍后可见」，**不编数字**',
   quotaLine(null).includes('稍后可见') && !/\d+ 章/.test(quotaLine(null)))
-t('额度用尽 → 一句直达「先清空某本书的音频腾空间」（D25 的入口提示）',
-  quotaLine({ chaptersLeft: 0 }).includes('用完了') && quotaLine({ chaptersLeft: 0 }).includes('清空'))
+t('额度用尽 → 只说额度这条账（按 UTC 天重置）；**不再**指「清空音频」（清空只腾空间、不退额度）',
+  quotaLine({ chaptersLeft: 0 }).includes('用完了') && quotaLine({ chaptersLeft: 0 }).includes('UTC')
+  && !quotaLine({ chaptersLeft: 0 }).includes('清空'))
 t('排队位次：0 → 正在生成；2 → 报真数字',
   queueLine({ ahead: 0 }).includes('正在生成') && queueLine({ ahead: 2 }).includes('2 个任务'))
 t('跳过原因 → 人话',
@@ -358,8 +360,8 @@ console.log('\n[D-2 生成页 — 判定只走 genApi、不画假进度、上限
     /cur\.length >= MAX_CHAPTERS_PER_SUBMIT/.test(view))
   t('底部＝「本次将生成 N 章（今天剩余 M 章）」',
     view.includes('本次将生成 {{ selectedIds.length }} 章（{{ quotaText }}）'))
-  t('额度不够先拦（403 前就说明白，不让用户白等）',
-    view.includes('blockedByQuota') && view.includes('今天的额度不够'))
+  t('额度不够先拦（403 前就说明白，不让用户白等）；403 那句不再写在视图里（走 submitErrorText）',
+    view.includes('blockedByQuota') && view.includes('少勾几章，或明天再来') && view.includes('submitErrorText(r)'))
   t('提交走 submitGenChapters；回执走 submitResultLine ＋ 逐条 skipReasonText',
     view.includes('await submitGenChapters(id, selectedIds.value)')
     && view.includes('submitResultLine(r.data)') && view.includes('skipReasonText(s.reason)'))
@@ -497,8 +499,15 @@ t('出不出按钮：未登录不出／没有音频不出／清空中转「清�
   && eq(clearEntryState({ loggedIn: true, withAudioCount: 3 }), { label: CLEAR_AUDIO_LABEL, busy: false })
   && eq(clearEntryState({ loggedIn: true, withAudioCount: 3, clearing: true }),
     { label: CLEAR_AUDIO_BUSY_LABEL, busy: true }))
-t('额度不够那句尾注指向「书架清空某本书的音频」这个动作',
-  QUOTA_TIP_CLEAR.includes('清空') && QUOTA_TIP_CLEAR.includes('书架'))
+t('额度那句只有**一份**：额度行与 403 用的是同一个 QUOTA_RESET_NOTE（不各写一句漂开）',
+  QUOTA_RESET_NOTE.includes('UTC')
+  && quotaLine({ chaptersLeft: 0 }).includes(QUOTA_RESET_NOTE)
+  && submitErrorText({ status: 403, error: 'daily quota exceeded' }).includes(QUOTA_RESET_NOTE))
+t('「空间 ≠ 额度」那句提醒落在确认框里（用户最容易误会的一处：以为清空能拿回额度）',
+  SPACE_VS_QUOTA_NOTE.includes('不退还') && clearAudioConfirm('The Giver').includes(SPACE_VS_QUOTA_NOTE))
+t('确认框三件事都在：只删音频／可重新生成／不退额度',
+  (() => { const c = clearAudioConfirm('The Giver')
+    return c.includes('正文与笔记不动') && c.includes('可以重新生成') && c.includes(SPACE_VS_QUOTA_NOTE) })())
 {
   const book = { id: BID, title: 'The Giver' }
   const okLine = clearResultText(book, {
@@ -507,7 +516,7 @@ t('额度不够那句尾注指向「书架清空某本书的音频」这个动�
   })
   t('成了：报「删掉几个文件」＋「几章回到可重新生成」＋ 正文没动',
     okLine.ok === true && okLine.text.includes('删掉 3 个音频文件')
-    && okLine.text.includes('2 章回到') && okLine.text.includes('正文与笔记没动'))
+    && okLine.text.includes('2 章回到「未生成」（可再生成）') && okLine.text.includes('正文与笔记没动'))
   const legacy = clearResultText(book, { ok: true, status: 200, data: normalizeClear({ ok: true, bookId: BID }) })
   t('回执缺字段（旧 worker）→ 不报数字，也绝不印出 -1',
     legacy.ok === true && !legacy.text.includes('-1') && !legacy.text.includes('删掉'))
@@ -555,8 +564,60 @@ t('额度不够那句尾注指向「书架清空某本书的音频」这个动�
   t('书卡不自己判定（出不出、文案全在 genApi）',
     !/clearEntryState\s*\(/.test(card) && !/clearResultText\s*\(/.test(card)
     && !card.includes('withAudioCount') && !/from\s+['"][^'"]*genApi/.test(card))
-  t('生成页那两句额度文案引同一份尾注 QUOTA_TIP_CLEAR（预算闸 ＋ 403），不各写一句',
-    (gen.match(/QUOTA_TIP_CLEAR/g) || []).length >= 3)
+  t('生成页：额度句引 QUOTA_RESET_NOTE、403 文案走 submitErrorText，不各写一句（旧 QUOTA_TIP_CLEAR 已删）',
+    gen.includes('QUOTA_RESET_NOTE') && gen.includes('submitErrorText(r)')
+    && !gen.includes('QUOTA_TIP_CLEAR'))
+  t('生成页：存储满了出在最上面（存储句来自 genApi，视图不自写）；满了**就拦住提交**（canSubmit 里那一项）',
+    gen.includes('{{ storageText }}') && gen.includes('storageLine(genStatus.value')
+    && gen.includes('!blockedByQuota.value && !blockedByStorage.value'))
+}
+
+// ── 存储闸（2026-10-09）：空间与额度是**两条账**，403 有两张脸 ─────────────────
+{
+  t('normalizeStorage：形状坏／旧 worker → 全 -1 ＋ full=false（不编 0）',
+    eq(normalizeStorage(undefined), { usedBytes: -1, limitBytes: -1, full: false }))
+  t('normalizeStorage：照实留 -1（服务端列举失败就是「不知道」，不假装 0 字节）',
+    eq(normalizeStorage({ usedBytes: -1, limitBytes: 1024, full: false }),
+      { usedBytes: -1, limitBytes: 1024, full: false }))
+  t('normalizeGenStatus：把 storage 带出来（旧答复没有这个字段也不炸）',
+    normalizeGenStatus({ storage: { usedBytes: 300, limitBytes: 1000, full: false } }, BID).storage.usedBytes === 300
+    && normalizeGenStatus({}, BID).storage.full === false)
+
+  t('formatBytes：0 → 0 B；1 GiB → 1.0 GB；不知道（-1）→ 空串（绝不印「-1 B」）',
+    formatBytes(0) === '0 B' && formatBytes(1024 * 1024 * 1024) === '1.0 GB' && formatBytes(-1) === '')
+
+  t('存储句：没满就空串（不占版面）', storageLine({ usedBytes: 100, limitBytes: 1000, full: false }) === '')
+  t('存储句：满了报「已用／上限」＋指出该点哪件事（书架清空某本书的音频）',
+    (() => { const s = storageLine({ usedBytes: 1073741824, limitBytes: 1073741824, full: true })
+      return s.includes('已用 1.0 GB') && s.includes('上限 1.0 GB') && s.includes('书架清空某本书的音频') })())
+  t('存储句：读不到字节数就不编数字（只说满了）',
+    (() => { const s = storageLine({ usedBytes: -1, limitBytes: -1, full: true })
+      return s.includes('空间满了') && !s.includes('-1') && !s.includes('已用') })())
+
+  t('403 两张脸分得开：空间满了 ≠ 额度不够',
+    submitErrorText({ status: 403, error: 'audio storage limit reached' }).includes('空间满了')
+    && submitErrorText({ status: 403, error: 'daily quota exceeded' }).includes('额度不够'))
+  t('额度那条 403 明说按 UTC 天重置 ＋ 清空不退额度（旧文案正是在这里误导）',
+    (() => { const s = submitErrorText({ status: 403, error: 'daily quota exceeded' })
+      return s.includes('UTC') && s.includes('不退还') })())
+  t('空间那条 403 的字节数来自服务端回执（used／limit 原样带出）',
+    submitErrorText({ status: 403, error: 'audio storage limit reached', used: 1073741824, limit: 1073741824 })
+      .includes('已用 1.0 GB'))
+  t('其它档：401／网络／HTTP 码各说各的',
+    submitErrorText({ status: 401 }).includes('重新登录')
+    && submitErrorText({ status: 0, reason: 'network' }).includes('没提交成功')
+    && submitErrorText({ status: 500 }).includes('500'))
+}
+{
+  const f = fakeFetch(() => mkRes(200, { ok: true, bookId: BID, chapters: {}, summary: {}, storage: { usedBytes: 42, limitBytes: 100, full: true } }))
+  const r = await fetchGenStatus(BID, { fetchImpl: f })
+  t('fetchGenStatus：200 带 storage（生成页那句就是从这来的）', r.ok === true && r.data.storage.full === true)
+
+  const f2 = fakeFetch(() => mkRes(403, { error: 'audio storage limit reached', used: 200, limit: 100 }))
+  const r2 = await submitGenChapters(BID, ['ch-01'], { fetchImpl: f2 })
+  t('submitGenChapters：403 的 used／limit 读得到（否则报不出「已用 X ／ 上限 Y」）',
+    r2.ok === false && r2.status === 403 && r2.used === 200 && r2.limit === 100
+    && r2.error === 'audio storage limit reached')
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

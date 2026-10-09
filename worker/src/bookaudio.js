@@ -175,6 +175,18 @@ async function accountUsage(env, code) {
   return { books, sizes, totalBytes }
 }
 
+/**
+ * 账号音频存储状态（字节用量 ＋ 上限 ＋ 是否已满）—— **上传／提交／起跑三处共用一份口径**。
+ * 读不到用量（列举失败）→ `usedBytes = -1`、`full = false`：**fail-open**，与上传路径同姿态，
+ * 不因为一次列举抖动就挡住用户。`full` 只在**确实读到**用量且 ≥ 上限时为真。
+ */
+export async function storageState(env, code) {
+  const limitBytes = limitOf(env.AUDIO_MAX_ACCOUNT_BYTES, DEFAULT_MAX_ACCOUNT_BYTES)
+  const usage = await accountUsage(env, code)
+  const usedBytes = usage ? usage.totalBytes : -1
+  return { usedBytes, limitBytes, full: usedBytes >= 0 && usedBytes >= limitBytes }
+}
+
 /** 上传端点按账号限流：数窗口内的条数，放行则记一条。整体 fail-open。 */
 async function uploadRateOk(env, code, now) {
   const perMin = limitOf(env.AUDIO_UPLOAD_PER_MIN, DEFAULT_UPLOAD_PER_MIN)
