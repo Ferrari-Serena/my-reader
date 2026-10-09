@@ -136,9 +136,12 @@ t('readAnonKey：getItem 自己抛也不炸', (() => {
 console.log('\n[feedback — 最近错误环]')
 t('formatErrorLine：Error 对象取 message 并压成单行',
   F.formatErrorLine(new Error('a\n   b')) === 'a b')
-t('formatErrorLine：事件对象带上位置（message (file:line)）',
+t('formatErrorLine：有文件名才带位置（message (file:line)），没文件名就不带（不产出「(:1)」）',
   F.formatErrorLine({ message: 'boom', filename: 'https://a/b.js', lineno: 12 })
-  === 'boom (https://a/b.js:12)')
+  === 'boom (https://a/b.js:12)'
+  && F.formatErrorLine({ message: 'boom', lineno: 12 }) === 'boom'
+  && F.formatErrorLine({ message: 'boom', lineNumber: 12 }) === 'boom'
+  && F.formatErrorLine({ message: 'boom', source: 'app.js', lineNumber: 7 }) === 'boom (app.js:7)')
 t('formatErrorLine：unhandledrejection 的 { reason } 也认（Error 与裸字符串两档）',
   F.formatErrorLine({ reason: new Error('nope') }) === 'nope'
   && F.formatErrorLine({ reason: 'plain' }) === 'plain')

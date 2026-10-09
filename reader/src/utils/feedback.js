@@ -137,8 +137,10 @@ export function formatErrorLine(input) {
     if (!msg) return ''
     if (typeof input.filename === 'string' && input.filename) where = input.filename
     else if (typeof input.source === 'string' && input.source) where = input.source
-    if (Number.isFinite(input.lineno) && input.lineno > 0) where += ':' + input.lineno
-    else if (Number.isFinite(input.lineNumber) && input.lineNumber > 0 && !where) where = ':' + input.lineNumber
+    if (where) {
+      if (Number.isFinite(input.lineno) && input.lineno > 0) where += ':' + input.lineno
+      else if (Number.isFinite(input.lineNumber) && input.lineNumber > 0) where += ':' + input.lineNumber
+    }
   }
   const s = String(msg || '').replace(/\s+/g, ' ').trim()
   if (!s) return ''
