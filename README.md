@@ -18,10 +18,10 @@
 
 ## 测试
 
-`reader` 13 套 ＋ `worker` 9 套，合计 2,535 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
+`reader` 14 套 ＋ `worker` 9 套，合计 2,636 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
 
 ```bash
-cd reader && npm test   # 13 套（verify-*.mjs ＋ smoke-test.mjs）
+cd reader && npm test   # 14 套（verify-*.mjs ＋ smoke-test.mjs）
 cd worker && npm test   # 8 套（verify-*.mjs）
 ```
 
@@ -38,6 +38,7 @@ cd worker && npm test   # 8 套（verify-*.mjs）
 - `reader/verify-genui.mjs` — 服务端合成的客户端（提交章节 / 状态 / 清空该书音频 ＋ 入口三态、My Books 常驻条与书级入口；D4 清空的确认原话与结果四档）
 - `reader/verify-generate.mjs` — 生成后处理（段内切块 / 段间静音 / timings / WAV→mp3）
 - `reader/verify-hotswitch.mjs` — 浏览器朗读 → 云端音色就地热切
+- `reader/verify-feedbackui.mjs` — 反馈通道客户端（匿名键 / 诊断采集与白名单收口 / 最近错误环 / 路由记忆 / 提交与拉取；含与 `worker/src/feedback.js` 的逐常量漂移闸）
 - `worker/verify-worker.mjs` — Worker 路由 / 缓存 / CORS / 限流纯函数
 - `worker/verify-auth.mjs` — `auth.js` 纯逻辑（base64url / tokenHash / 会话上限）
 - `worker/verify-authapi.mjs` — 认证接口（cookie 解析 / Origin 闸 / 真 SQLite 跑真 SQL）

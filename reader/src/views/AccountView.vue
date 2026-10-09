@@ -30,6 +30,17 @@
       >{{ syncing ? 'Syncing…' : 'Sync now' }}</button>
     </section>
 
+    <!-- 反馈入口（第 13 步块 B）：登录与否都能发；放在 Sync 卡下面 ——
+         它是「出事了才去」的一页，不进 tabbar，也就不抢主路径。 -->
+    <section class="card feedback-entry">
+      <h2 class="card-title">Feedback</h2>
+      <p class="hint">
+        Found a bug, or got an idea? Tell us what happened — the page attaches a short
+        diagnostic automatically, and no account is needed.
+      </p>
+      <router-link class="btn entry-link" to="/feedback">Send feedback</router-link>
+    </section>
+
     <!-- 已登录 -->
     <template v-if="auth.user.value">
       <section class="card">
@@ -346,6 +357,19 @@ function forgetPending() {
 
 .sync-card {
   margin-bottom: 16px;
+}
+
+.feedback-entry {
+  margin-bottom: 16px;
+}
+
+/* .btn 本来是给 <button> 写的；router-link 要自己补上这两条，
+   否则文字贴在左边、还带一条下划线 */
+.entry-link {
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+  text-decoration: none;
 }
 
 .card {

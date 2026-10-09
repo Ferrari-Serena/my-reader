@@ -76,7 +76,8 @@ const showBack = computed(() => {
   // 账号页也要一条退路：那里唯一的按钮是「登出」，手快很容易误点；
   // 导入页不在 tabbar 白名单里（故意：导入是个要收心的流程），所以也要自己带返回
   // 生成页（第 17 步 D-2）同理：不在 tabbar 里，得自己带一条「← Home」
-  return ['Reader', 'Account', 'Import', 'GenerateAudio'].includes(route.name)
+  // 反馈页（第 13 步块 B）也是：它挂在账号页下面，不在 tabbar 里
+  return ['Reader', 'Account', 'Import', 'GenerateAudio', 'Feedback'].includes(route.name)
 })
 const backLabel = computed(() => 'Home')
 
@@ -89,7 +90,8 @@ const currentTitle = computed(() => {
     Vocabulary: 'Vocabulary',
     Flashcards: 'Flashcards',
     Quiz: 'Quiz',
-    Account: 'Account'
+    Account: 'Account',
+    Feedback: 'Feedback'
   }
   return titles[route.name] || 'my-reader'
 })

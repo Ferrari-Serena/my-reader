@@ -45,6 +45,13 @@ const routes = [
     component: () => import('../views/QuizView.vue')
   },
   {
+    // 第 13 步块 B：反馈页。入口在账号页（这一页也能直接开）。
+    // 懒加载 —— 它是「出事了才去」的一页，没理由进主包。
+    path: '/feedback',
+    name: 'Feedback',
+    component: () => import('../views/FeedbackView.vue')
+  },
+  {
     path: '/account',
     name: 'Account',
     component: () => import('../views/AccountView.vue')
