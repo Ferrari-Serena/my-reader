@@ -18,7 +18,7 @@
 
 ## 测试
 
-`reader` 13 套 ＋ `worker` 8 套，合计 2,427 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
+`reader` 13 套 ＋ `worker` 9 套，合计 2,535 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
 
 ```bash
 cd reader && npm test   # 13 套（verify-*.mjs ＋ smoke-test.mjs）

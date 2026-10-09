@@ -127,3 +127,24 @@ CREATE TABLE IF NOT EXISTS audio_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_audio_tasks_claim ON audio_tasks (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_audio_tasks_code_created ON audio_tasks (code, created_at);
+
+-- ── 反馈表（第 13 步 · D11；增量迁移：migrations/0007_feedback.sql）──
+-- 一行 = 一条反馈。`anon_key` 是**只用于反馈**的本机匿名键（不是同步租户码 —— 租户码在首次
+-- 登录时会被改名，拿它当键的话游客期提的那条登录后就查不到了；见 src/feedback.js 头注释）。
+-- 刻意**不存 IP**：滥用计数在 rate_limit_events / login_attempts 里，反馈行不再存一份。
+CREATE TABLE IF NOT EXISTS feedback (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at INTEGER NOT NULL,
+  user_id    TEXT,
+  anon_key   TEXT,
+  category   TEXT    NOT NULL DEFAULT 'other',
+  message    TEXT    NOT NULL,
+  contact    TEXT,
+  context    TEXT,
+  status     TEXT    NOT NULL DEFAULT 'new',
+  status_at  INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_status  ON feedback (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_user    ON feedback (user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_anon    ON feedback (anon_key, created_at);

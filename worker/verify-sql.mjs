@@ -36,6 +36,8 @@ db.exec(readFileSync(new URL('./migrations/0004_sync_data_kind.sql', import.meta
 db.exec(readFileSync(new URL('./migrations/0005_audio_tasks.sql', import.meta.url), 'utf8'))
 // 0006 audio_tasks 加 purged_at（一次性 ALTER，见 migrations/0006_audio_tasks_purged.sql）
 db.exec(readFileSync(new URL('./migrations/0006_audio_tasks_purged.sql', import.meta.url), 'utf8'))
+// 0007 反馈表（幂等，见 migrations/0007_feedback.sql）
+db.exec(readFileSync(new URL('./migrations/0007_feedback.sql', import.meta.url), 'utf8'))
 
 const CODE = 'TESTCODE'
 const alive = db.prepare(SQL_ALIVE_UPSERT)
@@ -330,6 +332,60 @@ console.log('\n[schema.sql 与 0005 一致（新建库直接建出任务表）]'
     schemaSql.includes('idx_audio_tasks_claim') && schemaSql.includes('idx_audio_tasks_code_created'))
   t('schema.sql 的 audio_tasks 含 purged_at（新建库直接建出最终形态）', /purged_at\s+INTEGER/.test(schemaSql))
 }
+console.log('\n[0007 迁移 — 反馈表（第 13 步 · D11「表单写自家 D1」）]')
+{
+  const hasTable = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name=?").get(n).n === 1
+  const hasIndex = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index' AND name=?").get(n).n === 1
+
+  t('feedback 建出', hasTable('feedback'))
+  t('有 created_at 索引（后台倒序翻页）', hasIndex('idx_feedback_created'))
+  t('有 (status, created_at) 索引（待办队列）', hasIndex('idx_feedback_status'))
+  t('有 (user_id, created_at) 索引（我的反馈·登录）', hasIndex('idx_feedback_user'))
+  t('有 (anon_key, created_at) 索引（我的反馈·游客键）', hasIndex('idx_feedback_anon'))
+  t('0007 幂等：重复执行不报错', (() => {
+    try { db.exec(readFileSync(new URL('./migrations/0007_feedback.sql', import.meta.url), 'utf8')); return true }
+    catch { return false }
+  })())
+
+  const ins = db.prepare(`INSERT INTO feedback
+      (created_at, user_id, anon_key, category, message, contact, context, status, status_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const r1 = ins.run(1000, null, 'anonkey0123456789abcdef012345', 'other', '一条游客反馈', null, '{}', 'new', null)
+  t('游客行收下（user_id 为 NULL、anon_key 有值）', r1.changes === 1)
+  t('新行默认 status=new、status_at 为 NULL', (() => {
+    const r = db.prepare('SELECT status, status_at, user_id FROM feedback WHERE id = ?').get(r1.lastInsertRowid)
+    return r.status === 'new' && r.status_at === null && r.user_id === null
+  })())
+  t('同一匿名键可以有多条（不是主键）', ins.run(1500, null, 'anonkey0123456789abcdef012345', 'bug', '第二条', null, '{}', 'new', null).changes === 1)
+  t('status 可改（后台 PATCH 就这一句 SQL）', (() => {
+    const upd = db.prepare('UPDATE feedback SET status = ?, status_at = ? WHERE id = ?').run('read', 2000, r1.lastInsertRowid)
+    const row = db.prepare('SELECT status, status_at FROM feedback WHERE id = ?').get(r1.lastInsertRowid)
+    return upd.changes === 1 && row.status === 'read' && row.status_at === 2000
+  })())
+  t('改不存在的行 changes=0（端点据此回 404）',
+    db.prepare('UPDATE feedback SET status = ?, status_at = ? WHERE id = ?').run('closed', 3000, 999999).changes === 0)
+  t('**表里没有 ip 列**（隐私边界：滥用计数落在别处，反馈行不存 IP）',
+    db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('feedback') WHERE name = 'ip'").get().n === 0)
+  t('按状态计数（后台待办面用的那句）', (() => {
+    const rows = db.prepare('SELECT status, COUNT(*) AS n FROM feedback GROUP BY status').all()
+    const m = {}
+    for (const r of rows) m[r.status] = r.n
+    return m.read === 1 && m.new === 1
+  })())
+}
+
+console.log('\n[0007 与 schema.sql 同形：feedback 的列**与顺序**逐字一致]')
+{
+  const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
+  t('schema.sql 含表 feedback', /CREATE TABLE IF NOT EXISTS feedback\b/.test(schemaSql))
+  t('schema.sql 含四个反馈索引',
+    ['idx_feedback_created', 'idx_feedback_status', 'idx_feedback_user', 'idx_feedback_anon'].every(n => schemaSql.includes(n)))
+  const fresh2 = new DatabaseSync(':memory:')
+  fresh2.exec(schemaSql)
+  const cols = (d) => d.prepare("SELECT name FROM pragma_table_info('feedback')").all().map(r => r.name).join(',')
+  t('迁移链（0007）与 schema.sql 的 feedback 列同序', cols(db) === cols(fresh2))
+}
+
 console.log('\n[schema.sql 与 0004 一致（新建库直接建出 kind 列）]')
 {
   const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
@@ -343,8 +399,8 @@ console.log('\n[schema.sql 单独建库（权威源：空库直接建出最终�
   let ok = true
   try { fresh.exec(schemaSql) } catch (e) { ok = false; console.log('   ', e.message) }
   t('schema.sql 能在空库上跑通', ok)
-  t('schema.sql 建出 9 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表 + audio_tasks）',
-    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 9)
+  t('schema.sql 建出 10 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表 + audio_tasks + feedback）',
+    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 10)
   t('schema.sql 幂等：重复执行不报错', ok && (() => {
     try { fresh.exec(schemaSql); return true } catch { return false }
   })())

@@ -12,6 +12,7 @@ npx wrangler d1 execute my-reader-dict --remote --file=migrations/0003_users_ses
 npx wrangler d1 execute my-reader-dict --remote --file=migrations/0004_sync_data_kind.sql
 npx wrangler d1 execute my-reader-dict --remote --file=migrations/0005_audio_tasks.sql
 npx wrangler d1 execute my-reader-dict --remote --file=migrations/0006_audio_tasks_purged.sql
+npx wrangler d1 execute my-reader-dict --remote --file=migrations/0007_feedback.sql
 # 全部迁移跑完，再跑一次权威源（幂等，无副作用）
 npx wrangler d1 execute my-reader-dict --remote --file=schema.sql
 ```
@@ -28,6 +29,7 @@ npx wrangler d1 execute my-reader-dict --remote --file=schema.sql
 | `0004_sync_data_kind.sql` | `sync_data` 加 `kind` 列（默认 `'word'`）＋ `(code, kind, updated_at)` 索引 | ❌ 一次性 `ALTER TABLE`，**不要重跑** |
 | `0005_audio_tasks.sql` | `audio_tasks` 表（服务端合成任务，一章一行）＋ `(status, created_at)`、`(code, created_at)` 两个索引 | ✅ `IF NOT EXISTS` |
 | `0006_audio_tasks_purged.sql` | `audio_tasks` 加 `purged_at`（清空音频后「行作废」的时刻，D25-f） | ❌ 一次性 `ALTER TABLE`，**不要重跑** |
+| `0007_feedback.sql` | `feedback` 表（客服／反馈通道，第 13 步 · D11）＋ 四个索引 | ✅ `IF NOT EXISTS` |
 
 ## 规矩
 

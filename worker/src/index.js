@@ -15,6 +15,9 @@
  * PUT/GET /api/book/<bookId>/audio/<file> → BYO 朗读音频（需有效会话；见 bookaudio.js）
  * DELETE /api/book/<bookId>/audio → **清空该书音频**（只删音频、正文保留，D25）
  * POST/GET /api/gen/book/<bookId> → 服务端合成（提交章节 / 查进度；需有效会话；见 audiogen.js）
+ * POST /api/feedback     → 反馈提交（**免登录**；诊断走白名单，见 feedback.js）
+ * GET /api/feedback      → 后台只读列表（Bearer = METRICS_TOKEN；未配一律 404）
+ * GET /api/feedback/mine → 我提过的（登录按会话／未登录按 ?key= 本机匿名键）
  * GET /health           → { status: 'ok' }
  * GET /api/metrics      → 只读计数（第 4 步 4.8）；需 Authorization: Bearer <METRICS_TOKEN>，
  *                          未配置 secret 一律 404（见 monitor.js 与 handleMetrics）
@@ -26,6 +29,7 @@ import { handleSync } from './sync.js'
 import { handleBookSync } from './booksync.js'
 import { handleBookAudio } from './bookaudio.js'
 import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
+import { handleFeedback } from './feedback.js'
 import { handleAudioGen, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
 import { parseRange } from './range.js'
 import { audioRequestPlan } from './audioalias.js'
@@ -127,6 +131,10 @@ async function handleRequest(request, env, url) {
     // 账号端点分发（匹配 /api/auth/*）
     const authRes = await handleAuth(request, env)
     if (authRes !== null) return authRes
+
+    // 反馈端点分发（第 13 步 · D11）：/api/feedback（提交免登录；列表／改状态用 METRICS_TOKEN）
+    const feedbackRes = await handleFeedback(request, env)
+    if (feedbackRes !== null) return feedbackRes
 
     if (url.pathname === '/health') {
       return json(cors, { status: 'ok' })
