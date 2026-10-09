@@ -340,6 +340,23 @@ await settle(fire(env15, 'install', mkEvent()))
 const holeEv = fire(env15, 'fetch', fetchEv(mkReq('/data/phrases.json')))
 const holeRes = await holeEv.response
 t('壳里有名分但实际缺席：运行时照实走网络、不抛', !!holeRes && holeRes.status === 200)
+// ═══ ⑪ 块 C：书架的入口索引也由壳供给（断网打开 App → 进书架 不该是空的）═══
+console.log('\n[sw — 块 C：书架的入口索引]')
+
+// 这本书的索引只有 784 B、又是书架的**入口**：不进壳的话，它落在 SWR 那条路上，
+// 只有「在线访问过书架」之后才有缓存 ⇒ 装完 SW 就断网的人，书架是空的。
+const env16 = loadSw({ precache: ['/index.html', '/books/book-index.json'] })
+await settle(fire(env16, 'install', mkEvent()))
+env16.calls.fetches.length = 0
+const biEv = fire(env16, 'fetch', fetchEv(mkReq('/books/book-index.json')))
+const biRes = await biEv.response
+// 快照同样要在 settle 之前取（理由见块 B 那条）
+const netForIndex = env16.calls.fetches.length
+await settle(biEv)
+t('壳里的 book-index.json：命中即回（离线书架有书）', !!biRes && biRes.status === 200)
+t('…不打网络（没落到 SWR 那一条）', netForIndex === 0)
+t('…也不在 runtime 留第二份（整份跟 BUILD 走）', !env16.stores.has('mr-runtime-v1'))
+
 // ═══ ⑪ 页面侧：注册与横幅 ═══
 console.log('\n[sw — 页面侧]')
 function fakeNav({ controller = null, registerImpl } = {}) {

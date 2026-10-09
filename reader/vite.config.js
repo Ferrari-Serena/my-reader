@@ -9,17 +9,20 @@ import { readFileSync } from 'node:fs'
 const BUILD_ID = String(process.env.GITHUB_SHA || '').slice(0, 12) || 'dev'
 
 // 第 14 步 块 A：Service Worker 的壳预缓存清单在**构建期**注入（源码里的两个占位符见 sw.js 头部）。
-// 清单只放「壳」：产物 chunk ＋ 图标/清单 ＋ phrases.json；书 JSON 与音频走运行时按需缓存。
+// 清单只放「壳」：产物 chunk ＋ 图标/清单 ＋ phrases.json ＋ **书架入口索引**；单本书的 JSON 与音频走运行时按需缓存。
 const SW_TEMPLATE = new URL('./sw.js', import.meta.url)
 const PUBLIC_SHELL = [
   '/manifest.json',
   '/favicon.svg',
   '/icon-192.png',
   '/icon-512.png',
-  '/data/phrases.json'
+  '/data/phrases.json',
+  // 第 14 步 块 C：书架的**入口索引**（784 B）也进壳 —— 不进去的话「断网打开 App → 进书架」
+  // 会把公开书库留空（它平时落在 SWR 那条路上，只在**在线访问过书架之后**才有缓存）。
+  '/books/book-index.json'
 ]
 
-function mrSwPrecache() {
+export function mrSwPrecache() {
   return {
     name: 'mr-sw-precache',
     apply: 'build',

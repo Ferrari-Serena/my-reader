@@ -6,6 +6,12 @@
       <span class="update-text">{{ SW_UPDATE_MSG }}</span>
       <button class="update-btn" @click="applySwUpdate">{{ SW_UPDATE_ACTION }}</button>
     </div>
+    <!-- 第 14 步 块 C：明确离线时的一行「手感」。第 4 步已经保证改动落在本机、联网即补推，
+         缺的只是让用户看得见（不然断网记了生词，用户会以为丢了）。 -->
+    <div class="offline-banner" v-if="isOffline">
+      <span class="offline-text">{{ OFFLINE_MSG }}</span>
+      <span class="offline-text muted" v-if="offlinePendingLine">{{ offlinePendingLine }}</span>
+    </div>
     <header class="app-header" v-if="showHeader">
       <button class="back-btn" v-if="showBack" @click="goBack">
         ← {{ backLabel }}
@@ -53,6 +59,7 @@ import { useAuth } from './composables/useAuth'
 import { reconcileTenant } from './sync/tenant.js'
 import { migrateAudioPositions } from './sync/progressMigrate.js'
 import { swUpdateReady, applySwUpdate, SW_UPDATE_MSG, SW_UPDATE_ACTION } from './utils/swUpdate.js'
+import { isOffline, OFFLINE_MSG, offlinePendingMsg } from './utils/offline.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -64,7 +71,7 @@ migrateAudioPositions()
 // 启动即触发一次自动拉取（未配对时是空操作）。
 // 以前只有 VocabularyView mount 时才拉，等于「不打开生词本页就永不同步」——
 // 阅读进度和生词都得等用户想起来点那个 tab 才会跨设备更新。
-useSync()
+const sync = useSync()
 
 // 启动就问一次「我是谁」：账号页（第 5 个 tab）打开就是热的，不必等一次往返。
 // 失败一律吞（见 useAuth.js）：没登录 / 离线都不该影响读书。
@@ -74,6 +81,9 @@ const auth = useAuth()
 // （首次＝认领本机游客码；之后＝接管账号主码）。
 // 放在这里而不是 useAuth / useSync 里：这是「身份」与「同步」两个模块的接缝，谁都不该 import 对方。
 watch(() => auth.user.value, (u) => { if (u) reconcileTenant(auth) })
+
+// 断网提示的第二行：待上传条数（0 条时 offlinePendingMsg 回空串 ⇒ 整行不出现）
+const offlinePendingLine = computed(() => offlinePendingMsg(sync.pending.value))
 
 const showHeader = computed(() => true)
 const showTabbar = computed(() => {
@@ -200,6 +210,22 @@ function goBack() {
 
 .update-text {
   flex: 1;
+}
+
+.offline-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 16px;
+  background: #fff8e6;
+  border-bottom: 1px solid var(--border-color, #d2d2d7);
+  color: var(--text-primary, #1d1d1f);
+  font-size: 13px;
+}
+
+.offline-text.muted {
+  color: var(--text-secondary, #6e6e73);
 }
 
 .update-btn {
