@@ -13,6 +13,8 @@
  *   wordChoice        看释义选词（4选1）
  *   definitionChoice  看词选释义（4选1）
  *   plainCloze        释义+首字母输入
+ *   phraseCloze       词组语境填空（4选1；干扰项**只能**取同动词词组）
+ *   phraseDefChoice   看释义选词组（4选1；U5，2026-10-09 —— 干扰项不要求同动词，把「同动词兄弟不足」那批救回题池）
  */
 
 // ─── 工具 ──────────────────────────────────────────
@@ -224,6 +226,55 @@ function genPhraseCloze(phrase, phraseDict, n = 3) {
   }
 }
 
+/** 释义归一（比较用：去空白 + 小写）。 */
+function normDefs(list) {
+  return (list || []).map(d => String(d).trim().toLowerCase()).filter(Boolean)
+}
+
+/** 两条词组的释义是否「撞车」（相等或互相包含）—— 撞车的不能当干扰项，否则一题两个对。 */
+function defClash(a, b) {
+  const A = normDefs(a), B = normDefs(b)
+  return A.some(x => B.some(y => x === y || x.includes(y) || y.includes(x)))
+}
+
+/**
+ * 释义 → 选词组（U5，2026-10-09）。题干是释义，四个选项都是词组。
+ *
+ * 与 `genPhraseCloze` 的差别**只在干扰项**：那一个只能取同动词（考的是搭配），于是
+ * 「同动词兄弟不足 3 个」的词组永远出不了题；这一个不要求同动词、只要**释义不撞车**，
+ * 于是那批被排除的词组全部回到题池。干扰项顺序：先同动词（读起来最像），不够再跨动词。
+ *
+ * phraseDict 由调用方给「带 verb 的那一档」—— 库里 3294 条里另有 2894 条是**名词搭配**
+ *（westminster abbey / abdominal pain 之类），混进来会把动词短语题变成另一种测验。
+ */
+function genPhraseDefChoice(phrase, phraseDict, n = 3) {
+  const defs = phrase.defs || []
+  const def = defs[0]
+  if (!def) return null
+
+  const sameVerb = [], others = []
+  for (const p of phraseDict) {
+    if (p.phrase === phrase.phrase) continue
+    if (!p.defs?.length) continue
+    if (defClash(p.defs, phrase.defs)) continue
+    if (p.verb && p.verb === phrase.verb) sameVerb.push(p)
+    else others.push(p)
+  }
+  const dists = shuffle(sameVerb).slice(0, n)
+  if (dists.length < n) dists.push(...shuffle(others).slice(0, n - dists.length))
+  if (dists.length < n) return null
+
+  const options = shuffle([phrase, ...dists])
+  return {
+    type: 'phraseDefChoice',
+    stem: `Which phrase means “${def}”?`,
+    options: options.map(p => p.phrase),
+    answerIndex: options.findIndex(p => p.phrase === phrase.phrase),
+    explanation: `${phrase.phrase}: ${defs.join('；')}`,
+    word: phrase.phrase,
+  }
+}
+
 // ─── 公开 API ──────────────────────────────────────
 
 /** 硬编码题型比例（常量，不开放用户配置） */
@@ -282,32 +333,44 @@ export function generateQuestions(candidates, allEntries, chapters = [], maxCoun
  * 从短语词典生成词组测验。
  */
 export function generatePhraseQuestions(phrases, maxCount = 20) {
-  // 先筛再取样：3294 条词组里只有 400 条带 verb（干扰项要靠同动词才造得出来）。
-  // 先抽 30 条再筛的话，抽不中可用词组的概率是 2.02%（无放回精确值）→ 直接给出 0 题；
-  // 而且池子里混着大量出不了题的，永远凑不满 maxCount（实测每次都只有 3~4 题）。
-  // 再筛一道「同动词兄弟够不够 3 个」：176 个动词里 107 个只有一条词组，出出来的题
-  // 只有 1~3 个选项（1 个选项 = 点一下就必对，等于没题）。干扰项设计上只能取同动词，
-  // 所以兄弟不足的宁可不出：凑得满 4 个选项的有 190 条，足够撑起任意一次测验
-  //（QuizView 最大请求 30 题 → 池子 90 条，仍有余量）。
+  // 两种题型混出（U5，2026-10-09）：
+  //   phraseCloze     —— 语境/搭配：干扰项只能取同动词 ⇒ 只有「兄弟 ≥ 3」的 190 条够格
+  //   phraseDefChoice —— 释义→选词组：干扰项不要求同动词 ⇒ 把剩下的 210 条一起救回
+  // 先过滤再取样这条老教训仍然成立（3294 条里只有 400 条带 verb；先抽后筛会凑不满）。
+  // 比例：请求数的一半给语境题（语境的更值钱），余下用释义题补；一边不够就从另一边补。
+  // 同一次测验里**一条词组只出一题**（两道题考同一个词组等于白送分）。
+  const eligible = phrases.filter(p => p.verb && p.defs?.length)
   const byVerb = new Map()
-  for (const p of phrases) {
-    if (!p.verb || !p.defs?.length) continue
+  for (const p of eligible) {
     const group = byVerb.get(p.verb)
     if (group) group.push(p)
     else byVerb.set(p.verb, [p])
   }
-  const usable = []
-  for (const group of byVerb.values()) {
-    if (group.length >= 4) usable.push(...group)
+  const clozeSrc = shuffle(eligible.filter(p => (byVerb.get(p.verb) || []).length >= 4))
+  const defSrc = shuffle(eligible)
+
+  const cloze = []
+  const used = new Set()
+  const wantCloze = Math.ceil(maxCount / 2)
+  let ci = 0
+  for (; ci < clozeSrc.length && cloze.length < wantCloze; ci++) {
+    const q = genPhraseCloze(clozeSrc[ci], phrases, 3)
+    if (q) { cloze.push(q); used.add(clozeSrc[ci].phrase) }
   }
-  const pool = shuffle(usable).slice(0, maxCount * 3)
-  const questions = []
-  for (const p of pool) {
-    if (questions.length >= maxCount) break
-    const q = genPhraseCloze(p, phrases, 3)
-    if (q) questions.push(q)
+  const defs = []
+  for (const p of defSrc) {
+    if (cloze.length + defs.length >= maxCount) break
+    if (used.has(p.phrase)) continue
+    const q = genPhraseDefChoice(p, eligible, 3)
+    if (q) { defs.push(q); used.add(p.phrase) }
   }
-  return shuffle(questions)
+  // 释义档被释义撞车挡掉、或请求数很小 ⇒ 用剩下的语境题补空位
+  for (; ci < clozeSrc.length && cloze.length + defs.length < maxCount; ci++) {
+    if (used.has(clozeSrc[ci].phrase)) continue
+    const q = genPhraseCloze(clozeSrc[ci], phrases, 3)
+    if (q) { cloze.push(q); used.add(clozeSrc[ci].phrase) }
+  }
+  return shuffle([...cloze, ...defs])
 }
 
 /** 硬编码兜底词（当生词本过小时作为干扰项备选）。仅含常见 SAT 词，不会产生"明显易排除"的选项。 */

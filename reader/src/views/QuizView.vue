@@ -348,8 +348,8 @@ async function recordAnswer(correct) {
   }
 
   const word = current.value.word
-  // 词组题不入生词本统计；SAT 词答错自动加入生词本
-  if (current.value.type !== 'phraseCloze') {
+  // 词组题（两种题型都算）不入生词本统计；SAT 词答错自动加入生词本
+  if (!current.value.type.startsWith('phrase')) {
     if (vocab.has(word)) {
       await vocab.recordQuizAnswer(word, correct, current.value.type)
     } else if (!correct && source.value === 'sat') {

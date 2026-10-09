@@ -115,15 +115,20 @@ t('句子填空题干不含答案词', clozeQs.every(q => !new RegExp(`\\b${q.wo
     produced > 0 && bad.length === 0, bad.slice(0, 5).join(' | '))
 }
 
-// 词组题
+// 词组题（两种题型混出：语境 cloze ＋ 看释义选词组；U5 · 2026-10-09）
 const phrasesData = JSON.parse(readFileSync(join(__dirname, 'public/data/phrases.json'), 'utf8'))
 const phraseList = Object.entries(phrasesData).map(([phrase, e]) => ({ phrase, ...e }))
 const pqs = generatePhraseQuestions(phraseList, 10)
 t('词组题生成', pqs.length > 0)
-t('词组题干扰项为同动词', pqs.every(q => {
-  const answerVerb = q.options[q.answerIndex].split(' ')[0]
-  return q.options.every(o => o.split(' ')[0] === answerVerb)
-}))
+t('语境题的干扰项为同动词（这条判据只对 phraseCloze 成立）',
+  pqs.filter(q => q.type === 'phraseCloze').every(q => {
+    const answerVerb = q.options[q.answerIndex].split(' ')[0]
+    return q.options.every(o => o.split(' ')[0] === answerVerb)
+  }))
+t('一次测验里两种题型各半（语境 5 ＋ 释义 5）',
+  pqs.filter(q => q.type === 'phraseCloze').length === 5 &&
+  pqs.filter(q => q.type === 'phraseDefChoice').length === 5,
+  pqs.map(q => q.type).join(','))
 
 // 词组题：先筛再取样之后，不再出现「0 题」或「凑不满」
 {
@@ -135,22 +140,41 @@ t('词组题干扰项为同动词', pqs.every(q => {
   t('词组题能凑满请求数', generatePhraseQuestions(phraseList, 10).length === 10)
 }
 
-// 词组题：选项必须凑满 4 个。
-// 干扰项只能取「同动词的其它词组」，而 176 个动词里 107 个只有一条词组 ——
-// 那些题会退化成 1~3 个选项（1 个选项 = 点一下就必对）。旧断言在同动词组为空时
-// 恒真（every over 空集 = true），拦不住；这里改成确定性口径：
-// 能出题的词组 = 同动词组 >= 4 条，逐条都必须给满 4 个选项。
+// 词组题：选项必须凑满 4 个 ＋ U5 的题池扩容。
+// 干扰项的约束**分两档**：语境题只能取同动词（176 个动词里 107 个只有一条词组 ⇒ 那批出不了题）；
+// 释义题不要求同动词、只要释义不撞车 ⇒ 把被排除的那批救回。旧断言（出题数 = 190）在 U5 之后
+// 不再成立，改成逐档确定性口径。
 {
   const byVerb = {}
   for (const p of phraseList) {
     if (p.verb && p.defs?.length) (byVerb[p.verb] ||= []).push(p)
   }
-  const expected = Object.values(byVerb).filter(g => g.length >= 4).reduce((a, g) => a + g.length, 0)
+  const groups = Object.values(byVerb)
+  const expectedCloze = groups.filter(g => g.length >= 4).reduce((a, g) => a + g.length, 0)
+  const smallVerbs = groups.filter(g => g.length < 4).flatMap(g => g.map(p => p.phrase))
   const all = generatePhraseQuestions(phraseList, phraseList.length)
+  const cloze = all.filter(q => q.type === 'phraseCloze')
+  const defs = all.filter(q => q.type === 'phraseDefChoice')
   const notEnough = all.filter(q => q.options.length !== 4)
-  t(`词组题可出的 ${all.length} 条全部是 4 选项（数据里足额词组 ${expected} 条）`,
-    all.length === expected && notEnough.length === 0,
-    `出题 ${all.length}/期望 ${expected}；选项不足: ${notEnough.slice(0, 3).map(q => q.word + '=' + q.options.length).join(', ')}`)
+  t(`词组题池 190 → ${all.length} 条（语境 ${cloze.length} ＋ 释义 ${defs.length}），每条都凑满 4 选项`,
+    all.length === 400 && cloze.length === expectedCloze && notEnough.length === 0,
+    `选项不足: ${notEnough.slice(0, 3).map(q => q.word + '=' + q.options.length).join(', ')}`)
+  t(`语境档出满 ${expectedCloze} 条（同动词兄弟 ≥ 4 的足额池）`, cloze.length === expectedCloze, `实际 ${cloze.length}`)
+  const inPool = new Set(defs.map(q => q.word))
+  const rescued = smallVerbs.filter(w => inPool.has(w)).length
+  t(`U5：「同动词兄弟不足」的 ${smallVerbs.length} 条全部进题池`, rescued === smallVerbs.length, `只进去 ${rescued} 条`)
+  t('释义档答案唯一且在选项里',
+    defs.every(q => q.answerIndex >= 0 && q.options[q.answerIndex] === q.word &&
+      q.options.filter(o => o === q.word).length === 1))
+  const norm = s => String(s).trim().toLowerCase()
+  const clash = (a, b) => (phrasesData[a]?.defs || []).some(d =>
+    (phrasesData[b]?.defs || []).some(r => norm(d) === norm(r) || norm(d).includes(norm(r)) || norm(r).includes(norm(d))))
+  t('释义档干扰项释义不与正确释义撞车（否则一题两个对）',
+    defs.every(q => q.options.every(o => o === q.word || !clash(o, q.word))),
+    defs.filter(q => q.options.some(o => o !== q.word && clash(o, q.word))).slice(0, 3).map(q => q.word).join(', '))
+  t('释义档题干是释义、且不含答案词组本身',
+    defs.every(q => /^Which phrase means/.test(q.stem) && !q.stem.toLowerCase().includes(q.word.toLowerCase())))
+  t('一次测验里一条词组只出一题（不重复考）', new Set(all.map(q => q.word)).size === all.length)
 }
 
 
