@@ -234,6 +234,11 @@ console.log('\n[第 17 步块 E — 索引缓存：预取垫首帧 / 拉回写�
     !view.includes('GEN_ENTRY_ENABLED') && !view.includes('genOpen'))
   t('主包不再动态 import 生成面板（那块 kokoro chunk 不再跟着阅读器下）',
     !view.includes("import('../generate/") && !view.includes("generate/GenAudioPanel"))
+  // U8（2026-10-09 第 15 步）：useTTS 已由本页的 WordPopup 静态引 ⇒ 动态引它搬不动任何
+  // 东西，只会换来一条 Vite INEFFECTIVE_DYNAMIC_IMPORT。别让它回来。
+  t('ReaderView 静态引 useTTS（U8：动态引它只会换来一条 Vite 警告）',
+    view.includes("from '../composables/useTTS.js'") &&
+    !view.includes("import('../composables/useTTS')"))
   t('面板本体仍在卫生豁免区（D21-k：保留代码、默认关）',
     panel.includes('云端音色朗读') && panel.includes('const POLL_MS = 6000'))
   // 2026-10-07 真机实测踩过：留白口径只写在基础规则里，三个断点又各写死一个底部值 →

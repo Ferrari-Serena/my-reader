@@ -235,6 +235,7 @@ import { loadAudioIndex, saveAudioIndex } from '../sync/audioIndexCache.js'
 import { buildParagraphStarts } from '../utils/ttsChunks.js'
 import { useSync } from '../composables/useSync'
 import { useAuth } from '../composables/useAuth'
+import { useTTS } from '../composables/useTTS.js'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
 import { isBookId } from '../utils/bookId.js'
 import { loadBook as loadByoRecord, BookStoreError } from '../storage/index.js'
@@ -940,9 +941,9 @@ function handleImageClick(event) {
   }
 
   // Pronounce
-  import('../composables/useTTS').then(({ useTTS }) => {
-    useTTS().speak(hit.text)
-  })
+  // 静态引（U8）：本页的 WordPopup 已静态引 useTTS ⇒ 动态引搬不动 chunk、只会让 Vite 报
+  // INEFFECTIVE_DYNAMIC_IMPORT；且 useTTS 的 speak 要求同步落在用户手势里（见其注释）。
+  useTTS().speak(hit.text)
 
   // Show tooltip near click position
   imageWord.value = hit.text
@@ -964,9 +965,7 @@ function findWordAt(words, x, y, tolerance = 5) {
 
 function speakImageWord() {
   if (!imageWord.value) return
-  import('../composables/useTTS').then(({ useTTS }) => {
-    useTTS().speak(imageWord.value)
-  })
+  useTTS().speak(imageWord.value)
 }
 
 async function addImageWordToVocab() {
