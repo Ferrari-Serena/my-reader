@@ -1,5 +1,11 @@
 <template>
   <div id="app-shell">
+    <!-- 第 14 步 块 A：SW 的新版本不会自己接管（见 utils/swUpdate.js）——
+         用户点了才换，免得读到一半整页重载丢进度。 -->
+    <div class="update-banner" v-if="swUpdateReady">
+      <span class="update-text">{{ SW_UPDATE_MSG }}</span>
+      <button class="update-btn" @click="applySwUpdate">{{ SW_UPDATE_ACTION }}</button>
+    </div>
     <header class="app-header" v-if="showHeader">
       <button class="back-btn" v-if="showBack" @click="goBack">
         ← {{ backLabel }}
@@ -46,6 +52,7 @@ import { useSync } from './composables/useSync'
 import { useAuth } from './composables/useAuth'
 import { reconcileTenant } from './sync/tenant.js'
 import { migrateAudioPositions } from './sync/progressMigrate.js'
+import { swUpdateReady, applySwUpdate, SW_UPDATE_MSG, SW_UPDATE_ACTION } from './utils/swUpdate.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -178,5 +185,30 @@ function goBack() {
 
 .tab-label {
   font-size: 11px;
+}
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #eef4ff;
+  border-bottom: 1px solid var(--border-color, #d2d2d7);
+  color: var(--text-primary, #1d1d1f);
+  font-size: 14px;
+}
+
+.update-text {
+  flex: 1;
+}
+
+.update-btn {
+  background: var(--accent-color, #1a73e8);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
 }
 </style>
