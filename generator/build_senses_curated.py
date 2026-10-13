@@ -1676,6 +1676,8 @@ EX = {
     ("call out", 2): ("gutenberg:4397", "It seemed to Val unspeakably disgusting to have one’s name called out like this in public!"),
     ("call out", 3): ("gutenberg:233", "“They’ve called out the police."),
     ("look over", 1): ("gutenberg:1400", "Look over it, dear boy.”"),
+    ("see off", 1): ("gutenberg:1260", "Mason got the start of you all this morning; he was gone before sunrise: I rose at four to see him off."),
+    ("see off", 2): ("gutenberg:4397", "A few minutes later Bosinney rose to go, and Soames rose too, to see him off the premises."),
     ("settle down", 1): ("gutenberg:1260", "Will it keep you in England, induce you to marry Miss Oliver, and settle down like an ordinary mortal?”"),
     ("settle down", 2): ("gutenberg:1056", "He had settled down into a strange and comfortable state of mind."),
     ("settle down", 3): ("gutenberg:120", "As the last rays of daylight dwindled and disappeared, absolute blackness settled down on Treasure Island."),
@@ -2493,8 +2495,6 @@ GAP = {
     ("cipher out", 2): "本词 0 命中 ⇒ 无「琢磨出／想出」正据 ⇒ 0 条",
     ("cue in", 1): "本词 44 本中 0 命中（cued/cues/cuing in 全 0）⇒ 无「给演员提示上场」正据 ⇒ 0 条",
     ("cue in", 2): "本词 0 命中 ⇒ 无「知会／告知情况」正据 ⇒ 0 条",
-    ("see off", 1): "本词 44 本中 0 命中（saw/seeing/seen/sees off 全 0）⇒ 无「送行」正据 ⇒ 0 条",
-    ("see off", 2): "本词 0 命中 ⇒ 无「赶走／击退」正据 ⇒ 0 条",
     ("sign up", 1): "本词 44 本中 0 命中（signed/signing/signs up 全 0）⇒ 无「报名参加」正据 ⇒ 0 条",
     ("sign up", 2): "本词 0 命中 ⇒ 无「签约聘请」正据 ⇒ 0 条",
     ("stick around", 1): "本词 44 本中 0 命中（sticking/sticks/stuck around 全 0）⇒ 无「待在原地」正据 ⇒ 0 条",
@@ -2512,7 +2512,7 @@ GAP = {
 
 
 # 可分离式短语（宾语插入）：例句走「头词＋间隔≤4词＋粒子」，闸见 senses_schema.has_form_gapped。
-SEPARABLE = {("take out", 2), ("hand over", 1)}  # hand over＃1 正据是「Hand it over」（宾语插入）
+SEPARABLE = {("take out", 2), ("hand over", 1), ("see off", 1), ("see off", 2)}  # hand over＃1 正据是「Hand it over」（宾语插入）
 
 
 def build():

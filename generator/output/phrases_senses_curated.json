@@ -16908,8 +16908,13 @@
     "rank_basis": "manual",
     "src": "drafted",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "本词 44 本中 0 命中（saw/seeing/seen/sees off 全 0）⇒ 无「送行」正据 ⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:1260",
+      "text": "Mason got the start of you all this morning; he was gone before sunrise: I rose at four to see him off."
+     }
+    ],
+    "separable": true
    },
    {
     "id": "see off#see_off_repel",
@@ -16923,8 +16928,13 @@
     "rank_basis": "manual",
     "src": "drafted",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "本词 0 命中 ⇒ 无「赶走／击退」正据 ⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:4397",
+      "text": "A few minutes later Bosinney rose to go, and Soames rose too, to see him off the premises."
+     }
+    ],
+    "separable": true
    }
   ]
  },

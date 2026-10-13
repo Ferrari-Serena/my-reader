@@ -3,12 +3,12 @@
   "note": "GAP = phrases_senses_curated.json 中 examples 为空的义项；n_pool/n_cue 取自 cue_corpus_scan.json。",
   "total_words": 320,
   "total_senses": 870,
-  "non_gap": 635,
-  "gap": 235,
-  "A_pool_zero": 30,
+  "non_gap": 637,
+  "gap": 233,
+  "A_pool_zero": 28,
   "B_pool_but_no_cue": 182,
   "C_cue_hit": 23,
-  "words_with_gap": 161
+  "words_with_gap": 160
  },
  "A_pool_zero": [
   {
@@ -160,22 +160,6 @@
    "rank": 2,
    "zh": "知会；把情况告诉（某人）",
    "en": "to give sb the necessary information",
-   "n_pool": 0,
-   "n_cue": 0
-  },
-  {
-   "word": "see off",
-   "rank": 1,
-   "zh": "给…送行；送别",
-   "en": "to go to the station or port to say goodbye",
-   "n_pool": 0,
-   "n_cue": 0
-  },
-  {
-   "word": "see off",
-   "rank": 2,
-   "zh": "赶走；击退（入侵者／追兵）",
-   "en": "to drive away or repel",
    "n_pool": 0,
    "n_cue": 0
   },
