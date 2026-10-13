@@ -69,7 +69,7 @@ CUE = {
     ("come out", 2): r"\b(?:book|books|novel|edition|story|article|paper|number|volume|magazine|issue)\b[^.?!]{0,20}?\b(?:came|come|comes|coming) out\b|\b(?:came|come|comes|coming) out\b[^.?!]{0,20}?\b(?:on (?:the )?(?:following|next)|last week|next month|in print|published)\b",
     ("come out", 3): r"\b(?:came|come|comes|coming) out (?:well|right|all right|wrong|badly|best|worst)\b",
     # set off
-    ("set off", 1): r"^(?!.*\b(?:alarms?|panic|waves?|series|chains?|reactions?|explosions?|bombs?|fires?|rumours?|rumors?|debate|laughter|storms?|avalanches?|against|by contrast)\b).*\bset(?:s|ting)? off\b",
+    ("set off", 1): r"^(?!.*\b(?:alarms?|panic|waves?|series|chains?|reactions?|explosions?|bombs?|fires?|rumours?|rumors?|debate|laughter|storms?|avalanches?|against|by contrast|figure)\b).*\bset(?:s|ting)? off\b",
     ("set off", 2): r"\bset(?:s|ting)? off\b[^.?!]{0,25}?\b(?:alarms?|panic|a series|series|chains?|reactions?|explosions?|bombs?|fires?|rumours?|rumors?|debate|laughter|a storm|storms?|an avalanche)\b",
     ("set off", 3): r"\bset(?:s|ting)? off\b[^.?!]{0,15}?\bagainst\b|\bset(?:s|ting)? off\b\s+by\b[^.?!]{0,30}?\b(?:figure|beauty|charm|contrast|white|colour|color|black|light|frame|background)\b",
     # in a body
@@ -328,7 +328,7 @@ CUE = {
     ("pass away", 2): r"\b(?:customs?|days?|glory|beauty|colours?|colors?|things?|fashion|youth|hopes?|dreams?|sorrow|grief|world|summer)\b[^.?!]{0,25}?\b(?:pass|passed|passes|passing) away\b|\b(?:pass|passed|passes|passing) away\b[^.?!]{0,20}?\b(?:for ever|forever|like (?:a|the))\b",
     # turn on
     ("turn on", 1): r"\b(?:turn|turns|turned|turning) on\b[^.?!]{0,25}?\b(?:light|lights|lamp|gas|water|tap|radio|electric|fire|engine|power|steam)\b|\b(?:light|lights|lamp|gas|water|tap|radio|electric|power)\b[^.?!]{0,25}?\b(?:turn|turns|turned|turning) on\b",
-    ("turn on", 2): r"\b(?:turn|turns|turned|turning) on\b\s+(?:whether|what|which|that|this|everything|the (?:answer|question|result|outcome|issue|whole|success|fate))\b|\b(?:turn|turns|turned|turning) on\b[^.?!]{0,20}?\b(?:whether|what|which)\b",
+    ("turn on", 2): r"\b(?:turn|turns|turned|turning) on\b\s+(?:whether|what|which|that|this|everything|the (?:answer|question|result|outcome|issue|whole|success|fate))\b|\b(?:turn|turns|turned|turning) on\b(?!\s+(?:him|her|them|me|us|you)\b)[^.?!]{0,20}?\b(?:whether|what|which)\b",
     ("turn on", 3): r"\b(?:turn|turns|turned|turning) on\b\s+(?:him|her|them|me|us|you)\b|\b(?:turn|turns|turned|turning) on\b[^.?!]{0,15}?\b(?:savagely|fiercely|like a|with a snarl|in a fury|tooth and nail)\b",
     ("turn on", 4): r"\b(?:turn|turns|turned|turning)\s+(?:him|her|them|me|you)\s+on\b",
     # break in
@@ -554,7 +554,7 @@ CUE = {
     ("clear up", 4): r"\b(?:cleared|clear|clears|clearing) up\b[^.?!]{0,15}?\b(?:cold|rash|illness|symptoms?|headache|fever|spots)\b",
     # follow up
     ("follow up", 1): r"\b(?:follow|follows|following|followed) up\b[^.?!]{0,15}?\b(?:the (?:clue|clues|case|scent|idea|thought|article|matter|success|points)|his clue|my case|this clue|new-found clue)\b|\b(?:clue|clues|scent|case)\b[^.?!]{0,15}?\b(?:follow|follows|following|followed) up\b",
-    ("follow up", 2): r"\b(?:follow|follows|following|followed) up\b[^.?!]{0,15}?\b(?:the (?:beginning|advantage|assurance|work)|by|with|to a conclusion|immediately)\b",
+    ("follow up", 2): r"\b(?:follow|follows|following|followed) up\b[^.?!]{0,15}?\b(?:the (?:beginning|advantage|assurance|work)|by|(?<!the idea )with|to a conclusion|immediately)\b",
     # speak out
     ("speak out", 1): r"^(?!.*\b(?:speak|speaks|speaking|spoke|spoken) out of\b).*\b(?:speak|speaks|speaking|spoke|spoken) out\b",
     # think over
