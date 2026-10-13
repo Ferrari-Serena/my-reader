@@ -27,8 +27,8 @@ import re
 # (phrase, rank) → 正则源码串。只在有把握写「可区分」的线索时才写。
 CUE = {
     # come about
-    ("come about", 1): r"\b(?:it|how|what|this|that|which)\b[^.?!]{0,40}?\b(?:come|comes|came|coming) about\b|\b(?:come|comes|came|coming) about\b[^.?!]{0,20}?\bthat\b",
-    ("come about", 2): r"\b(?:come|comes|came|coming) about\b[^.?!]{0,20}?\b(?:his|her|their|the|my|your|its|our|a|an)\b",
+    ("come about", 1): r"^(?!.*\b(?:come|comes|came|coming) about\s+(?:his|her|their|the|my|your|its|our|a|an)\b).*\b(?:come|comes|came|coming) about\b",
+    ("come about", 2): r"\b(?:come|comes|came|coming) about\s+(?:his|her|their|the|my|your|its|our|a|an)\b",
     # set aside
     ("set aside", 1): r"\bset(?:s|ting)? aside\b[^.?!]{0,30}?\b(?:money|time|hours?|minutes?|days?|weeks?|funds?|cash|sum|amount|part of|portion|guineas|pounds?)\b",
     ("set aside", 2): r"\bset(?:s|ting)? aside\b[^.?!]{0,30}?\b(?:occasions?|questions?|differences?|dispute|objections?|doubts?|decisions?|feelings?|concern|matters?|reservation|judgment|consideration|forms? of)\b",
@@ -47,9 +47,9 @@ CUE = {
     ("bring out", 1): r"\b(?:bring|brings|bringing|brought) out\b[^.?!]{0,30}?\b(?:(?:the|my|your|his|her|its|our|their) best|the (?:sweat|worst|colour|color|flavour|meaning|difference|truth)|tears|a smile)\b",
     ("bring out", 2): r"\b(?:bring|brings|bringing|brought) out\b[^.?!]{0,30}?\b(?:a book|books|a novel|an edition|a first edition|a record|a play|a magazine|a volume)\b",
     # turn out
-    ("turn out", 1): r"\bturn(?:s|ed|ing)? out (?:to be|that)\b|\bit (?:turns?|turned) out\b",
-    ("turn out", 2): r"\b(?:people|crowds?|men|women|voters|numbers|they|we|everybody|everyone|all|the public)\b[^.?!]{0,40}?\bturn(?:s|ed|ing)? out\b",
-    ("turn out", 3): r"\bturn(?:s|ed|ing)? out\b[^.?!]{0,25}?\b(?:goods?|products?|machines?|items?|wares|canned|manufactured|output)\b|\b(?:goods?|products?|machines?|items?|wares|canned)\b[^.?!]{0,25}?\bturn(?:s|ed|ing)? out\b",
+    ("turn out", 1): r"\bturn(?:s|ed|ing)? out to be\b|\bit (?:turns?|turned) out\b",
+    ("turn out", 2): r"\b(?:people|crowds?|men|women|voters|numbers|they|we|everybody|everyone|the public)\b[^.?!]{0,40}?\bturn(?:s|ed|ing)? out\b(?!\s+(?:to be|that)\b)",
+    ("turn out", 3): r"\bturn(?:s|ed|ing)? out\b[^.?!]{0,25}?\b(?:goods\b|products?|machines?|items?|wares|canned|manufactured|output)\b|\b(?:goods\b|products?|machines?|items?|wares|canned)\b[^.?!]{0,25}?\bturn(?:s|ed|ing)? out\b",
     # put in
     ("put in", 1): r"\bput in\b[^.?!]{0,25}?\b(?:time|hours?|years?|days?|effort|work|practice|money|capital|service)\b|\b(?:time|hours?|years?|days?|effort|work|practice|money|capital)\b[^.?!]{0,25}?\bput in\b",
     ("put in", 2): r"\bput in\b[^.?!]{0,25}?\b(?:a window|windows?|a new|a lock|a stove|a bath|electricity|a telephone|wiring|a partition|fixtures|glass|a door|a grate|a fireplace)\b|\b(?:a window|windows?|a lock|a stove|a bath|wiring|glass|a door|a grate|a fireplace)\b[^.?!]{0,25}?\bput in\b",
@@ -60,8 +60,8 @@ CUE = {
     ("stick out", 2): r"\b(?:stick|sticks|sticking|stuck) out\b[^.?!]{0,25}?\b(?:like|among|amid|above|against|from the|from a|a mile|thumb|sore)\b",
     ("stick out", 3): r"\bstick it out\b|\b(?:stick|sticks|sticking|stuck) out\b[^.?!]{0,25}?\b(?:for|against|until|till|to the (?:last|end)|a little longer|a bit longer)\b",
     # come back
-    ("come back", 1): r"^(?!.*\b(?:memory|memories|mind|recollection|thoughts?|words|voice|consciousness|senses)\b).*\b(?:came|come|comes|coming) back\b",
-    ("come back", 2): r"\bit (?:came|comes|come) back\b|\b(?:memory|memories|mind|recollection|thoughts?|words|voice|consciousness|senses)\b[^.?!]{0,25}?\b(?:came|come|comes|coming) back\b|\b(?:came|come|comes|coming) back to (?:him|her|me|them|us|his mind)\b",
+    ("come back", 1): r"^(?!.*\b(?:memory|memories|mind|recollection|thoughts?|words|voice|consciousness|senses)\b)(?!.*\bit all (?:came|comes|come) back\b)(?!.*\bit (?:all )?(?:came|comes|come) back to (?:him|her|me|them|us|my mind|his mind)\b).*\b(?:came|come|comes|coming) back\b",
+    ("come back", 2): r"\bit (?:all )?(?:came|comes|come) back to (?:him|her|me|them|us|my mind|his mind)\b|\bit all (?:came|comes|come) back\b|\b(?:memory|memories|mind|recollection|thoughts?|words|voice|consciousness|senses)\b[^.?!]{0,25}?\b(?:came|come|comes|coming) back\b",
     # point out
     ("point out", 1): r"\bpoint(?:s|ed|ing)? out\b",
     # come out
@@ -76,10 +76,10 @@ CUE = {
     ("in a body", 1): r"\bin a body\b",
     # give in
     ("give in", 1): r"\bg(?:ave|ive|ives|iving) in\b[^.?!]{0,20}?\b(?:to|under|at last|finally|at length|pressure|despair|temptation|nothing|nobody)\b",
-    ("give in", 2): r"\bg(?:ave|ive|ives|iving) in\b[^.?!]{0,20}?\b(?:the (?:cheque|check|paper|papers|document|report|key|ticket|form|money|letter|account)|a (?:cheque|check|paper|document|report|form)|his|her|their|my|your)\b",
+    ("give in", 2): r"\bg(?:ave|ive|ives|iving) in\b(?:\s+(?:the|a)\s+(?:cheque|check|paper|papers|document|report|key|ticket|form|money|letter|account)|\s+(?:his|her|their|my|your)\s+(?:notice|resignation|paper|papers|report|document|documents|form|forms|cheque|check|key|ticket|name|names|account|accounts|money|letter|letters|debts?))\b",
     # look on
-    ("look on", 1): r"\blook(?:s|ing|ed)? on\b[^.?!]{0,25}?\b(?:while|as|silently|helplessly|in silence|with|at|from|without)\b",
-    ("look on", 2): r"\blook(?:s|ing|ed)? on\b[^.?!]{0,20}?\bas\b",
+    ("look on", 1): r"^(?!.*\blook(?:s|ing|ed)? on\b[^.?!]{0,20}?\bas\b)(?!.*\blook(?:s|ing|ed)? on(?:to)?\b[^.?!]{0,20}?\b(?:the|a|his|her|their|my|your|its)\s+(?:court|street|garden|river|sea|park|square|road|yard|field|lawn|terrace|meadow|harbour|harbor|water|wood|woods|hill|inn|house)\b).*\blook(?:s|ing|ed)? on\b",
+    ("look on", 2): r"\blook(?:s|ing|ed)? on\b(?!\s+(?:at|from|while|silently|helplessly|in silence|with|without)\b)(?![^.]{0,20}?,\s*as\b)[^.?!]{0,20}?\bas\b(?!\s+long\s+as\b)(?!\s+(?:I|you|he|she|it|we|they|one)\s+(?:had|has|have|was|were|is|are|am|did|do|does|could|would|should|might|may|shall|will)\b)",
     ("look on", 3): r"\blook(?:s|ing|ed)? on(?:to)?\b[^.?!]{0,20}?\b(?:the|a|his|her|their|my|your|its)\s+(?:court|street|garden|river|sea|park|square|road|yard|field|lawn|terrace|meadow|harbour|harbor|water|wood|woods|hill|inn|house)\b",
     ("go on", 1): r"\b(?:go|goes|going|went|gone) on\b[^.?!]{0,20}?\b(?:with|doing|talking|reading|working|living|speaking|telling|walking|crying|writing|as before|forever|for ever|and on)\b",
     ("go on", 2): r"(?:\b(?:what|something|anything|nothing|everything|much)\b[^.?!]{0,25}?\b(?:go|goes|going|went|gone) on\b|\bthere\b[^.?!]{0,25}?\b(?:go|goes|going|went|gone) on\b)(?!\s+(?:doing|with|living|talking|reading|working|speaking|telling|walking|crying|writing)\b)",
@@ -128,18 +128,18 @@ CUE = {
     ("make up", 4): r"\bmake(?:s|d|ing)? (?:her|him|your|my|them|our)?self up\b|\bmake up\b[^.?!]{0,20}?\b(?:face|cheeks|eyes|lips|powder|paint)\b",
     ("make up", 5): r"\bmake (?:it )?up for\b|\bmade up for\b",
     ("make up", 6): r"\b(?:make|makes|making|made) up (?:his|her|your|my|their|our) minds?\b",
-    ("get out", 1): r"\b(?:get|gets|getting|got) out\b\s+of\b|\b(?:get|gets|getting|got) out\b\s*[.,!?]",
-    ("get out", 2): r"\b(?:get|gets|getting|got) out\b(?!\s+of\b)[^.?!]{0,15}?\b(?:the|a|an|his|her|my|your|their|some)\b",
-    ("get out", 3): r"\b(?:news|secret|truth|word|story|it)\b[^.?!]{0,25}?\b(?:get|gets|getting|got) out\b",
+    ("get out", 1): r"^(?!.*\b(?:get|gets|getting|got) out\s+(?:the|a|an|his|her|my|your|their|some)\b)(?!.*\b(?:news|secret|truth|word|story|name|names)\b[^.?!]{0,25}?\b(?:get|gets|getting|got) out\b).*\b(?:get|gets|getting|got) out\b",
+    ("get out", 2): r"\b(?:get|gets|getting|got) out\s+(?:the|a|an|his|her|my|your|their|some)\b",
+    ("get out", 3): r"\b(?:news|secret|truth|word|story|name|names)\b[^.?!]{0,25}?\b(?:get|gets|getting|got) out\b",
     ("take up", 1): r"\b(?:take|takes|taking|took|taken)\s+up\b(?!\s+with\b)\s+(?:the|a|an|his|her|my|your|their|our|its)?\s*(?:painting|music|drawing|writing|literature|medicine|law|teaching|farming|golf|tennis|photography|studies|study|pursuit|hobb\w*|the pen|arms|violin|piano|mathematics|science|nursing|trade|calling|work|duties|duty|office|post|career|task|leadership|command|religion|cross|profession|Latin|French|English|Spanish|German|Greek|Hebrew|Italian|Women['\u2019]?s Rights|regular exercise|fads?)\b|\b(?:take|takes|taking|took|taken)\s+up\b\s+all sorts of (?:new )?\w+\b|\b(?:take|takes|taking|took|taken)\s+up\b\s+(?:his|her|the|my|your|their)\s+cross\b|\bwhat line\b[^.?!]{0,20}?\b(?:take|takes|taking|took|taken)\s+up\b|\b(?:take|takes|taking|took|taken)\s+up\s+the\s+dignified\s+line\b",
     ("take up", 2): r"\b(?:take|takes|taking|took|taken)\s+up\b(?!\s+with\b)\s+(?:the|a|an|his|her|my|your|their|our|its)?\s*(?:time|space|room|hours?|days?|weeks?|months?|years?|minutes?|moments?|energy|attention|labour|labor|block)\b|\b(?:take|takes|taking|took|taken)\s+up\b\s+as (?:little|much)[\w'\u2019 ,]{0,25}?\b(?:time|space|room|length|hours?|years?)\b|\b(?:take|takes|taking|took|taken)\s+up\b\s+(?:so\s+much\s+of\s+|much\s+of\s+|much\s+|half\s+the\s+|the\s+whole\s+(?:end\s+of\s+)?|one\s+side\s+of\s+)(?:the|a|an|his|her|my|your|their|our|its)?\s*(?:time|space|room|hours?|days?|weeks?|months?|years?|minutes?|moments?|energy|attention|labou?r|block)\b|\b(?:days?|nights?|hours?|weeks?|months?|years?|minutes?|moments?|time|thoughts?|attention)\b[^.?!;,]{0,30}?\b(?:is|are|was|were|be|been|being|get|got|seem(?:s|ed)?|had)\s+(?:been\s+)?(?:taken|took|take|takes|taking)\s+up\b",
     ("take up", 3): r"\b(?:take|takes|taking|took|taken)\s+up\b(?!\s+with\b)\s+(?:the|a|an|his|her|my|your|their|our|its)?\s*(?:(?:curtailed|old|wild|interrupted|dignified|new|ancient|long-forgotten|pathetic|poor|good|same|own)\s+)?(?:[A-Za-z][\w'\u2019-]*['\u2019]s\s+)?(?:story|tale|thread|subject|matter|theme|song|melody|tune|air|call|refrain|strain|argument|quarrel|conversation|discussion|organ theme|journey|lyric\w*|burdens?|appendix|question\w*|shouts?|cr(?:y|ies)|chorus\w*|acclaim|poets?|names?|accounts?|threats?)\b|\b(?:take|takes|taking|took|taken)\s+up\s+where (?:he|she|they|I|we) (?:left|broke) off\b|\b(?:take|takes|taking|took|taken)\s+up\s+(?:her|his|my|your|their|our)\s+own\s+line\s+of\s+the\s+(?:subject|argument|story|tale|conversation|discussion)\b|\b(?:take|takes|taking|took|taken)\s+up\s+(?:my|his|her|our|their|your)\s+(?:[\w'\u2019-]+\s+){0,4}?\bwandering\b|\b(?:calls?|sounds?|songs?|story|tale|refrains?|strains?|themes?|melod\w*|subject|lyric\w*|burdens?|appendix|question\w*|shouts?|cr(?:y|ies)|chorus\w*|acclaim|poets?|names?|accounts?|threats?|conversation\w*|discussion\w*|cheering|cheers?|bugles?)\b[^.?!;,]{0,30}?\b(?:was|were|is|are|got|get)\s+(?:taken|took)\s+up\b",
     ("find out", 1): r"^(?!.*\b(?:find|finds|finding|found)\s+out\b(?:(?!\b(?:that|what)\b)[^.?!;,]){0,12}?\bthat\s*,?\s+(?!(?:thing|things|man|men|woman|women|boy|boys|girl|girls|fellow|sort|kind|part|way|speech|place|idea|days?|times?|moment|one|person|creature|chap)\b)\w).*\b(?:find|finds|finding|found)\s+out\b",
     ("find out", 2): r"\b(?:find|finds|finding|found)\s+out\b(?:(?!\b(?:that|what)\b)[^.?!;,]){0,12}?\bthat\s*,?\s+(?!(?:thing|things|man|men|woman|women|boy|boys|girl|girls|fellow|sort|kind|part|way|speech|place|idea|days?|times?|moment|one|person|creature|chap)\b)\w",
-    ("put on", 1): r"^(?!.*\b(?:play|plays|performance|act|airs?|weight)\b).*\b(?:put|puts|putting) on\b[^.?!]{0,25}?\b(?:hat|coat|clothes|clothing|dress|boots?|shoes?|gloves?|uniform|bonnet|cloak|jacket|ring|spectacles?|glasses)\b|\b(?:put|puts|putting) on\b\s+(?:his|her|my|your|their|the)\b",
-    ("put on", 2): r"\b(?:put|puts|putting) on\b[^.?!]{0,20}?\b(?:light|lights|lamp|gas|fire|electricity|music|heating)\b",
-    ("put on", 3): r"\b(?:put|puts|putting) on\b[^.?!]{0,25}?\b(?:play|plays|performance|piece|show|exhibition|opera|drama|farce)\b",
-    ("put on", 4): r"\b(?:put|puts|putting) on\b[^.?!]{0,15}?\b(?:airs?|an act|a front|a show)\b",
+    ("put on", 1): r"^(?!.*\b(?:put|puts|putting) on\s+(?:the|a|an|his|her|my|your|their|some)?\s*(?:light|lights|lamp|gas|fire|electricity|music|heating)\b)(?!.*\b(?:put|puts|putting) on\s+(?:a|an|the|his|her|my|your|their|some)?\s*(?:play|plays|performance|piece|show|exhibition|opera|drama|farce)\b)(?!.*\b(?:put|puts|putting) on\b[^.?!]{0,15}?\b(?:airs?|an act|a front)\b)(?!.*\b(?:put|puts|putting) on\s+weight\b).*\b(?:put|puts|putting) on\b",
+    ("put on", 2): r"\b(?:put|puts|putting) on\s+(?:the|a|an|his|her|my|your|their|some)?\s*(?:light|lights|lamp|gas|fire|electricity|music|heating)\b",
+    ("put on", 3): r"\b(?:put|puts|putting) on\s+(?:a|an|the|his|her|my|your|their|some)?\s*(?:play|plays|performance|piece|show|exhibition|opera|drama|farce)\b",
+    ("put on", 4): r"\b(?:put|puts|putting) on\b[^.?!]{0,15}?\b(?:airs?|an act|a front)\b",
     ("get on", 1): r"\b(?:get|gets|getting|got) on\b\s+(?:to )?(?:the|a|his|her) (?:train|bus|car|boat|ship|tram|omnibus|horse|bicycle)\b|\b(?:get|gets|getting|got) on board\b",
     ("get on", 2): r"\b(?:get|gets|getting|got) on\b[^,.?!]{0,20}?\bwith (?:him|her|them|each other|one another|people|his|her|the)\b|\bget along\b",
     ("get on", 3): r"\bhow\b[^.?!]{0,20}?\b(?:get|gets|getting|got) on\b(?!\s+(?:board\b|with\b|(?:to\s+)?(?:the|a|his|her)\s+(?:train|bus|car|boat|ship|tram|omnibus|horse|bicycle)\b))|\b(?:get|gets|getting|got) on\b[^.?!]{0,12}?\b(?:well|nicely|better|badly|fast|slowly)\b(?!\s+with\b)",
@@ -185,7 +185,7 @@ CUE = {
     ("make out", 1): r"\b(?:make|makes|making|made) out\b(?!\s+of\b)(?:\s+(?:the|a|an)\s+(?:[\w'\u2019-]+\s+){0,2}?\b(?:shape|form|figure|house|ship|shore|figures|letters|words|sounds|bird|canoe|expression|features?)\b|\s+(?:anything|nothing|something)\b|\s+(?:him|her|them)\b(?!\s+[A-Za-z]))|\b(?:anything|nothing|something)\b[^.?!,;:]{0,20}?\b(?:make|makes|making|made) out\b(?!\s+of\b)|\b(?:the|a|an)\s+(?:[\w'\u2019-]+\s+){0,2}?\b(?:shape|form|figure|house|ship|shore|figures|letters|words|sounds|bird|canoe|expression|features?)\b[^.?!,;:]{0,20}?\b(?:make|makes|making|made) out\b(?!\s+of\b)",
     ("make out", 2): r"\b(?:make|makes|making|made) out\b[^.?!,;:]{0,25}?\b(?:what|why|how|whether|who|which|where|when|the meaning|the sense|the reason|the proper way|meaning|sense)\b",
     ("make out", 3): r"\b(?:make|makes|making|made) out\b[^.?!,;:]{0,20}?\b(?:a (?:cheque|check|bill|list|receipt|will|draft|application|form)|application blanks?|forms?|cheque|the cheque|the bill|the list|the receipt|an account)\b",
-    ("look back", 1): r"\blook(?:s|ed|ing)? back\b[^.?!]{0,20}?\b(?:at|over (?:his|her|your)|to (?:see|wave|smile)|upon)\b",
+    ("look back", 1): r"\blook(?:s|ed|ing)? back\b[^.?!]{0,20}?\b(?:at\s+(?:the|a|an|his|her|my|your|their|him|me|us|them|it|this|that)|over (?:his|her|your)|to (?:see|wave|smile))\b",
     ("look back", 2): r"\blook(?:s|ed|ing)? back\b[^.]{0,15}?\bupon\b|\blook(?:s|ed|ing)? back\b[^.]{0,15}?\bon (?:it|this|that|those|these|the|his|her|my|your|what)\b",
     ("hold out", 1): r"\b(?:hold|holds|holding|held) out\b[^.?!]{0,20}?\b(?:his|her|my|your|the|a|both) (?:hand|hands|arm|arms|palm|glass|cup|plate|letter|money|cheque|check)\b",
     ("hold out", 2): r"\b(?:hold|holds|holding|held) out\b[^.?!]{0,25}?\b(?:against|for (?:a|the) (?:long|while|time)|till|until|no longer|to the last)\b",
@@ -215,7 +215,7 @@ CUE = {
     ("stand by", 2): r"\bstand(?:s|ing)? by\b[^.?!]{0,25}?\b(?:and (?:watch|let|see)|while|without (?:a word|moving|acting)|idly|helplessly|in silence)\b",
     ("stand by", 3): r"\bstand(?:s|ing)? by\b[^.?!]{0,25}?\b(?:to (?:go|trim|fire|sail|weigh|launch|anchor)|ready|for orders|orders|aloof)\b",
     # go about
-    ("go about", 1): r"\b(?:go|goes|going|went) about\b(?!\s*(?:\d|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|hundred|a few|some))[^.?!]{0,25}?\b(?:it|that|this|business|work|task|errand|errands|mending|making|preparations|his|her|their|the)\b",
+    ("go about", 1): r"\b(?:go|goes|going|went) about\s+(?:(?:the|a|an|his|her|their|your|my|our)\s+)?(?:it|that|this|business|work|task|errand|errands|mending|making|preparations?|duty|affairs?)\b",
     ("go about", 2): r"\b(?:go|goes|going|went) about\b[^.?!]{0,25}?\b(?:carrying|with (?:posters|flags)|the (?:streets|town|country|city)|among|from (?:door|house)|everywhere|singing|begging)\b",
     ("go about", 3): r"\b(?:stand by|ready) to go about\b|\b(?:go|goes|going|went) about\b[^.?!]{0,20}?\b(?:ship|tack|wind|shore|sail|helm|bow|hove)\b|\bwent about ship\b",
     # put up
@@ -262,9 +262,9 @@ CUE = {
     ("look over", 1): r"\b(?:look|looks|looking|looked)\s+over\b\s+(?:(?:all\s+)?(?:the|a|an|some|his|her|my|your|their|our|its|[\w'\u2019-]+(?:\u2019|')s)\s+){0,2}(?:[\w'\u2019-]+\s+){0,2}\b(?:magazines?|slates?|drawers?|regulations?|toilettes?|entries?|letters?|accounts?|papers?|log[- ]?books?|books?|bags?|furnaces?|water[- ]?pipes?|bills?|clothes|maps?|horses?|hounds?|dogs?|teams?|retinues?|houses?|plans?|notes?|manuscripts?|reports?|lists?|forms?|checks?|proofs?|views?)\b",
     ("look over", 2): r"\blook(?:s|ed|ing)? over\b[^.?!]{0,20}?\b(?:a (?:fault|faults|sin|offence|offense|mistake)|the (?:fault|faults)|their (?:faults|sins))\b",
     # settle down
-    ("settle down", 1): r"\bsettl(?:e|es|ed|ing) down\b[^.?!]{0,20}?\b(?:to (?:some )?(?:position|business|life|work)|in (?:the|a) (?:country|town|village|city|house)|and marry|like an ordinary|for life)\b",
-    ("settle down", 2): r"\bsettl(?:e|es|ed|ing) down\b[^.?!]{0,20}?\b(?:to (?:his|her|their|the|sleep|slumber|work|supper|meal|reading)|again|quietly|into a|state of mind)\b",
-    ("settle down", 3): r"\b(?:bird|pigeon|hen|fowl|butterflies|snow|dust|darkness|night|silence)\b[^.?!]{0,25}?\bsettl(?:e|es|ed|ing) down\b|\bsettl(?:e|es|ed|ing) down\b[^.?!]{0,15}?\b(?:into (?:its|the) nest|on (?:the|his|her) (?:perch|nest|roost))\b",
+    ("settle down", 1): r"\bsettl(?:e|es|ed|ing) down\b[^.?!]{0,20}?\b(?:to (?:some )?(?:position|business|life)|in (?:the|a) (?:country|town|village|city|house)|and marry|like an ordinary|for life)\b",
+    ("settle down", 2): r"\bsettl(?:e|es|ed|ing) down\b(?!\s+in\s+(?:the|a)\s+(?:country|town|village|city|house)\b)[^.?!]{0,20}?\b(?:to (?:his|her|their|the|sleep|slumber|work|supper|meal|reading)|again(?!\s+(?:over|on|upon|into|at|in)\b)|quietly|into a|state of mind)\b",
+    ("settle down", 3): r"\b(?:bird|pigeon|hen|fowl|butterflies|snow|dust|darkness|night|silence)\b[^,;?!]{0,25}?\bsettl(?:e|es|ed|ing) down\b|\bsettl(?:e|es|ed|ing) down\b[^.?!]{0,15}?\b(?:into (?:its|the) nest|on (?:the|his|her) (?:perch|nest|roost))\b",
     # cut off
     ("cut off", 1): r"\bcut(?:s|ting)? off\b[^.?!]{0,20}?\b(?:his (?:hair|head|leg|hand|ear|beard)|her (?:hair|head)|the (?:hair|head|leg|hand|ear|branch)|a (?:piece|slice|end)|the (?:end|top|bits))\b",
     ("cut off", 2): r"\bcut(?:s|ting)? off\b[^.?!]{0,20}?\b(?:the (?:supply|gas|water|electricity|telephone|light|communication)|his (?:words|speech)|her (?:words|speech)|our (?:supplies|retreat)|all (?:communication|supplies))\b|\b(?:was|were|been) cut off\b[^.?!]{0,20}?\b(?:in the middle|mid-sentence|by)\b",
@@ -310,8 +310,8 @@ CUE = {
     ("wake up", 2): r"\b(?:wake|wakes|waking|woke|woken) (?:him|her|them|me|us|you|the \w+) up\b",
     ("wake up", 3): r"\b(?:wake|wakes|waking|woke|woken) up to\b|\b(?:wake|woke) up\b[^.?!]{0,15}?\b(?:reality|the truth|fact|danger)\b",
     # look around
-    ("look around", 1): r"\blook(?:s|ed|ing)? around\b[^.?!]{0,20}?\b(?:him|her|them|me|us|you|about|the (?:room|hall|house|place|street)|and (?:see|saw|found|took))\b",
-    ("look around", 2): r"\blook(?:s|ed|ing)? around\b[^.?!]{0,20}?\bfor\b",
+    ("look around", 1): r"^(?!.*\blook(?:s|ed|ing)? around\b[^.?!]{0,20}?\bfor\b(?!\s+(?:a|the)\s+(?:moment|minute|first time|while|bit|second|long time)\b)).*\blook(?:s|ed|ing)? around\b[^.?!]{0,20}?\b(?:him|her|them|me|us|you|about|the (?:room|hall|house|place|street)|and (?:see|saw|found|took))\b",
+    ("look around", 2): r"\blook(?:s|ed|ing)? around\b[^.?!]{0,20}?\bfor\b(?!\s+(?:a|the)\s+(?:moment|minute|first time|while|bit|second|long time)\b)",
     # run out
     ("run out", 1): r"\b(?:run|runs|running|ran) out of\b[^.?!]{0,20}?\b(?:money|time|patience|supplies|food|fuel|breath|stock|coal|provisions|funds|cash|ideas|things)\b|\b(?:money|time|supplies|food|patience|fuel|provisions|funds)\b[^.?!]{0,20}?\b(?:run|runs|running|ran) out\b",
     ("run out", 2): r"\b(?:run|runs|running|ran) out\b[^.?!]{0,20}?\b(?:lease|policy|term|contract|passport|licence|license|ticket|time (?:is|was))\b",
@@ -626,7 +626,7 @@ CUE = {
     ("let out", 3): r"\blet(?:s|ting)? out\b[^.?!]{0,15}?\b(?:alone|the (?:life|first blow)|into the street|the dog|the gas|to be let out|the bird|the theatre)\b",
     ("let out", 4): r"\blet out\b[^.?!]{0,15}?\b(?:as offices|offices|apartments|floors)\b|\bbeing all let out\b",
     # put aside
-    ("put aside", 1): r"^(?!.*\bput aside\b[^.?!]{0,12}?\b(?:thorns|branches|spray|foliage)\b)(?!.*\bput aside\b[^.?!]{0,15}?\b(?:a stake|two thousand|as much as)\b).*\bput(?:s|ting)? aside\b",
+    ("put aside", 1): r"^(?!.*\bput(?:s|ting)? aside\b[^.?!]{0,12}?\b(?:thorns|branches|spray|foliage)\b)(?!.*\bput(?:s|ting)? aside\b[^.?!]{0,15}?\b(?:a stake|two thousand|as much as)\b).*\bput(?:s|ting)? aside\b",
     ("put aside", 2): r"\bput(?:s|ting)? aside\b[^.?!]{0,15}?\b(?:a (?:stake|sum|portion)|two thousand|as much as I could|money)\b",
     ("put aside", 3): r"\bput(?:s|ting)? aside\b[^.?!]{0,12}?\b(?:thorns|branches|spray|foliage)\b",
     # take back
@@ -659,10 +659,10 @@ CUE = {
     ("go around", 4): r"\bgo(?:es|ing|ne|t)? around\b[^.?!]{0,15}?\b(?:to (?:the|Fitzgerald|a place)|town|very much|looking at people)\b",
     ("go around", 5): r"\bgo(?:es|ing)? around\b[^.?!]{0,15}?\b(?:enough|sufficient)\b|\benough to go around\b",
     # hold back
-    ("hold back", 1): r"\bheld back\b|\bhold(?:s|ing)? back\b[^.?!]{0,15}?\b(?:the (?:pony|cab horse|broom|steed|boughs|gathering)|by (?:the|some)|passengers|policemen|force)\b",
-    ("hold back", 2): r"\bhold(?:s|ing)? back\b[^.?!]{0,15}?\b(?:the (?:urge|impulse)|speech|tears|anger)\b|\bheld back\b[^.?!]{0,12}?\bspeech\b",
-    ("hold back", 3): r"\bhold(?:s|ing)? back\b[^.?!]{0,15}?\b(?:on my cousin|one of his own good cards|if your Cecil|a share|information|the truth)\b",
-    ("hold back", 4): r"\bhold(?:s|ing)? back\b[^.?!]{0,15}?(?:$|[.,])|\bheld back\b[^.?!]{0,12}?\b(?:and let us men|and the latter said)\b|\bholding back\b",
+    ("hold back", 1): r"\b(?:hold(?:s|ing)?|held) back\b(?=\s+(?:(?:the|a|an|his|her|their|my|your|its|our|some|any|this|that|these|those)\s+)?(?:\w+\s+){0,3}?\b(?:pony|ponies|cab horse|broom|brooms|steed|steeds|boughs?|body|bodies|gathering|passengers?|policemen|police|force|masses?|crowd|crowds?)\b)|\bheld back\b(?=\s+(?:by|as\s+by)\b)",
+    ("hold back", 2): r"\b(?:hold(?:s|ing)?|held) back\b[^.?!]{0,15}?\b(?:the (?:urge|impulse)|speech|tears|anger)\b",
+    ("hold back", 3): r"\bhold(?:s|ing)? back\b[^.?!]{0,15}?\b(?:on my cousin|one of his own good cards|if your Cecil|a share|information|the truth)\b|\bheld back\b(?=\s+to\s+be\s+published\b)",
+    ("hold back", 4): r"\bhold(?:s|ing)? back\b(?!\s+(?:the|a|an|his|her|their|my|your|its|our|some|any|no|this|that|these|those|one|all|every|each|what|which|it|them|him|us|you|me|on)\b)\s*(?:$|[.,;!?])|\bheld back\b(?=\s*(?:$|[.,;!?]|\s+(?:if|and|but)\b))|\bhold back\s+and\s+let\s+us\s+men\b",
     # pull off
     ("pull off", 1): r"\bpull(?:s|ed|ing)? off\b[^.?!]{0,15}?\b(?:his (?:shoes|coat|boots|gloves|hat|shirt|jacket|waistcoat|singlet|clothes)|her (?:rings|gloves|hat)|their (?:aprons|coats)|the (?:gloves|hat))\b|\bpulling off his\b",
     ("pull off", 2): r"\bpull(?:s|ed|ing)? off\b[^.?!]{0,15}?\b(?:a (?:trick|sale|deal|coup)|the (?:trick|deal|sale)|his trick)\b",
@@ -671,8 +671,8 @@ CUE = {
     ("go ahead", 1): r"^(?!.*\bgo(?:es|ing|ne|t)? ahead of\b).*\bgo(?:es|ing|ne|t)? ahead\b",
     ("go ahead", 2): r"\bgo(?:es|ing|ne|t)? ahead of\b",
     # put together
-    ("put together", 1): r"^(?!.*\bput together\b[^.?!]{0,20}?\b(?:all the others|the whole|every one)\b)(?!.*\bput together\b[^.?!]{0,15}?\b(?:a phrase|this vision|view)\b).*\bput(?:s|ting)? together\b",
-    ("put together", 2): r"\bput together\b[^.?!]{0,20}?\b(?:all the others|the whole|every one)\b|\b(?:all|whole) [^.?!]{0,20}?put together\b",
+    ("put together", 1): r"^(?!.*\bput together\b[^.?!]{0,20}?\b(?:all the others|the whole|every one)\b)(?!.*\b(?:all|whole)\b(?:(?!\b(?:is|was|were|are|am|has\s+been)\b)[^.?!]){0,20}?\bput together\b)(?!.*\bput together\b[^.?!]{0,15}?\b(?:a phrase|this vision|view)\b).*\bput(?:s|ting)? together\b",
+    ("put together", 2): r"\bput together\b[^.?!]{0,20}?\b(?:all the others|the whole|every one)\b|\b(?:all|whole)\b(?:(?!\b(?:is|was|were|are|am|has\s+been)\b)[^.?!]){0,20}?\bput together\b",
     ("put together", 3): r"\bput together\b[^.?!]{0,15}?\b(?:a phrase|this vision|view)\b",
 # ===== 块 B″ 第七批（2026-10-10 十八续 · 30 词）=====
     # turn around
