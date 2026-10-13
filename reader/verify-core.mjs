@@ -156,8 +156,10 @@ t('一次测验里两种题型各半（语境 5 ＋ 释义 5）',
   const cloze = all.filter(q => q.type === 'phraseCloze')
   const defs = all.filter(q => q.type === 'phraseDefChoice')
   const notEnough = all.filter(q => q.options.length !== 4)
+  // 池大小是**钉子**（防词典/出题器静默缩水）：2026-10-10 收尾轮 ② 删 4 条 `-ing` 垃圾条目
+  // ＋补 3 条正形键（`burn off`／`burn through`／`cool down`）⇒ 400 → 399。
   t(`词组题池 190 → ${all.length} 条（语境 ${cloze.length} ＋ 释义 ${defs.length}），每条都凑满 4 选项`,
-    all.length === 400 && cloze.length === expectedCloze && notEnough.length === 0,
+    all.length === 399 && cloze.length === expectedCloze && notEnough.length === 0,
     `选项不足: ${notEnough.slice(0, 3).map(q => q.word + '=' + q.options.length).join(', ')}`)
   t(`语境档出满 ${expectedCloze} 条（同动词兄弟 ≥ 4 的足额池）`, cloze.length === expectedCloze, `实际 ${cloze.length}`)
   const inPool = new Set(defs.map(q => q.word))
