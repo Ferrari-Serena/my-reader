@@ -1,0 +1,445 @@
+{
+ "meta": {
+  "book": "dr-jekyll-and-mr-hyde",
+  "chapter": "ch-01",
+  "chapter_title": "Story Of The Door",
+  "chapters_sha256": "49b7e7f65e2618422130f5fc71ac04123db39c42d2ccf452fb09afaad502bc5e",
+  "curated_sha256": "8d131331b43f9075dff2ee2e160fd70d0a535765aa9540177e6e5972e182531c",
+  "engine": "re.search(cue, sentence, re.I)；1 命中=unique（显式 marker）或 fallback（兜底）/ ≥2=multi / 0=zero；空 cue 不命中",
+  "gate": "高置信 unique>=12/16 且 高置信误标=0 且 zero<=2/16（兜底命中记 fallback、不计 unique；2026-10-10 Ferrari 批分层）",
+  "n": 16,
+  "unique": 12,
+  "unique_correct": 12,
+  "unique_wrong": 0,
+  "fallback": 3,
+  "fallback_correct": 3,
+  "fallback_wrong": 0,
+  "multi": 0,
+  "zero": 1,
+  "legacy_unique": 15,
+  "legacy_unique_correct": 15,
+  "legacy_recall_inbook": 0.9375,
+  "legacy_gate_pass": true,
+  "cue_tier_cases": 4,
+  "precision_unique": 1.0,
+  "recall_inbook": 0.75,
+  "gate_pass": true,
+  "held_ch02_03": {
+   "n": 17,
+   "unique": 4,
+   "fallback": 4,
+   "multi": 0,
+   "zero": 9
+  }
+ },
+ "rows": [
+  {
+   "para": 0,
+   "base": "come about",
+   "span": "came about",
+   "state": "unique",
+   "rank": 2,
+   "hit_ranks": [
+    2
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "空间义「来到/靠近」（come about r2，古/文学）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 1,
+   "base": "set aside",
+   "span": "set aside",
+   "state": "unique",
+   "rank": 2,
+   "hit_ranks": [
+    2
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "搁置/撇开（set aside r2）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 2,
+   "base": "lay out",
+   "span": "laying out",
+   "state": "unique",
+   "rank": 3,
+   "hit_ranks": [
+    3
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 3,
+   "truth": "花费（lay out r3，spend/invest）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 7,
+   "base": "light up",
+   "span": "lighted up",
+   "state": "fallback",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ],
+   "tier": "low",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "照亮（light up r1）",
+   "rank_ok": true,
+   "ok": false
+  },
+  {
+   "para": 7,
+   "base": "run into",
+   "span": "ran into",
+   "state": "unique",
+   "rank": 2,
+   "hit_ranks": [
+    2
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "相撞（run into r2）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 7,
+   "base": "bring out",
+   "span": "brought out",
+   "state": "unique",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "使显现（bring out r1）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 7,
+   "base": "turn out",
+   "span": "turned out",
+   "state": "unique",
+   "rank": 2,
+   "hit_ranks": [
+    2
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "聚集/出席（turn out r2）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 7,
+   "base": "put in",
+   "span": "put in",
+   "state": "unique",
+   "rank": 4,
+   "hit_ranks": [
+    4
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 4,
+   "truth": "习语「露面」（put in r4）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 7,
+   "base": "stick out",
+   "span": "stick out;",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": [],
+   "tier": "none",
+   "truth_state": "unique",
+   "truth_rank": 3,
+   "truth": "硬撑/不松口（stick out r3）",
+   "rank_ok": false,
+   "ok": false
+  },
+  {
+   "para": 7,
+   "base": "come back",
+   "span": "came back",
+   "state": "fallback",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ],
+   "tier": "low",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "回来（come back r1）",
+   "rank_ok": true,
+   "ok": false
+  },
+  {
+   "para": 7,
+   "base": "point out",
+   "span": "pointing out",
+   "state": "unique",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "指出（point out r1）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 7,
+   "base": "come out",
+   "span": "come out",
+   "state": "unique",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "出来（come out r1）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 7,
+   "base": "set off",
+   "span": "set off,",
+   "state": "fallback",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ],
+   "tier": "low",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "出发（set off r1）",
+   "rank_ok": true,
+   "ok": false
+  },
+  {
+   "para": 7,
+   "base": "in a body",
+   "span": "in a body",
+   "state": "unique",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "全体/一起（in a body r1）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 7,
+   "base": "give in",
+   "span": "gave in",
+   "state": "unique",
+   "rank": 2,
+   "hit_ranks": [
+    2
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "交上/递交（give in r2）",
+   "rank_ok": true,
+   "ok": true
+  },
+  {
+   "para": 14,
+   "base": "look on",
+   "span": "looking on",
+   "state": "unique",
+   "rank": 3,
+   "hit_ranks": [
+    3
+   ],
+   "tier": "high",
+   "truth_state": "unique",
+   "truth_rank": 3,
+   "truth": "朝向（look on r3）",
+   "rank_ok": true,
+   "ok": true
+  }
+ ],
+ "held_ch02_03": [
+  {
+   "chapter": "ch-02",
+   "base": "sit down",
+   "span": "sat down",
+   "state": "unique",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ]
+  },
+  {
+   "chapter": "ch-02",
+   "base": "take away",
+   "span": "taken away,",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": []
+  },
+  {
+   "chapter": "ch-02",
+   "base": "take up",
+   "span": "took up",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": []
+  },
+  {
+   "chapter": "ch-02",
+   "base": "go into",
+   "span": "went into",
+   "state": "fallback",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ]
+  },
+  {
+   "chapter": "ch-02",
+   "base": "sit down",
+   "span": "sat down",
+   "state": "unique",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ]
+  },
+  {
+   "chapter": "ch-02",
+   "base": "put on",
+   "span": "put on",
+   "state": "fallback",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ]
+  },
+  {
+   "chapter": "ch-02",
+   "base": "come across",
+   "span": "come across",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": []
+  },
+  {
+   "chapter": "ch-02",
+   "base": "go by",
+   "span": "went by",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": []
+  },
+  {
+   "chapter": "ch-02",
+   "base": "pass on",
+   "span": "passed on",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": []
+  },
+  {
+   "chapter": "ch-02",
+   "base": "stand by",
+   "span": "stand by",
+   "state": "unique",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ]
+  },
+  {
+   "chapter": "ch-02",
+   "base": "look up",
+   "span": "looking up,",
+   "state": "unique",
+   "rank": 2,
+   "hit_ranks": [
+    2
+   ]
+  },
+  {
+   "chapter": "ch-02",
+   "base": "let in",
+   "span": "let in",
+   "state": "fallback",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ]
+  },
+  {
+   "chapter": "ch-02",
+   "base": "go out",
+   "span": "gone out.",
+   "state": "fallback",
+   "rank": 1,
+   "hit_ranks": [
+    1
+   ]
+  },
+  {
+   "chapter": "ch-02",
+   "base": "go by",
+   "span": "goes by",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": []
+  },
+  {
+   "chapter": "ch-02",
+   "base": "set out",
+   "span": "set out",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": []
+  },
+  {
+   "chapter": "ch-03",
+   "base": "take in",
+   "span": "take in",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": []
+  },
+  {
+   "chapter": "ch-03",
+   "base": "take away",
+   "span": "taken away,",
+   "state": "zero",
+   "rank": null,
+   "hit_ranks": []
+  }
+ ]
+}

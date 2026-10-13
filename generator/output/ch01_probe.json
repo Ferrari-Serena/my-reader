@@ -1,0 +1,180 @@
+{
+ "meta": {
+  "book": "dr-jekyll-and-mr-hyde",
+  "chapter": "ch-01",
+  "chapter_title": "Story Of The Door",
+  "chapters_sha256": "49b7e7f65e2618422130f5fc71ac04123db39c42d2ccf452fb09afaad502bc5e",
+  "curated_sha256": "c266333f4a10cb747ffd7b24ca614c83fca15b8405896db21cd404fb9486c930",
+  "matches_scanParagraph": true,
+  "maxPhraseWords": 3,
+  "note": "span 复算 ＋ 人工本句义标注（预期三态）；truth_rank 已机器校验在库；cue 见 l1_probe.py",
+  "counts": {
+   "unique": 16,
+   "multi": 0,
+   "zero": 0
+  },
+  "hits": 16
+ },
+ "hits": [
+  {
+   "para": 0,
+   "para_id": "p-02-001",
+   "base": "come about",
+   "span": "came about",
+   "sentence": "And to such as these, so long as they came about his chambers, he never marked a shade of change in his demeanour.",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "空间义「来到/靠近」（come about r2，古/文学）"
+  },
+  {
+   "para": 1,
+   "para_id": "p-02-002",
+   "base": "set aside",
+   "span": "set aside",
+   "sentence": "For all that, the two men put the greatest store by these excursions, counted them the chief jewel of each week, and not only set aside occasions of pleasure, but even resisted the calls of business, that they might enjoy them uninterrupted.",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "搁置/撇开（set aside r2）"
+  },
+  {
+   "para": 2,
+   "para_id": "p-02-003",
+   "base": "lay out",
+   "span": "laying out",
+   "sentence": "The inhabitants were all doing well, it seemed and all emulously hoping to do better still, and laying out the surplus of their grains in coquetry; so that the shop fronts stood along that thoroughfare with an air of invitation, like rows of smiling saleswomen.",
+   "truth_state": "unique",
+   "truth_rank": 3,
+   "truth": "花费（lay out r3，spend/invest）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "light up",
+   "span": "lighted up",
+   "sentence": "Street after street and all the folks asleep—street after street, all lighted up as if for a procession and all as empty as a church—till at last I got into that state of mind when a man listens and listens and begins to long for the sight of a policeman.",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "照亮（light up r1）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "run into",
+   "span": "ran into",
+   "sentence": "Well, sir, the two ran into one another naturally enough at the corner; and then came the horrible part of the thing; for the man trampled calmly over the child’s body and left her screaming on the ground.",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "相撞（run into r2）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "bring out",
+   "span": "brought out",
+   "sentence": "He was perfectly cool and made no resistance, but gave me one look, so ugly that it brought out the sweat on me like running.",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "使显现（bring out r1）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "turn out",
+   "span": "turned out",
+   "sentence": "The people who had turned out were the girl’s own family; and pretty soon, the doctor, for whom she had been sent put in his appearance.",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "聚集/出席（turn out r2）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "put in",
+   "span": "put in",
+   "sentence": "The people who had turned out were the girl’s own family; and pretty soon, the doctor, for whom she had been sent put in his appearance.",
+   "truth_state": "unique",
+   "truth_rank": 4,
+   "truth": "习语「露面」（put in r4）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "stick out",
+   "span": "stick out;",
+   "sentence": "Well, we screwed him up to a hundred pounds for the child’s family; he would have clearly liked to stick out; but there was something about the lot of us that meant mischief, and at last he struck.",
+   "truth_state": "unique",
+   "truth_rank": 3,
+   "truth": "硬撑/不松口（stick out r3）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "come back",
+   "span": "came back",
+   "sentence": "The next thing was to get the money; and where do you think he carried us but to that place with the door?—whipped out a key, went in, and presently came back with the matter of ten pounds in gold and a cheque for the balance on Coutts’s, drawn payable to bearer and signed with a name that I can’t mention, though it’s one of the points of my story, but it was a name at least very well known and often printed.",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "回来（come back r1）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "point out",
+   "span": "pointing out",
+   "sentence": "I took the liberty of pointing out to my gentleman that the whole business looked apocryphal, and that a man does not, in real life, walk into a cellar door at four in the morning and come out with another man’s cheque for close upon a hundred pounds.",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "指出（point out r1）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "come out",
+   "span": "come out",
+   "sentence": "I took the liberty of pointing out to my gentleman that the whole business looked apocryphal, and that a man does not, in real life, walk into a cellar door at four in the morning and come out with another man’s cheque for close upon a hundred pounds.",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "出来（come out r1）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "set off",
+   "span": "set off,",
+   "sentence": "So we all set off, the doctor, and the child’s father, and our friend and myself, and passed the rest of the night in my chambers; and next day, when we had breakfasted, went in a body to the bank.",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "出发（set off r1）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "in a body",
+   "span": "in a body",
+   "sentence": "So we all set off, the doctor, and the child’s father, and our friend and myself, and passed the rest of the night in my chambers; and next day, when we had breakfasted, went in a body to the bank.",
+   "truth_state": "unique",
+   "truth_rank": 1,
+   "truth": "全体/一起（in a body r1）"
+  },
+  {
+   "para": 7,
+   "para_id": "p-02-008",
+   "base": "give in",
+   "span": "gave in",
+   "sentence": "I gave in the cheque myself, and said I had every reason to believe it was a forgery.",
+   "truth_state": "unique",
+   "truth_rank": 2,
+   "truth": "交上/递交（give in r2）"
+  },
+  {
+   "para": 14,
+   "para_id": "p-02-015",
+   "base": "look on",
+   "span": "looking on",
+   "sentence": "There are three windows looking on the court on the first floor; none below; the windows are always shut but they’re clean.",
+   "truth_state": "unique",
+   "truth_rank": 3,
+   "truth": "朝向（look on r3）"
+  }
+ ]
+}
