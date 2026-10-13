@@ -43,7 +43,7 @@ const one = (db, sql, ...args) => db.prepare(sql).get(...args) || {}
 
 const SCHEMA = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
 const BASE = 'https://my-reader.ferrari11.com'
-const NOW = Date.UTC(2026, 9, 8, 12, 0, 0)
+const NOW = Date.now()
 
 const CODE_A = 'ABCD2345', CODE_B = 'WXYZ6789'
 const USER_A = 'u_audiogen_a', USER_B = 'u_audiogen_b'
