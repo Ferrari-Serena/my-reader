@@ -252,7 +252,7 @@ CUE = {
     ("take in", 5): r"\b(?:eye|eyes|glance|gaze)\b[^.?!]{0,25}?\b(?:take|takes|taking|took|taken) in\b|\b(?:take|takes|taking|took|taken)\s+in\b[^.?!]{0,20}?\b(?:the (?:clothes|dress|room|scene|figure)|everything|immediately)\b",
     # hold on
     ("hold on", 1): r"\b(?:hold|holds|holding|held) on to\b|\b(?:hold|holds|holding|held) on\b[^.?!]{0,20}?\b(?:the (?:bar|rail|rope|wall|door)|his (?:arm|hand|belt)|her (?:arm|hand))\b",
-    ("hold on", 2): r"\bhold on\b\s*[!,.]|\b(?:hold|holds|holding|held) on\b[^.?!]{0,15}?\b(?:a (?:minute|moment|second|bit)|till|until|wait)\b",
+    ("hold on", 2): r"\bhold on\b\s*[!,.]|\b(?:hold|holds|holding|held) on\b(?!\s+to\b)[^.?!]{0,15}?\b(?:a (?:minute|moment|second|bit)|till|until|wait)\b",
     ("hold on", 3): r"\b(?:hold|holds|holding|held) on\b[^.?!]{0,20}?\b(?:its (?:course|way)|his (?:course|way|ground)|her (?:course|way)|bravely|firmly|despite)\b",
     # call out
     ("call out", 1): r"^(?!.*\b(?:names?|roll|list)\b[^.?!]{0,20}?\b(?:call|calls|calling|called) out\b)(?!.*\b(?:call|calls|calling|called) out\b[^.?!]{0,20}?\b(?:the (?:names?|numbers?|roll|list)|names?|numbers?)\b)(?!.*\b(?:call|calls|calling|called) out\b[^.?!]{0,25}?\b(?:the (?:guard|guards|troops?|soldiers?|militia|police|fire(?:men)?|reserves?|doctor|men|guns|artillery)|to arms|on strike|on all the lines|out of the ranks|(?:eight|ten|twenty|fifty|a hundred|a thousand|thousands? of) (?:men|troops|soldiers)|such guns)\b)(?!.*\b(?:police(?:men)?|militia|troops|fire(?:men)?|guard)\b[^.?!]{0,30}?\b(?:call|calls|calling|called) out\b)(?!.*\bcalled out of (?:the room|the first sleep|my own soul)\b)(?!.*\bcall out May's radiance\b).*\b(?:call|calls|calling|called) out\b",
@@ -287,7 +287,7 @@ CUE = {
     ("put out", 3): r"\bput(?:s|ting)? out\b[^.?!]{0,20}?\b(?:of countenance|about it|very much|by (?:his|her|the|such)|with (?:his|her|the))\b|\b(?:look|looked|seem|seemed|feel|felt)\b[^.?!]{0,15}?\bput out\b",
     ("put out", 4): r"\bput(?:s|ting)? out\b[^.?!]{0,20}?\b(?:a (?:book|novel|volume|pamphlet|report|statement|edition)|books|pamphlets|a new)\b",
     # set out
-    ("set out", 1): r"\bset(?:s|ting)? out\b[^.?!]{0,20}?\b(?:for\b|at (?:dawn|once|daybreak|sunrise)|on (?:a|his|her|the) (?:journey|voyage|trip|way)|together|early\b|from\b)",
+    ("set out", 1): r"\bset(?:s|ting)? out\b[^.?!]{0,20}?\b(?:for\b(?!\s+such\b)|at (?:dawn|once|daybreak|sunrise)|on (?:a|his|her|the) (?:journey|voyage|trip|way)|together|early\b|from\b)",
     ("set out", 2): r"\bset(?:s|ting)? out\b[^.?!]{0,20}?\b(?:to (?:do|make|find|get|prove|show|write|build|seek)|with the (?:intention|purpose|idea))\b",
     ("set out", 3): r"\bset(?:s|ting)? out\b[^.?!]{0,20}?\b(?:the (?:facts|terms|reasons|arguments|grounds|rules|conditions|plans?|goods|wares|table)|in (?:the|a) (?:order|array|line)|clearly|in full)\b",
     # turn in
@@ -308,7 +308,7 @@ CUE = {
     # wake up
     ("wake up", 1): r"\b(?:wake|wakes|waking|woke|woken) up\b[^.?!]{0,20}?\b(?:early|late|at (?:dawn|once|five|six|seven)|in the morning|to find|and (?:found|saw|looked|lay))\b|\b(?:woke|wakened|waked) up\b\s*[.,]",
     ("wake up", 2): r"\b(?:wake|wakes|waking|woke|woken) (?:him|her|them|me|us|you|the \w+) up\b",
-    ("wake up", 3): r"\b(?:wake|wakes|waking|woke|woken) up to\b|\b(?:wake|woke) up\b[^.?!]{0,15}?\b(?:reality|the truth|fact|danger)\b",
+    ("wake up", 3): r"\b(?:wake|wakes|waking|woke|woken) up to\b(?!\s*find\b)|\b(?:wake|woke) up\b[^.?!]{0,15}?\b(?:reality|the truth|fact|danger)\b",
     # look around
     ("look around", 1): r"^(?!.*\blook(?:s|ed|ing)? around\b[^.?!]{0,20}?\bfor\b(?!\s+(?:a|the)\s+(?:moment|minute|first time|while|bit|second|long time)\b)).*\blook(?:s|ed|ing)? around\b[^.?!]{0,20}?\b(?:him|her|them|me|us|you|about|the (?:room|hall|house|place|street)|and (?:see|saw|found|took))\b",
     ("look around", 2): r"\blook(?:s|ed|ing)? around\b[^.?!]{0,20}?\bfor\b(?!\s+(?:a|the)\s+(?:moment|minute|first time|while|bit|second|long time)\b)",
@@ -494,7 +494,7 @@ CUE = {
     ("take down", 4): r"\b(?:take|takes|taking|took|taken) (?:him|her|them|me|us|you) down\b|\bdown a peg\b|\ba peg\b",
     # wear out
     ("wear out", 1): r"\b(?:wear|wears|wearing|wore|worn) out\b[^.?!]{0,15}?\b(?:clothes|clothing|coat|dress|boots?|shoes?|gloves|soles|knees|elbows|stockings|linen|foot-gear|things)\b|\b(?:clothes|boots?|shoes?|coat|dress|garment|things)\b[^.?!]{0,12}?\b(?:worn|wore|wear) out\b",
-    ("wear out", 2): r"\b(?:am|is|are|was|were|be|been|being|feel|look|seem)\b[^.?!]{0,12}?\b(?:quite |nearly |utterly |sore |fairly )?worn out\b|\bworn out (?:with|by)\b|\b(?:fully |quite |nearly )worn out\b",
+    ("wear out", 2): r"(?<!civilities )\b(?:am|is|are|was|were|be|been|being|feel|look|seem)\b[^.?!]{0,12}?\b(?:quite |nearly |utterly |sore |fairly )?worn out\b|\bworn out (?:with|by)\b|\b(?:fully |quite |nearly )worn out\b",
     ("wear out", 3): r"\b(?:wear|wears|wearing|wore|worn) out\b[^.?!]{0,15}?\b(?:every one|furniture|his (?:civilities|information)|its (?:use|usefulness)|their (?:use|usefulness))\b|\bworn out of\b",
     # catch up
     ("catch up", 1): r"\b(?:catch|catches|catching|caught) up\b[^.?!]{0,15}?\b(?:with (?:him|her|me|them|us|you|the|one)|to (?:the|him|her|them|us))\b",
@@ -521,11 +521,11 @@ CUE = {
     # work out
     ("work out", 1): r"\b(?:work|works|working|worked|wrought) out\b[^.?!]{0,15}?\b(?:problems?|sums?|calculations?|prices?|the (?:cost|amount|figures?|total|law)|demonstrations?)\b",
     ("work out", 2): r"\b(?:work|works|working|worked|wrought) out\b[^.?!]{0,20}?\b(?:scheme|plan|method|system|forms?|the (?:scheme|plan|method|system)|a (?:plan|scheme|method)|salvation)\b",
-    ("work out", 3): r"\b(?:work|works|working|worked|wrought) out\b[^.?!]{0,20}?\b(?:problem|meaning|thoughts?|riddle|puzzle|mystery|for (?:myself|himself|herself|yourself)|just how|which)\b",
+    ("work out", 3): r"\b(?:work|works|working|worked|wrought) out\b[^.?!]{0,20}?\b(?:meaning|thoughts?|riddle|puzzle|mystery|for (?:myself|himself|herself|yourself)|just how|which)\b",
     ("work out", 4): r"\b(?:work|works|working|worked|wrought) out\b[^.?!]{0,15}?\b(?:right|well|badly|of themselves|all right|in the end|somehow|dangerously|to (?:its|the) end)\b|\bas it worked out\b|\bhow it will work out\b|\bthings work out\b",
     ("work out", 5): r"\bworked out\b[^.?!]{0,20}?\b(?:in (?:a|the) (?:gym|gymnasium)|for exercise|to keep fit)\b",
     # break through
-    ("break through", 1): r"\b(?:break|breaks|breaking|broke|broken) through\b[^.?!]{0,15}?\b(?:the (?:wall|ice|crust|barrier|barriers|line|lines|bounds|defences|defenses|door|window|ribs|bulkhead|feud|reticence|sham|snow)|into the ring)\b",
+    ("break through", 1): r"\b(?:break|breaks|breaking|broke|broken) through\b[^.?!]{0,15}?\b(?:the (?:wall|ice|crust|barrier|barriers|line|lines|bounds|door|window|ribs|bulkhead|feud|reticence|sham|snow)|into the ring)\b",
     ("break through", 2): r"\b(?:break|breaks|breaking|broke|broken) through\b[^.?!]{0,20}?\b(?:manner|defences of|attitude|shyness|habit|habits)\b",
     ("break through", 3): r"\b(?:break|breaks|breaking|broke|broken) through\b[^.?!]{0,15}?\b(?:the (?:clouds|mist|fog|dawn)|sun|daylight|morning)\b|\b(?:sun|dawn|daylight|light)\b[^.?!]{0,15}?\b(?:break|breaks|breaking|broke) through\b",
     # add in
