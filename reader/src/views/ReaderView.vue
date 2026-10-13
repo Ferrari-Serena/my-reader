@@ -226,7 +226,7 @@ import ChapterNav from '../components/ChapterNav.vue'
 import AudioPlayer from '../components/AudioPlayer.vue'
 import WordPopup from '../components/WordPopup.vue'
 import { useVocabulary } from '../composables/useVocabulary'
-import { usePhrases } from '../composables/usePhrases'
+import { usePhrases, resolvePhraseSense, sentenceForToken } from '../composables/usePhrases'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
 import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { chapterAudioPath, chapterTimingsUrl, fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
@@ -810,7 +810,7 @@ const resolveKey = (word) => resolveDictKey(word, dictionary.value, dictAlias)
 /**
  * 段落词标记预计算（computed，一次计算覆盖 annotated/saved/phrase 三类标记）。
  * 模板不调用方法，只做 O(1) 查找 —— 确保 Vue 响应式依赖追踪可靠。
- * 依赖：currentChapter, vocab.savedSet, phrases.loaded
+ * 依赖：currentChapter, vocab.savedSet（saved/annotated）, phrases.loaded（词组命中即标）
  */
 const paraWordTags = computed(() => {
   const result = {} // paraId → Map<tokenIdx, Set<'annotated'|'saved'|'phrase'>>
@@ -830,7 +830,7 @@ const paraWordTags = computed(() => {
     const annoSet = new Set(para.annotatedWords || [])
 
     // 先标注词组（最高优先级）
-    const phraseSpans = phraseLoaded ? phrases.scanParagraph(para.text, lookupSet) : []
+    const phraseSpans = phraseLoaded ? phrases.scanParagraph(para.text) : []
     for (const s of phraseSpans) {
       for (let i = s.start; i <= s.end; i++) {
         const tags = tagMap.get(i) || new Set()
@@ -859,17 +859,12 @@ const paraWordTags = computed(() => {
 // 当前弹窗词所在的词组（点击词组内词时，弹窗顶部显示词组信息行）
 const selectedPhrase = ref(null)
 
-// 词组 spans（供 WordPopup 显示词组信息），基于同一次扫描
+// 词组 spans（供 WordPopup 显示词组信息），与词组高亮同口径（命中即标）
 const paraPhraseSpans = computed(() => {
   const result = {} // paraId → spans[]
   if (!currentChapter.value || isImageBook.value || !phrases.loaded.value) return result
-  const lookupSet2 = new Set(vocab.savedSet.value)
-  if (lookupSet2.size) {
-    for (const e of Object.values(vocab.words.value)) addEntryForms(lookupSet2, e)
-  }
-  if (!lookupSet2.size) return result
   for (const para of currentChapter.value.paragraphs) {
-    const spans = phrases.scanParagraph(para.text, lookupSet2)
+    const spans = phrases.scanParagraph(para.text)
     if (spans.length) result[para.id] = spans
   }
   return result
@@ -1015,7 +1010,32 @@ async function onWordClick(event) {
 
   const span = (paraPhraseSpans.value[paraId] || [])
     .find(s => tokenIdx >= s.start && tokenIdx <= s.end)
-  selectedPhrase.value = span ? { phrase: span.base, defs: span.defs } : null
+  if (span) {
+    const entry = phrases.get(span.base)
+    const para = currentChapter.value?.paragraphs.find(p => p.id === paraId)
+    if (entry?.senses?.length && para) {
+      const sentence = sentenceForToken(para.text, tokenIdx)
+      selectedPhrase.value = {
+        phrase: span.base,
+        defs: span.defs,
+        literal: entry.literal || '',
+        senses: entry.senses,
+        resolution: resolvePhraseSense(entry, sentence)
+      }
+    } else {
+      selectedPhrase.value = { phrase: span.base, defs: span.defs }
+    }
+  } else {
+    selectedPhrase.value = null
+  }
+
+  // 词组义项弹窗：有 senses 时直接显示四块，不再查单词义
+  if (selectedPhrase.value?.senses?.length) {
+    selectedWord.value = word
+    dictEntry.value = null
+    dictLoading.value = false
+    return
+  }
 
   selectedWord.value = word
   dictLoading.value = true
@@ -1392,7 +1412,7 @@ onBeforeUnmount(() => {
   border-bottom: 2px dotted var(--success-color, #34c759);
 }
 
-/* 词组高亮：收藏词所在的完整词组（连带中间空白，视觉连续）。优先级高于 saved/annotated */
+/* 词组高亮：命中的完整词组（连带中间空白，视觉连续）。命中即标（不要求成分词已收藏）；优先级高于 saved/annotated */
 .word.phrase {
   background: var(--phrase-bg, rgba(52, 199, 89, 0.10));
   border-bottom: 2px solid var(--success-color, #34c759);

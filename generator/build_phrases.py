@@ -23,6 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "reader" / "public" / "data" / "phrases.json"
 STAGING = Path(__file__).resolve().parent / "output" / "sat_phrases_staging.json"
+CURATED = Path(__file__).resolve().parent / "output" / "phrases_senses_curated.json"
 
 # ── 不规则动词变形表：base → (past, past_participle) ──
 IRREGULAR = {
@@ -51,10 +52,43 @@ IRREGULAR = {
 DOUBLE_FINAL = {"put", "set", "get", "let", "cut", "shut", "sit", "run", "drop", "stop",
                 "plan", "slip", "wrap", "chop", "grab", "trim", "pin", "sum", "nod", "pat"}
 
+# ── WordNet 3.0 verb.exc 额外形（并集补全：只增不减）──
+# 来源：Princeton WordNet 3.0 corpora/wordnet/verb.exc（类 BSD）。
+# 只收本词典 verb 列中 WordNet 另收有变体、而 past_forms/third_person/ing_form 生成不到的词。
+# 旧形（含 worked/lighted 这类合法英美变体，以及 beseted/blowed 这类非词残留）一律保留；
+# 残留清理留给下一层（补 IRREGULAR / DOUBLE_FINAL / third_person）。
+WN_EXTRA = {
+    "be": ("am", "are", "is", "were"),
+    "beset": ("besetting",),
+    "blow": ("blew", "blown"),
+    "brag": ("bragged", "bragging"),
+    "build": ("built",),
+    "burn": ("burnt",),
+    "chip": ("chipped", "chipping"),
+    "fit": ("fitted", "fitting"),
+    "light": ("lit",),
+    "speed": ("sped",),
+    "step": ("stepped", "stepping"),
+    "wind": ("wound",),
+    "work": ("wrought",),
+}
+
 PARTICLES = {
     "up", "down", "off", "on", "in", "out", "away", "over", "back", "through",
     "along", "around", "about", "forward", "after", "for", "with", "to", "into",
     "by", "at", "across", "aside", "ahead", "apart", "behind", "together",
+}
+
+# ── staging 头词守卫（收尾轮 ②·2026-10-10）──
+# staging 里混进了「把 -ing 表面形当词头＋粒子尾」的条目（`burning off`／`burning out`／
+# `burning through`／`cooling down`；全表就这 4 条，已扫过）。旧逻辑照抄头词 ⇒ verb="burning" ⇒ 生造
+# `burninged out`／`burninging out`／`burnings out` 这类垃圾屈折，且 `burning out` 与基本形键
+# `burn out`（forms 已含 `burning out`）重复。这里把表面形还原成基本形；「基本形＋同尾词」已在
+# 词典里就整条跳过。**只对这张冻结表生效** —— 免误伤 `string along`／`bring about` 这类
+# 「以 ing 收尾的真基本形」。
+SURFACE_HEADS = {
+    "burning": "burn",
+    "cooling": "cool",
 }
 
 # ── 核心短语动词表：phrase|中文释义 ──
@@ -81,7 +115,9 @@ bring out|出版；使显现
 bring up|抚养；提出
 brush up|温习；刷新
 build up|积累；增强
+burn off|烧掉；耗尽（热量）
 burn out|烧尽；精疲力竭
+burn through|烧穿；迅速消耗
 call back|回电话
 call off|取消
 call on|拜访；号召
@@ -112,6 +148,7 @@ come over|过来
 come through|经历；兑现
 come up|走近；被提及；出现
 come up with|想出；提出
+cool down|冷却；冷静下来
 count on|依靠；指望
 cut back|削减
 cut down|砍倒；减少
@@ -392,10 +429,14 @@ def ing_form(verb):
 
 
 def make_forms(phrase, verb):
-    """短语动词：变位动词部分，尾部小品词不变。"""
+    """短语动词：变位动词部分，尾部小品词不变。
+
+    并集式：生成形 ∪ WordNet 额外形，只增不减。
+    """
     rest = phrase[len(verb):]
     past, pp = past_forms(verb)
     forms = {third_person(verb) + rest, past + rest, pp + rest, ing_form(verb) + rest}
+    forms |= {f + rest for f in WN_EXTRA.get(verb, ())}
     forms.discard(phrase)
     return sorted(forms)
 
@@ -442,6 +483,13 @@ def build():
             t_clean = re.sub(r"\[[^\]]*\]", "", t).strip()
             if not t_clean:
                 continue
+            # 头词守卫（收尾轮 ②）：只在**尾词是粒子**（＝会被当变位动词用）时才动手 ——
+            # `burning rate`／`cooling water` 这类名词搭配保留原键（它们 verb=None、不生成屈折，不起垃圾）。
+            if len(words) == 2 and words[1] in PARTICLES and words[0] in SURFACE_HEADS:
+                base = SURFACE_HEADS[words[0]]
+                if "%s %s" % (base, words[1]) in phrases or p in seen:
+                    continue
+                p, words = "%s %s" % (base, words[1]), [base, words[1]]
             seen.add(p)
             # 判断是否短语动词模式
             is_phrv = words[0] in IRREGULAR or (len(words) == 2 and words[1] in PARTICLES)
@@ -456,6 +504,22 @@ def build():
             added_colloc += 1
             if added_colloc >= 3000:  # 控制文件大小
                 break
+
+    # 自咬闸（收尾轮 ②）：产物里不许再出现「**把 -ing 表面形当动词用**」的条目（＝垃圾屈折的根因）。
+    # 判据看 `verb` 列，不看键名 —— `burning rate` 这类名词搭配（verb=None）是合法条目，不在拦。
+    # 删掉上面的守卫即红 —— 这是防「下次重建再长回来」的那一向。
+    leftovers = [k for k, v in phrases.items() if v.get("verb") in SURFACE_HEADS]
+    assert not leftovers, leftovers
+
+    # ── 4. 注入 curated senses（§5.7 四块弹窗数据源）──
+    # curated 是产品短语的子集；只把 literal/senses 挂到已有条目上，不改 defs/pos/forms。
+    if CURATED.exists():
+        curated = json.loads(CURATED.read_bytes().decode("utf-8-sig"))
+        missing = [k for k in curated if k not in phrases]
+        assert not missing, missing
+        for key, item in curated.items():
+            phrases[key]["literal"] = item.get("literal", "")
+            phrases[key]["senses"] = item.get("senses", [])
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(phrases, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

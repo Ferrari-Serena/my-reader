@@ -8,70 +8,111 @@
             <button class="popup-close" @click="$emit('close')">✕</button>
           </div>
 
-          <!-- 词组信息行：点击的词属于某个已高亮词组时显示 -->
-          <div v-if="phraseInfo" class="phrase-banner">
-            <span class="phrase-text">{{ phraseInfo.phrase }}</span>
-            <span class="phrase-defs">{{ phraseInfo.defs.join('；') }}</span>
-          </div>
+          <!-- 词组义项弹窗（§5.7 四块）：有 senses 时替代单词义区域 -->
+          <div v-if="hasSenses" class="phrase-sense-panel">
+            <section class="sense-block">
+              <h4 class="sense-label">本句义</h4>
+              <p v-if="currentSense" class="sense-current">{{ currentSense.zh }}</p>
+              <p v-else class="sense-unresolved">{{ unresolvedText }}</p>
+            </section>
 
-          <div v-if="loadingDict" class="popup-loading">
-            <div class="spinner-sm"></div>
-            <span>Looking up...</span>
-          </div>
+            <section class="sense-block">
+              <h4 class="sense-label">词典义</h4>
+              <ol class="sense-list">
+                <li
+                  v-for="s in phraseInfo.senses"
+                  :key="s.rank"
+                  class="sense-item"
+                  :class="{ 'sense-hit': isHitSense(s), 'sense-current': isCurrentSense(s) }"
+                >
+                  <span>{{ s.zh }}</span>
+                  <span v-if="isCurrentSense(s)" class="sense-star">（★ ＝ 本句用的这条）</span>
+                </li>
+              </ol>
+            </section>
 
-          <template v-else-if="dictEntry">
-            <div class="popup-meta">
-              <span v-if="dictEntry.phonetic" class="phonetic">{{ dictEntry.phonetic }}</span>
-              <span v-if="dictEntry.partOfSpeech" class="pos-tag">{{ dictEntry.partOfSpeech }}</span>
-              <span v-if="dictEntry.level" class="level-tag" :class="dictEntry.level.toLowerCase()">
-                ★ {{ dictEntry.level }}
-              </span>
-            </div>
-
-            <ol v-if="dictEntry.definitions?.length" class="def-list">
-              <li v-for="(def, i) in dictEntry.definitions" :key="i" class="def-item">
-                {{ def }}
-              </li>
-            </ol>
-            <p v-else-if="dictEntry.notFound" class="notfound-hint">
-              Not found in Merriam-Webster.
-              <template v-if="dictEntry.suggestions?.length">
-                Did you mean: {{ dictEntry.suggestions.slice(0, 3).join(', ') }}?
+            <section class="sense-block">
+              <h4 class="sense-label">为什么是这条</h4>
+              <template v-if="whyPatterns.length">
+                <p v-for="(pattern, i) in whyPatterns" :key="i" class="sense-pattern">
+                  线索：{{ pattern }}
+                </p>
               </template>
-            </p>
+              <p v-else class="sense-unresolved">本句没有足够线索，未能判断。</p>
+            </section>
 
-            <div class="popup-chapters" v-if="dictEntry.chapters?.length">
-              <span class="chapters-label">Appears in:</span>
-              <span v-for="ch in dictEntry.chapters" :key="ch" class="chapter-badge">{{ ch }}</span>
+            <section v-if="phraseInfo.literal" class="sense-block">
+              <h4 class="sense-label">字面义</h4>
+              <p class="sense-literal">{{ phraseInfo.literal }}</p>
+            </section>
+          </div>
+
+          <!-- 无 senses 的词组/普通词：保留旧弹窗内容 -->
+          <template v-else>
+            <div v-if="phraseInfo" class="phrase-banner">
+              <span class="phrase-text">{{ phraseInfo.phrase }}</span>
+              <span class="phrase-defs">{{ phraseInfo.defs.join('；') }}</span>
             </div>
 
-            <div class="popup-actions">
-              <button class="action-btn" @click="speakWord">
-                🔊 Listen
-              </button>
-              <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
-                ✓ In Words
-              </button>
-              <button v-else class="action-btn primary" @click="addToVocab">
-                + Add to Words
-              </button>
+            <div v-if="loadingDict" class="popup-loading">
+              <div class="spinner-sm"></div>
+              <span>Looking up...</span>
+            </div>
+
+            <template v-else-if="dictEntry">
+              <div class="popup-meta">
+                <span v-if="dictEntry.phonetic" class="phonetic">{{ dictEntry.phonetic }}</span>
+                <span v-if="dictEntry.partOfSpeech" class="pos-tag">{{ dictEntry.partOfSpeech }}</span>
+                <span v-if="dictEntry.level" class="level-tag" :class="dictEntry.level.toLowerCase()">
+                  ★ {{ dictEntry.level }}
+                </span>
+              </div>
+
+              <ol v-if="dictEntry.definitions?.length" class="def-list">
+                <li v-for="(def, i) in dictEntry.definitions" :key="i" class="def-item">
+                  {{ def }}
+                </li>
+              </ol>
+              <p v-else-if="dictEntry.notFound" class="notfound-hint">
+                Not found in Merriam-Webster.
+                <template v-if="dictEntry.suggestions?.length">
+                  Did you mean: {{ dictEntry.suggestions.slice(0, 3).join(', ') }}?
+                </template>
+              </p>
+
+              <div class="popup-chapters" v-if="dictEntry.chapters?.length">
+                <span class="chapters-label">Appears in:</span>
+                <span v-for="ch in dictEntry.chapters" :key="ch" class="chapter-badge">{{ ch }}</span>
+              </div>
+
+              <div class="popup-actions">
+                <button class="action-btn" @click="speakWord">
+                  🔊 Listen
+                </button>
+                <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
+                  ✓ In Words
+                </button>
+                <button v-else class="action-btn primary" @click="addToVocab">
+                  + Add to Words
+                </button>
+              </div>
+            </template>
+
+            <div v-else class="popup-notfound">
+              <p>Definition not available offline.</p>
+              <div class="popup-actions">
+                <button class="action-btn" @click="lookupOnline">
+                  🌐 Look up online
+                </button>
+                <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
+                  ✓ In Words
+                </button>
+                <button v-else class="action-btn primary" @click="addToVocab">
+                  + Add to Words
+                </button>
+              </div>
             </div>
           </template>
-
-          <div v-else class="popup-notfound">
-            <p>Definition not available offline.</p>
-            <div class="popup-actions">
-              <button class="action-btn" @click="lookupOnline">
-                🌐 Look up online
-              </button>
-              <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
-                ✓ In Words
-              </button>
-              <button v-else class="action-btn primary" @click="addToVocab">
-                + Add to Words
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </Transition>
@@ -93,6 +134,43 @@ const emit = defineEmits(['close', 'add-vocab', 'remove-vocab'])
 
 const tts = useTTS()
 const visible = computed(() => !!props.word)
+
+const hasSenses = computed(() =>
+  Array.isArray(props.phraseInfo?.senses) && props.phraseInfo.senses.length > 0
+)
+
+const resolution = computed(() =>
+  props.phraseInfo?.resolution || { state: 'zero', rank: null, hits: [] }
+)
+
+const currentSense = computed(() => {
+  if (!hasSenses.value || resolution.value.state !== 'unique' || !resolution.value.rank) return null
+  return props.phraseInfo.senses.find(s => s.rank === resolution.value.rank) || null
+})
+
+const hitRanks = computed(() => (resolution.value.hits || []).map(hit => hit.rank))
+
+const isHitSense = (sense) => hitRanks.value.includes(sense.rank)
+const isCurrentSense = (sense) => currentSense.value?.rank === sense.rank
+
+const unresolvedText = computed(() => {
+  if (resolution.value.state === 'multi' && hitRanks.value.length) {
+    return `未消歧：本句可能指 ${hitRanks.value.map(rank => `第 ${rank} 条`).join(' 或 ')}`
+  }
+  if (resolution.value.state === 'fallback') {
+    return '未消歧：只有低置信线索，仅供参考'
+  }
+  return '未消歧：本句没有足够线索，未能判断'
+})
+
+const whyPatterns = computed(() => {
+  if (currentSense.value) return currentSense.value.pattern ? [currentSense.value.pattern] : []
+  const hits = (resolution.value.hits || []).filter(hit => hit.rank != null)
+  const sources = hits.length
+    ? hits.map(hit => props.phraseInfo.senses.find(s => s.rank === hit.rank)).filter(Boolean)
+    : props.phraseInfo.senses
+  return sources.map(s => s.pattern).filter(Boolean)
+})
 
 function speakWord() {
   tts.speak(props.word)
@@ -188,6 +266,86 @@ export default { inheritAttrs: false }
 .phrase-defs {
   font-size: 13px;
   color: var(--text-secondary, #6e6e73);
+}
+
+/* 词组义项四块弹窗（§5.7） */
+.phrase-sense-panel {
+  margin-bottom: 4px;
+}
+
+.sense-block {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+}
+
+.sense-block:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.sense-label {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary, #6e6e73);
+}
+
+.sense-current {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text-primary, #1d1d1f);
+}
+
+.sense-unresolved {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary, #6e6e73);
+}
+
+.sense-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.sense-item {
+  margin-bottom: 6px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-primary, #1d1d1f);
+}
+
+.sense-item.sense-hit {
+  font-weight: 600;
+}
+
+.sense-item.sense-current {
+  font-weight: 700;
+  color: var(--accent-color, #1a73e8);
+}
+
+.sense-star {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--accent-color, #1a73e8);
+  white-space: nowrap;
+}
+
+.sense-pattern {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary, #6e6e73);
+}
+
+.sense-literal {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary, #1d1d1f);
 }
 
 .spinner-sm {

@@ -56,15 +56,63 @@ function cleanToken(tok) {
   return tok.replace(/^[^a-zA-Z]+|[^a-zA-Z']+$/g, '').toLowerCase()
 }
 
+function cueTier(cue) {
+  if (!cue) return 'none'
+  return cue.startsWith('^') ? 'low' : 'high'
+}
+
+/**
+ * 用命中 token 所在的句子跑 L1（`cue` 正则），与 generator/l1_probe.py 同口径。
+ * 返回 `unique`（唯一显式 marker）/ `fallback`（唯一兜底，只排序、不打 ★）/
+ * `multi`（≥2）/ `zero`（0）；空 cue 不命中。
+ */
+export function resolvePhraseSense(entry, sentence) {
+  const senses = entry?.senses || []
+  const hits = []
+  for (const s of senses) {
+    if (!s.cue) continue
+    const tier = cueTier(s.cue)
+    if (new RegExp(s.cue, 'i').test(sentence || '')) hits.push({ rank: s.rank, tier })
+  }
+  if (hits.length === 1) {
+    return { state: hits[0].tier === 'high' ? 'unique' : 'fallback', rank: hits[0].rank, hits }
+  }
+  if (hits.length >= 2) return { state: 'multi', rank: null, hits }
+  return { state: 'zero', rank: null, hits }
+}
+
+/**
+ * 取 tokenIdx 所在的一句（tokenIdx 与模板里 `para.text.split(/(\s+)/)` 对齐）。
+ * 句边界沿用 scanParagraph 的 SENTENCE_END。
+ */
+export function sentenceForToken(text, tokenIdx) {
+  const tokens = text.split(/(\s+)/)
+  let start = 0
+  for (let i = tokenIdx - 1; i >= 0; i--) {
+    if (/\S/.test(tokens[i]) && SENTENCE_END.test(tokens[i])) {
+      start = i + 1
+      break
+    }
+  }
+  let end = tokens.length - 1
+  for (let i = tokenIdx + 1; i < tokens.length; i++) {
+    if (/\S/.test(tokens[i]) && SENTENCE_END.test(tokens[i])) {
+      end = i
+      break
+    }
+  }
+  return tokens.slice(start, end + 1).join('').replace(/\s+/g, ' ').trim()
+}
+
 /**
  * 扫描段落，返回词组高亮范围。
  * @param {string} text 段落原文
- * @param {Set<string>} savedSet 已收藏词集合（小写 lemma）
+ * 命中即标：不再要求成分词已收藏（2026-10-10 Ferrari 裁「A」）
  * @returns {{start:number, end:number, base:string, defs:string[]}[]}
  *   start/end 为 split(/(\s+)/) 产生的 token 数组下标（含空白 token，与 ReaderView 渲染对齐）
  */
-function scanParagraph(text, savedSet) {
-  if (!state.loaded || !savedSet?.size) return []
+function scanParagraph(text) {
+  if (!state.loaded) return []
 
   const tokens = text.split(/(\s+)/)
   // 词 token 的下标与清洗后文本
@@ -90,10 +138,6 @@ function scanParagraph(text, savedSet) {
       if (slice.some(w => !w.clean)) continue
       const hit = matchIndex.get(key)
       if (!hit) continue
-      // 至少一个成分词已被收藏（含短语动词的 base verb 命中）
-      const containsSaved = slice.some(w => savedSet.has(w.clean))
-        || (hit.entry.verb && savedSet.has(hit.entry.verb))
-      if (!containsSaved) continue
       spans.push({
         start: slice[0].idx,
         end: slice[slice.length - 1].idx,
