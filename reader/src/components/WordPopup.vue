@@ -30,21 +30,6 @@
                 </li>
               </ol>
             </section>
-
-            <section class="sense-block">
-              <h4 class="sense-label">为什么是这条</h4>
-              <template v-if="whyPatterns.length">
-                <p v-for="(pattern, i) in whyPatterns" :key="i" class="sense-pattern">
-                  线索：{{ pattern }}
-                </p>
-              </template>
-              <p v-else class="sense-unresolved">本句没有足够线索，未能判断。</p>
-            </section>
-
-            <section v-if="phraseInfo.literal" class="sense-block">
-              <h4 class="sense-label">字面义</h4>
-              <p class="sense-literal">{{ phraseInfo.literal }}</p>
-            </section>
           </div>
 
           <!-- 无 senses 但有 defs 的词组：直接显示词组义，不再落单词义 -->
@@ -172,22 +157,7 @@ const isHitSense = (sense) => hitRanks.value.includes(sense.rank)
 const isCurrentSense = (sense) => currentSense.value?.rank === sense.rank
 
 const unresolvedText = computed(() => {
-  if (resolution.value.state === 'multi' && hitRanks.value.length) {
-    return `未消歧：本句可能指 ${hitRanks.value.map(rank => `第 ${rank} 条`).join(' 或 ')}`
-  }
-  if (resolution.value.state === 'fallback') {
-    return '未消歧：只有低置信线索，仅供参考'
-  }
-  return '未消歧：本句没有足够线索，未能判断'
-})
-
-const whyPatterns = computed(() => {
-  if (currentSense.value) return currentSense.value.pattern ? [currentSense.value.pattern] : []
-  const hits = (resolution.value.hits || []).filter(hit => hit.rank != null)
-  const sources = hits.length
-    ? hits.map(hit => props.phraseInfo.senses.find(s => s.rank === hit.rank)).filter(Boolean)
-    : props.phraseInfo.senses
-  return sources.map(s => s.pattern).filter(Boolean)
+  return '未确定'
 })
 
 function speakWord() {
