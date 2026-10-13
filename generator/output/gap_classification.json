@@ -3,12 +3,12 @@
   "note": "GAP = phrases_senses_curated.json 中 examples 为空的义项；n_pool/n_cue 取自 cue_corpus_scan.json。",
   "total_words": 320,
   "total_senses": 870,
-  "non_gap": 619,
-  "gap": 251,
+  "non_gap": 635,
+  "gap": 235,
   "A_pool_zero": 30,
   "B_pool_but_no_cue": 182,
-  "C_cue_hit": 39,
-  "words_with_gap": 172
+  "C_cue_hit": 23,
+  "words_with_gap": 161
  },
  "A_pool_zero": [
   {
@@ -322,7 +322,7 @@
    "rank": 3,
    "zh": "（建筑）盖起来／（房屋）着火",
    "en": "to be built; to be destroyed by fire",
-   "n_pool": 416,
+   "n_pool": 417,
    "n_cue": 0
   },
   {
@@ -1720,14 +1720,6 @@
    "n_cue": 4
   },
   {
-   "word": "run into",
-   "rank": 2,
-   "zh": "撞上；撞到",
-   "en": "to hit (sth) with force",
-   "n_pool": 58,
-   "n_cue": 2
-  },
-  {
    "word": "stick out",
    "rank": 2,
    "zh": "显眼；突出（引人注意）",
@@ -1736,19 +1728,11 @@
    "n_cue": 1
   },
   {
-   "word": "come out",
-   "rank": 3,
-   "zh": "结果是；结局（如何）",
-   "en": "to end or result in a particular way",
-   "n_pool": 570,
-   "n_cue": 3
-  },
-  {
    "word": "go out",
    "rank": 2,
    "zh": "（与某人）交往；谈恋爱",
    "en": "to have a romantic relationship with sb",
-   "n_pool": 727,
+   "n_pool": 728,
    "n_cue": 23
   },
   {
@@ -1761,26 +1745,10 @@
   },
   {
    "word": "come on",
-   "rank": 2,
-   "zh": "（灯/机器）亮起；开始运转",
-   "en": "(of a light or machine) to start working",
-   "n_pool": 357,
-   "n_cue": 3
-  },
-  {
-   "word": "come on",
    "rank": 4,
    "zh": "进步；进展（如何）",
    "en": "to make progress; to fare",
    "n_pool": 357,
-   "n_cue": 2
-  },
-  {
-   "word": "get out",
-   "rank": 3,
-   "zh": "（消息/真相）传出去；泄露",
-   "en": "(of news) to become known",
-   "n_pool": 313,
    "n_cue": 2
   },
   {
@@ -1792,84 +1760,12 @@
    "n_cue": 2
   },
   {
-   "word": "go through",
-   "rank": 3,
-   "zh": "（提案/法案）获通过",
-   "en": "to be approved or accepted",
-   "n_pool": 243,
-   "n_cue": 3
-  },
-  {
-   "word": "pick up",
-   "rank": 2,
-   "zh": "（开车）接（人）；搭载",
-   "en": "to give sb a lift",
-   "n_pool": 207,
-   "n_cue": 1
-  },
-  {
-   "word": "make out",
-   "rank": 3,
-   "zh": "填写；开（支票/单据）",
-   "en": "to write out (a cheque/list)",
-   "n_pool": 155,
-   "n_cue": 1
-  },
-  {
-   "word": "hold up",
-   "rank": 4,
-   "zh": "举…为例；作为榜样",
-   "en": "to hold sth up as an example",
-   "n_pool": 126,
-   "n_cue": 4
-  },
-  {
-   "word": "take in",
-   "rank": 2,
-   "zh": "欺骗；哄骗",
-   "en": "to deceive or cheat",
-   "n_pool": 115,
-   "n_cue": 3
-  },
-  {
-   "word": "call out",
-   "rank": 2,
-   "zh": "点名；高声叫（名字/号码）",
-   "en": "to call aloud (names or numbers)",
-   "n_pool": 114,
-   "n_cue": 1
-  },
-  {
-   "word": "set out",
-   "rank": 3,
-   "zh": "陈列；陈述（有条理地摆出）",
-   "en": "to arrange or state in order",
-   "n_pool": 96,
-   "n_cue": 1
-  },
-  {
-   "word": "break off",
-   "rank": 2,
-   "zh": "掰下；折断（一块/一端）",
-   "en": "to detach by breaking",
-   "n_pool": 94,
-   "n_cue": 3
-  },
-  {
    "word": "wake up",
    "rank": 3,
    "zh": "醒悟；意识到（wake up to）",
    "en": "to become aware of",
    "n_pool": 90,
    "n_cue": 6
-  },
-  {
-   "word": "pass on",
-   "rank": 2,
-   "zh": "传授；传播（知识/消息）",
-   "en": "to transmit (knowledge or skills)",
-   "n_pool": 79,
-   "n_cue": 1
   },
   {
    "word": "come through",
@@ -1888,28 +1784,12 @@
    "n_cue": 2
   },
   {
-   "word": "fill out",
-   "rank": 4,
-   "zh": "（帆）鼓起；张开",
-   "en": "(of sails) to swell and take the wind",
-   "n_pool": 12,
-   "n_cue": 2
-  },
-  {
    "word": "bridge over",
    "rank": 2,
    "zh": "帮…渡过（难关）；接济度过",
    "en": "to help sb get through a short period",
    "n_pool": 11,
    "n_cue": 11
-  },
-  {
-   "word": "act up",
-   "rank": 2,
-   "zh": "调皮捣蛋；（孩子）胡闹",
-   "en": "to misbehave; to behave badly",
-   "n_pool": 9,
-   "n_cue": 2
   },
   {
    "word": "knock out",
@@ -1926,14 +1806,6 @@
    "en": "to turn to a different subject",
    "n_pool": 7,
    "n_cue": 1
-  },
-  {
-   "word": "call off",
-   "rank": 1,
-   "zh": "取消；叫停（活动／比赛／计划）",
-   "en": "to cancel or call to a halt",
-   "n_pool": 7,
-   "n_cue": 4
   },
   {
    "word": "think through",

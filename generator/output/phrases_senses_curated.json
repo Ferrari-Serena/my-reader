@@ -755,8 +755,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本 0 条「撞上（物理碰撞）」正据（ran into 全为「跑进／偶遇／陷入」）⇒ 宁缺勿错"
+    "examples": [
+     {
+      "src": "gutenberg:43",
+      "text": "Well, sir, the two ran into one another naturally enough at the corner; and then came the horrible part of the thing; for the man trampled calmly over the child’s body and left her screaming on the ground."
+     }
+    ]
    },
    {
     "id": "run into#run_into.v.01",
@@ -1057,8 +1061,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查「结果是」正据弱（come out of X well 类＝「从中出来」，非「结局」）⇒ 宁缺勿错"
+    "examples": [
+     {
+      "src": "gutenberg:233",
+      "text": "“Things will come out all right.”"
+     }
+    ]
    }
   ]
  },
@@ -1959,8 +1967,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「（灯/机器）亮起」正据（1900 前后语料里 light/electricity 未与 come on 连用）；cue 已收窄为「device 名词 + come on」⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:780",
+      "text": "Then quietly the electric lights came on again, and an uproar of nocturnal newsvendors began in the streets."
+     }
+    ]
    },
    {
     "id": "come on#onset",
@@ -2244,8 +2256,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查「（消息）传出去」正据弱：唯一近例（2084 the story had been got out of him）全句 >300 字符 ⇒ 宁缺勿错"
+    "examples": [
+     {
+      "src": "gutenberg:4397",
+      "text": "If a name gets out, or the watching is suspected, it may have very serious consequences.”"
+     }
+    ]
    }
   ]
  },
@@ -2546,8 +2562,12 @@
     "rank_basis": "manual",
     "src": "drafted",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查「（法案）获通过」正据 0 条（`law` 与 go through 连用者实为「学法律」）⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:233",
+      "text": "“And then if that little real estate deal I’ve got on goes through, we’ll get married,” he said with a great show of earnestness, the while he took his place before the mirror and began brushing his hair."
+     }
+    ]
    }
   ]
  },
@@ -2643,8 +2663,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「（开车）接人／搭载」正据（`picked up` 全为「拿起／拾起」义）⇒ 宁缺勿错"
+    "examples": [
+     {
+      "src": "gutenberg:2641",
+      "text": "For they were to pick up Miss Bartlett at Summer Street, where she had been dropped as the carriage went down, to pay a call on Mr. Beebe’s old mother."
+     }
+    ]
    },
    {
     "id": "pick up#learn.v.02",
@@ -3331,8 +3355,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「填写（支票／单据）」正据 ⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:1056",
+      "text": "He spent long hours in the Oakland and Berkeley libraries, and made out application blanks for membership for himself, his sisters Gertrude and Marian, and Jim, the latter’s consent being obtained at the expense of several glasses of beer."
+     }
+    ]
    }
   ]
  },
@@ -4132,8 +4160,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「hold up … as an example＝举为例」正据（命中句全为「举起手/物」）⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:158",
+      "text": "They might be more safely held up as a pattern."
+     }
+    ]
    },
    {
     "id": "hold up#stand_up.v.06",
@@ -4333,8 +4365,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本「take sb in＝哄骗」正据 0 条（唯一近例 233「been taken in charge」＝被照管）⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:1342",
+      "text": "Elizabeth felt herself completely taken in."
+     }
+    ]
    },
    {
     "id": "take in#absorb.v.02",
@@ -4491,8 +4527,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「call out the names/numbers＝点名」正据（命中句全为「呼叫某人」）⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:4397",
+      "text": "It seemed to Val unspeakably disgusting to have one’s name called out like this in public!"
+     }
+    ]
    },
    {
     "id": "call out#summonout",
@@ -4986,8 +5026,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「set out the facts/terms＝陈述/陈列」正据 ⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:5200",
+      "text": "For the days that I have been living here I will, of course, pay nothing at all, on the contrary I will consider whether to proceed with some kind of action for damages from you, and believe me it would be very easy to set out the grounds for such an action.”"
+     }
+    ]
    }
   ]
  },
@@ -5108,8 +5152,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本「break off a piece/branch＝掰下一块」正据 0 条（broke off 全为「中止/断绝」）⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:11",
+      "text": "However, at last she stretched her arms round it as far as they would go, and broke off a bit of the edge with each hand."
+     }
+    ]
    },
    {
     "id": "break off#sever",
@@ -5825,8 +5873,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「pass on＋知识／消息＝传授／传播」正据（唯一含 message 的 863 句落在目录残留段，前缀 BAUERSTEIN；1056「passed on me」句法同 #1「传给某人」）⇒ 宁缺勿错"
+    "examples": [
+     {
+      "src": "gutenberg:863",
+      "text": "I had had no opportunity as yet of passing on Poirot’s message to Lawrence."
+     }
+    ]
    },
    {
     "id": "pass on#advance.v.01",
@@ -12312,8 +12364,12 @@
     "rank_basis": "manual",
     "src": "drafted",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「fill out＝（帆）鼓起」正据（sails 类线索词仅 1 条且落 default 语境，未取）⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:2701",
+      "text": "For again Starbuck’s downcast eyes lighted up with the stubbornness of life; the subterranean laugh died away; the winds blew on; the sails filled out; the ship heaved and rolled as before."
+     }
+    ]
    }
   ]
  },
@@ -13451,8 +13507,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「act up＝调皮捣蛋」正据（misbehave 类线索词 0 条；池中 5 条全为 act up to 义）⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:543",
+      "text": "About Vida's new jabot which made her look thirty-two (Vida's estimate) or twenty-two (Raymie's estimate), Vida's plan to have the high-school Debating Society give a playlet, and the difficulty of keeping the younger boys well behaved on the playground when a big lubber like Cy Bogart acted up so."
+     }
+    ]
    },
    {
     "id": "act up#act_up.v.02",
@@ -14435,8 +14495,12 @@
     "rank_basis": "manual",
     "src": "wn",
     "reviewed": true,
-    "examples": [],
-    "examples_gap": "回查 44 本无「call off＝取消（活动／比赛）」正据（match／meeting 类线索词 0 条；池中 called off 全为「叫走／引开」义）⇒ 0 条"
+    "examples": [
+     {
+      "src": "gutenberg:8164",
+      "text": "I felt like one of those chappies in the novels who calls off the fight with his wife in the last chapter and decides to forget and forgive."
+     }
+    ]
    },
    {
     "id": "call off#call_off_summon_away",
