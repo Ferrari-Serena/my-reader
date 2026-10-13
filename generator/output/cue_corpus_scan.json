@@ -1,0 +1,8729 @@
+{
+ "meta": {
+  "books": 44,
+  "sentences": 242384,
+  "words": 320,
+  "total": {
+   "unique": 14917,
+   "multi": 0,
+   "zero": 10712,
+   "high": 7064,
+   "fallback": 7853
+  },
+  "note": "cue × 44 本语料；句级三态（保留以保历史可比）＋ 分层 high/fallback（`^` 前缀 ⇒ fallback）；无 gold ⇒ 只作分布体检；zero＝库外用法报警器（高 ⇒ 语料里有库里没有的义）；multi＝同词 cue 混淆；ledger＝形状台账（逐条记名＋精确计数，不从 cue_tier 派生）"
+ },
+ "rows": [
+  {
+   "word": "account for",
+   "sent": 100,
+   "unique": 0,
+   "multi": 0,
+   "zero": 100,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": 1.0,
+   "top_hits": [
+    [
+     [],
+     100
+    ]
+   ]
+  },
+  {
+   "word": "come up with",
+   "sent": 21,
+   "unique": 0,
+   "multi": 0,
+   "zero": 21,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": 1.0,
+   "top_hits": [
+    [
+     [],
+     21
+    ]
+   ]
+  },
+  {
+   "word": "pass out",
+   "sent": 61,
+   "unique": 0,
+   "multi": 0,
+   "zero": 61,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": 1.0,
+   "top_hits": [
+    [
+     [],
+     61
+    ]
+   ]
+  },
+  {
+   "word": "come across",
+   "sent": 69,
+   "unique": 1,
+   "multi": 0,
+   "zero": 68,
+   "high": 1,
+   "fallback": 0,
+   "zero_rate": 0.986,
+   "top_hits": [
+    [
+     [],
+     68
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "step in",
+   "sent": 53,
+   "unique": 1,
+   "multi": 0,
+   "zero": 52,
+   "high": 1,
+   "fallback": 0,
+   "zero_rate": 0.981,
+   "top_hits": [
+    [
+     [],
+     52
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "put off",
+   "sent": 46,
+   "unique": 1,
+   "multi": 0,
+   "zero": 45,
+   "high": 1,
+   "fallback": 0,
+   "zero_rate": 0.978,
+   "top_hits": [
+    [
+     [],
+     45
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "hand in",
+   "sent": 252,
+   "unique": 6,
+   "multi": 0,
+   "zero": 246,
+   "high": 6,
+   "fallback": 0,
+   "zero_rate": 0.976,
+   "top_hits": [
+    [
+     [],
+     246
+    ],
+    [
+     [
+      1
+     ],
+     6
+    ]
+   ]
+  },
+  {
+   "word": "run through",
+   "sent": 68,
+   "unique": 2,
+   "multi": 0,
+   "zero": 66,
+   "high": 2,
+   "fallback": 0,
+   "zero_rate": 0.971,
+   "top_hits": [
+    [
+     [],
+     66
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "run down",
+   "sent": 138,
+   "unique": 5,
+   "multi": 0,
+   "zero": 133,
+   "high": 5,
+   "fallback": 0,
+   "zero_rate": 0.964,
+   "top_hits": [
+    [
+     [],
+     133
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "take on",
+   "sent": 56,
+   "unique": 2,
+   "multi": 0,
+   "zero": 54,
+   "high": 2,
+   "fallback": 0,
+   "zero_rate": 0.964,
+   "top_hits": [
+    [
+     [],
+     54
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "move in",
+   "sent": 54,
+   "unique": 2,
+   "multi": 0,
+   "zero": 52,
+   "high": 2,
+   "fallback": 0,
+   "zero_rate": 0.963,
+   "top_hits": [
+    [
+     [],
+     52
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "give up",
+   "sent": 238,
+   "unique": 13,
+   "multi": 0,
+   "zero": 225,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.945,
+   "top_hits": [
+    [
+     [],
+     225
+    ],
+    [
+     [
+      2
+     ],
+     7
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ]
+   ]
+  },
+  {
+   "word": "bring out",
+   "sent": 66,
+   "unique": 4,
+   "multi": 0,
+   "zero": 62,
+   "high": 4,
+   "fallback": 0,
+   "zero_rate": 0.939,
+   "top_hits": [
+    [
+     [],
+     62
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "fall through",
+   "sent": 15,
+   "unique": 1,
+   "multi": 0,
+   "zero": 14,
+   "high": 1,
+   "fallback": 0,
+   "zero_rate": 0.933,
+   "top_hits": [
+    [
+     [],
+     14
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "come forward",
+   "sent": 62,
+   "unique": 5,
+   "multi": 0,
+   "zero": 57,
+   "high": 5,
+   "fallback": 0,
+   "zero_rate": 0.919,
+   "top_hits": [
+    [
+     [],
+     57
+    ],
+    [
+     [
+      1
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "set down",
+   "sent": 56,
+   "unique": 5,
+   "multi": 0,
+   "zero": 51,
+   "high": 5,
+   "fallback": 0,
+   "zero_rate": 0.911,
+   "top_hits": [
+    [
+     [],
+     51
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "come through",
+   "sent": 75,
+   "unique": 7,
+   "multi": 0,
+   "zero": 68,
+   "high": 7,
+   "fallback": 0,
+   "zero_rate": 0.907,
+   "top_hits": [
+    [
+     [],
+     68
+    ],
+    [
+     [
+      3
+     ],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "pass by",
+   "sent": 52,
+   "unique": 5,
+   "multi": 0,
+   "zero": 47,
+   "high": 5,
+   "fallback": 0,
+   "zero_rate": 0.904,
+   "top_hits": [
+    [
+     [],
+     47
+    ],
+    [
+     [
+      1
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "bring back",
+   "sent": 59,
+   "unique": 6,
+   "multi": 0,
+   "zero": 53,
+   "high": 6,
+   "fallback": 0,
+   "zero_rate": 0.898,
+   "top_hits": [
+    [
+     [],
+     53
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "run out",
+   "sent": 87,
+   "unique": 9,
+   "multi": 0,
+   "zero": 78,
+   "high": 9,
+   "fallback": 0,
+   "zero_rate": 0.897,
+   "top_hits": [
+    [
+     [],
+     78
+    ],
+    [
+     [
+      1
+     ],
+     9
+    ]
+   ]
+  },
+  {
+   "word": "add in",
+   "sent": 18,
+   "unique": 2,
+   "multi": 0,
+   "zero": 16,
+   "high": 2,
+   "fallback": 0,
+   "zero_rate": 0.889,
+   "top_hits": [
+    [
+     [],
+     16
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "get up",
+   "sent": 461,
+   "unique": 52,
+   "multi": 0,
+   "zero": 409,
+   "high": 52,
+   "fallback": 0,
+   "zero_rate": 0.887,
+   "top_hits": [
+    [
+     [],
+     409
+    ],
+    [
+     [
+      2
+     ],
+     33
+    ],
+    [
+     [
+      1
+     ],
+     19
+    ]
+   ]
+  },
+  {
+   "word": "pass on",
+   "sent": 79,
+   "unique": 9,
+   "multi": 0,
+   "zero": 70,
+   "high": 9,
+   "fallback": 0,
+   "zero_rate": 0.886,
+   "top_hits": [
+    [
+     [],
+     70
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "run into",
+   "sent": 58,
+   "unique": 7,
+   "multi": 0,
+   "zero": 51,
+   "high": 7,
+   "fallback": 0,
+   "zero_rate": 0.879,
+   "top_hits": [
+    [
+     [],
+     51
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "take away",
+   "sent": 81,
+   "unique": 11,
+   "multi": 0,
+   "zero": 70,
+   "high": 11,
+   "fallback": 0,
+   "zero_rate": 0.864,
+   "top_hits": [
+    [
+     [],
+     70
+    ],
+    [
+     [
+      2
+     ],
+     9
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "pull out",
+   "sent": 64,
+   "unique": 9,
+   "multi": 0,
+   "zero": 55,
+   "high": 9,
+   "fallback": 0,
+   "zero_rate": 0.859,
+   "top_hits": [
+    [
+     [],
+     55
+    ],
+    [
+     [
+      1
+     ],
+     8
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "break down",
+   "sent": 70,
+   "unique": 10,
+   "multi": 0,
+   "zero": 60,
+   "high": 10,
+   "fallback": 0,
+   "zero_rate": 0.857,
+   "top_hits": [
+    [
+     [],
+     60
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      4
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      5
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "catch up",
+   "sent": 42,
+   "unique": 6,
+   "multi": 0,
+   "zero": 36,
+   "high": 6,
+   "fallback": 0,
+   "zero_rate": 0.857,
+   "top_hits": [
+    [
+     [],
+     36
+    ],
+    [
+     [
+      1
+     ],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "get across",
+   "sent": 7,
+   "unique": 1,
+   "multi": 0,
+   "zero": 6,
+   "high": 1,
+   "fallback": 0,
+   "zero_rate": 0.857,
+   "top_hits": [
+    [
+     [],
+     6
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "put down",
+   "sent": 82,
+   "unique": 12,
+   "multi": 0,
+   "zero": 70,
+   "high": 12,
+   "fallback": 0,
+   "zero_rate": 0.854,
+   "top_hits": [
+    [
+     [],
+     70
+    ],
+    [
+     [
+      1
+     ],
+     10
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "stand by",
+   "sent": 136,
+   "unique": 20,
+   "multi": 0,
+   "zero": 116,
+   "high": 20,
+   "fallback": 0,
+   "zero_rate": 0.853,
+   "top_hits": [
+    [
+     [],
+     116
+    ],
+    [
+     [
+      1
+     ],
+     11
+    ],
+    [
+     [
+      3
+     ],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "hang on",
+   "sent": 54,
+   "unique": 8,
+   "multi": 0,
+   "zero": 46,
+   "high": 8,
+   "fallback": 0,
+   "zero_rate": 0.852,
+   "top_hits": [
+    [
+     [],
+     46
+    ],
+    [
+     [
+      1
+     ],
+     8
+    ]
+   ]
+  },
+  {
+   "word": "turn up",
+   "sent": 124,
+   "unique": 19,
+   "multi": 0,
+   "zero": 105,
+   "high": 19,
+   "fallback": 0,
+   "zero_rate": 0.847,
+   "top_hits": [
+    [
+     [],
+     105
+    ],
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      3
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "go along",
+   "sent": 69,
+   "unique": 11,
+   "multi": 0,
+   "zero": 58,
+   "high": 11,
+   "fallback": 0,
+   "zero_rate": 0.841,
+   "top_hits": [
+    [
+     [],
+     58
+    ],
+    [
+     [
+      1
+     ],
+     8
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "cut out",
+   "sent": 37,
+   "unique": 6,
+   "multi": 0,
+   "zero": 31,
+   "high": 6,
+   "fallback": 0,
+   "zero_rate": 0.838,
+   "top_hits": [
+    [
+     [],
+     31
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "take in",
+   "sent": 115,
+   "unique": 19,
+   "multi": 0,
+   "zero": 96,
+   "high": 19,
+   "fallback": 0,
+   "zero_rate": 0.835,
+   "top_hits": [
+    [
+     [],
+     96
+    ],
+    [
+     [
+      4
+     ],
+     5
+    ],
+    [
+     [
+      3
+     ],
+     5
+    ],
+    [
+     [
+      5
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "put in",
+   "sent": 169,
+   "unique": 28,
+   "multi": 0,
+   "zero": 141,
+   "high": 28,
+   "fallback": 0,
+   "zero_rate": 0.834,
+   "top_hits": [
+    [
+     [],
+     141
+    ],
+    [
+     [
+      1
+     ],
+     13
+    ],
+    [
+     [
+      4
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "turn away",
+   "sent": 140,
+   "unique": 24,
+   "multi": 0,
+   "zero": 116,
+   "high": 24,
+   "fallback": 0,
+   "zero_rate": 0.829,
+   "top_hits": [
+    [
+     [],
+     116
+    ],
+    [
+     [
+      1
+     ],
+     24
+    ]
+   ]
+  },
+  {
+   "word": "absorb in",
+   "sent": 52,
+   "unique": 9,
+   "multi": 0,
+   "zero": 43,
+   "high": 9,
+   "fallback": 0,
+   "zero_rate": 0.827,
+   "top_hits": [
+    [
+     [],
+     43
+    ],
+    [
+     [
+      1
+     ],
+     9
+    ]
+   ]
+  },
+  {
+   "word": "go over",
+   "sent": 178,
+   "unique": 31,
+   "multi": 0,
+   "zero": 147,
+   "high": 31,
+   "fallback": 0,
+   "zero_rate": 0.826,
+   "top_hits": [
+    [
+     [],
+     147
+    ],
+    [
+     [
+      1
+     ],
+     31
+    ]
+   ]
+  },
+  {
+   "word": "break in",
+   "sent": 86,
+   "unique": 15,
+   "multi": 0,
+   "zero": 71,
+   "high": 15,
+   "fallback": 0,
+   "zero_rate": 0.826,
+   "top_hits": [
+    [
+     [],
+     71
+    ],
+    [
+     [
+      2
+     ],
+     13
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "go on",
+   "sent": 1491,
+   "unique": 267,
+   "multi": 0,
+   "zero": 1224,
+   "high": 267,
+   "fallback": 0,
+   "zero_rate": 0.821,
+   "top_hits": [
+    [
+     [],
+     1224
+    ],
+    [
+     [
+      1
+     ],
+     179
+    ],
+    [
+     [
+      2
+     ],
+     87
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "give in",
+   "sent": 55,
+   "unique": 10,
+   "multi": 0,
+   "zero": 45,
+   "high": 10,
+   "fallback": 0,
+   "zero_rate": 0.818,
+   "top_hits": [
+    [
+     [],
+     45
+    ],
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "stand out",
+   "sent": 66,
+   "unique": 12,
+   "multi": 0,
+   "zero": 54,
+   "high": 12,
+   "fallback": 0,
+   "zero_rate": 0.818,
+   "top_hits": [
+    [
+     [],
+     54
+    ],
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "break out",
+   "sent": 138,
+   "unique": 26,
+   "multi": 0,
+   "zero": 112,
+   "high": 26,
+   "fallback": 0,
+   "zero_rate": 0.812,
+   "top_hits": [
+    [
+     [],
+     112
+    ],
+    [
+     [
+      2
+     ],
+     14
+    ],
+    [
+     [
+      1
+     ],
+     11
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "set aside",
+   "sent": 21,
+   "unique": 4,
+   "multi": 0,
+   "zero": 17,
+   "high": 4,
+   "fallback": 0,
+   "zero_rate": 0.81,
+   "top_hits": [
+    [
+     [],
+     17
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "get down",
+   "sent": 67,
+   "unique": 13,
+   "multi": 0,
+   "zero": 54,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.806,
+   "top_hits": [
+    [
+     [],
+     54
+    ],
+    [
+     [
+      1
+     ],
+     11
+    ],
+    [
+     [
+      5
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "mix up",
+   "sent": 36,
+   "unique": 7,
+   "multi": 0,
+   "zero": 29,
+   "high": 7,
+   "fallback": 0,
+   "zero_rate": 0.806,
+   "top_hits": [
+    [
+     [],
+     29
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "look over",
+   "sent": 112,
+   "unique": 22,
+   "multi": 0,
+   "zero": 90,
+   "high": 22,
+   "fallback": 0,
+   "zero_rate": 0.804,
+   "top_hits": [
+    [
+     [],
+     90
+    ],
+    [
+     [
+      1
+     ],
+     22
+    ]
+   ]
+  },
+  {
+   "word": "pull over",
+   "sent": 5,
+   "unique": 1,
+   "multi": 0,
+   "zero": 4,
+   "high": 1,
+   "fallback": 0,
+   "zero_rate": 0.8,
+   "top_hits": [
+    [
+     [],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "break off",
+   "sent": 94,
+   "unique": 19,
+   "multi": 0,
+   "zero": 75,
+   "high": 19,
+   "fallback": 0,
+   "zero_rate": 0.798,
+   "top_hits": [
+    [
+     [],
+     75
+    ],
+    [
+     [
+      1
+     ],
+     10
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "lay out",
+   "sent": 64,
+   "unique": 13,
+   "multi": 0,
+   "zero": 51,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.797,
+   "top_hits": [
+    [
+     [],
+     51
+    ],
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "go through",
+   "sent": 243,
+   "unique": 51,
+   "multi": 0,
+   "zero": 192,
+   "high": 51,
+   "fallback": 0,
+   "zero_rate": 0.79,
+   "top_hits": [
+    [
+     [],
+     192
+    ],
+    [
+     [
+      1
+     ],
+     33
+    ],
+    [
+     [
+      2
+     ],
+     15
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "live on",
+   "sent": 94,
+   "unique": 20,
+   "multi": 0,
+   "zero": 74,
+   "high": 20,
+   "fallback": 0,
+   "zero_rate": 0.787,
+   "top_hits": [
+    [
+     [],
+     74
+    ],
+    [
+     [
+      1
+     ],
+     19
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "carry on",
+   "sent": 74,
+   "unique": 16,
+   "multi": 0,
+   "zero": 58,
+   "high": 16,
+   "fallback": 0,
+   "zero_rate": 0.784,
+   "top_hits": [
+    [
+     [],
+     58
+    ],
+    [
+     [
+      4
+     ],
+     8
+    ],
+    [
+     [
+      3
+     ],
+     4
+    ],
+    [
+     [
+      1
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "set up",
+   "sent": 69,
+   "unique": 15,
+   "multi": 0,
+   "zero": 54,
+   "high": 15,
+   "fallback": 0,
+   "zero_rate": 0.783,
+   "top_hits": [
+    [
+     [],
+     54
+    ],
+    [
+     [
+      1
+     ],
+     10
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "pass away",
+   "sent": 87,
+   "unique": 19,
+   "multi": 0,
+   "zero": 68,
+   "high": 19,
+   "fallback": 0,
+   "zero_rate": 0.782,
+   "top_hits": [
+    [
+     [],
+     68
+    ],
+    [
+     [
+      2
+     ],
+     11
+    ],
+    [
+     [
+      1
+     ],
+     8
+    ]
+   ]
+  },
+  {
+   "word": "settle down",
+   "sent": 110,
+   "unique": 25,
+   "multi": 0,
+   "zero": 85,
+   "high": 25,
+   "fallback": 0,
+   "zero_rate": 0.773,
+   "top_hits": [
+    [
+     [],
+     85
+    ],
+    [
+     [
+      2
+     ],
+     19
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "take up",
+   "sent": 303,
+   "unique": 70,
+   "multi": 0,
+   "zero": 233,
+   "high": 70,
+   "fallback": 0,
+   "zero_rate": 0.769,
+   "top_hits": [
+    [
+     [],
+     233
+    ],
+    [
+     [
+      3
+     ],
+     31
+    ],
+    [
+     [
+      1
+     ],
+     22
+    ],
+    [
+     [
+      2
+     ],
+     17
+    ]
+   ]
+  },
+  {
+   "word": "sit up",
+   "sent": 168,
+   "unique": 40,
+   "multi": 0,
+   "zero": 128,
+   "high": 40,
+   "fallback": 0,
+   "zero_rate": 0.762,
+   "top_hits": [
+    [
+     [],
+     128
+    ],
+    [
+     [
+      1
+     ],
+     25
+    ],
+    [
+     [
+      2
+     ],
+     15
+    ]
+   ]
+  },
+  {
+   "word": "go about",
+   "sent": 134,
+   "unique": 33,
+   "multi": 0,
+   "zero": 101,
+   "high": 33,
+   "fallback": 0,
+   "zero_rate": 0.754,
+   "top_hits": [
+    [
+     [],
+     101
+    ],
+    [
+     [
+      1
+     ],
+     17
+    ],
+    [
+     [
+      2
+     ],
+     11
+    ],
+    [
+     [
+      3
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "make out",
+   "sent": 155,
+   "unique": 39,
+   "multi": 0,
+   "zero": 116,
+   "high": 39,
+   "fallback": 0,
+   "zero_rate": 0.748,
+   "top_hits": [
+    [
+     [],
+     116
+    ],
+    [
+     [
+      2
+     ],
+     25
+    ],
+    [
+     [
+      1
+     ],
+     13
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "look into",
+   "sent": 158,
+   "unique": 41,
+   "multi": 0,
+   "zero": 117,
+   "high": 41,
+   "fallback": 0,
+   "zero_rate": 0.741,
+   "top_hits": [
+    [
+     [],
+     117
+    ],
+    [
+     [
+      1
+     ],
+     41
+    ]
+   ]
+  },
+  {
+   "word": "get through",
+   "sent": 50,
+   "unique": 13,
+   "multi": 0,
+   "zero": 37,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.74,
+   "top_hits": [
+    [
+     [],
+     37
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ],
+    [
+     [
+      4
+     ],
+     4
+    ],
+    [
+     [
+      1
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "get off",
+   "sent": 80,
+   "unique": 21,
+   "multi": 0,
+   "zero": 59,
+   "high": 21,
+   "fallback": 0,
+   "zero_rate": 0.738,
+   "top_hits": [
+    [
+     [],
+     59
+    ],
+    [
+     [
+      1
+     ],
+     18
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "put up",
+   "sent": 135,
+   "unique": 36,
+   "multi": 0,
+   "zero": 99,
+   "high": 36,
+   "fallback": 0,
+   "zero_rate": 0.733,
+   "top_hits": [
+    [
+     [],
+     99
+    ],
+    [
+     [
+      1
+     ],
+     18
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ],
+    [
+     [
+      3
+     ],
+     5
+    ],
+    [
+     [
+      5
+     ],
+     5
+    ],
+    [
+     [
+      4
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "go off",
+   "sent": 189,
+   "unique": 51,
+   "multi": 0,
+   "zero": 138,
+   "high": 51,
+   "fallback": 0,
+   "zero_rate": 0.73,
+   "top_hits": [
+    [
+     [],
+     138
+    ],
+    [
+     [
+      3
+     ],
+     42
+    ],
+    [
+     [
+      1
+     ],
+     8
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "throw away",
+   "sent": 44,
+   "unique": 12,
+   "multi": 0,
+   "zero": 32,
+   "high": 12,
+   "fallback": 0,
+   "zero_rate": 0.727,
+   "top_hits": [
+    [
+     [],
+     32
+    ],
+    [
+     [
+      2
+     ],
+     7
+    ],
+    [
+     [
+      1
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "keep on",
+   "sent": 87,
+   "unique": 24,
+   "multi": 0,
+   "zero": 63,
+   "high": 24,
+   "fallback": 0,
+   "zero_rate": 0.724,
+   "top_hits": [
+    [
+     [],
+     63
+    ],
+    [
+     [
+      1
+     ],
+     23
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "wake up",
+   "sent": 90,
+   "unique": 25,
+   "multi": 0,
+   "zero": 65,
+   "high": 25,
+   "fallback": 0,
+   "zero_rate": 0.722,
+   "top_hits": [
+    [
+     [],
+     65
+    ],
+    [
+     [
+      1
+     ],
+     19
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ]
+   ]
+  },
+  {
+   "word": "throw out",
+   "sent": 46,
+   "unique": 13,
+   "multi": 0,
+   "zero": 33,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.717,
+   "top_hits": [
+    [
+     [],
+     33
+    ],
+    [
+     [
+      3
+     ],
+     7
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "get in",
+   "sent": 161,
+   "unique": 46,
+   "multi": 0,
+   "zero": 115,
+   "high": 46,
+   "fallback": 0,
+   "zero_rate": 0.714,
+   "top_hits": [
+    [
+     [],
+     115
+    ],
+    [
+     [
+      1
+     ],
+     45
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "cut off",
+   "sent": 106,
+   "unique": 31,
+   "multi": 0,
+   "zero": 75,
+   "high": 31,
+   "fallback": 0,
+   "zero_rate": 0.708,
+   "top_hits": [
+    [
+     [],
+     75
+    ],
+    [
+     [
+      3
+     ],
+     19
+    ],
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "break up",
+   "sent": 78,
+   "unique": 23,
+   "multi": 0,
+   "zero": 55,
+   "high": 23,
+   "fallback": 0,
+   "zero_rate": 0.705,
+   "top_hits": [
+    [
+     [],
+     55
+    ],
+    [
+     [
+      2
+     ],
+     16
+    ],
+    [
+     [
+      3
+     ],
+     7
+    ]
+   ]
+  },
+  {
+   "word": "get on",
+   "sent": 244,
+   "unique": 72,
+   "multi": 0,
+   "zero": 172,
+   "high": 72,
+   "fallback": 0,
+   "zero_rate": 0.705,
+   "top_hits": [
+    [
+     [],
+     172
+    ],
+    [
+     [
+      3
+     ],
+     48
+    ],
+    [
+     [
+      2
+     ],
+     16
+    ],
+    [
+     [
+      1
+     ],
+     8
+    ]
+   ]
+  },
+  {
+   "word": "work on",
+   "sent": 43,
+   "unique": 13,
+   "multi": 0,
+   "zero": 30,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.698,
+   "top_hits": [
+    [
+     [],
+     30
+    ],
+    [
+     [
+      1
+     ],
+     7
+    ],
+    [
+     [
+      3
+     ],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "turn over",
+   "sent": 96,
+   "unique": 30,
+   "multi": 0,
+   "zero": 66,
+   "high": 30,
+   "fallback": 0,
+   "zero_rate": 0.688,
+   "top_hits": [
+    [
+     [],
+     66
+    ],
+    [
+     [
+      3
+     ],
+     18
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      4
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "hand over",
+   "sent": 93,
+   "unique": 29,
+   "multi": 0,
+   "zero": 64,
+   "high": 29,
+   "fallback": 0,
+   "zero_rate": 0.688,
+   "top_hits": [
+    [
+     [],
+     64
+    ],
+    [
+     [
+      1
+     ],
+     29
+    ]
+   ]
+  },
+  {
+   "word": "turn out",
+   "sent": 163,
+   "unique": 51,
+   "multi": 0,
+   "zero": 112,
+   "high": 51,
+   "fallback": 0,
+   "zero_rate": 0.687,
+   "top_hits": [
+    [
+     [],
+     112
+    ],
+    [
+     [
+      1
+     ],
+     40
+    ],
+    [
+     [
+      2
+     ],
+     10
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "run after",
+   "sent": 38,
+   "unique": 12,
+   "multi": 0,
+   "zero": 26,
+   "high": 12,
+   "fallback": 0,
+   "zero_rate": 0.684,
+   "top_hits": [
+    [
+     [],
+     26
+    ],
+    [
+     [
+      1
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "see through",
+   "sent": 41,
+   "unique": 13,
+   "multi": 0,
+   "zero": 28,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.683,
+   "top_hits": [
+    [
+     [],
+     28
+    ],
+    [
+     [
+      1
+     ],
+     13
+    ]
+   ]
+  },
+  {
+   "word": "look back",
+   "sent": 158,
+   "unique": 51,
+   "multi": 0,
+   "zero": 107,
+   "high": 51,
+   "fallback": 0,
+   "zero_rate": 0.677,
+   "top_hits": [
+    [
+     [],
+     107
+    ],
+    [
+     [
+      1
+     ],
+     37
+    ],
+    [
+     [
+      2
+     ],
+     14
+    ]
+   ]
+  },
+  {
+   "word": "set out",
+   "sent": 96,
+   "unique": 31,
+   "multi": 0,
+   "zero": 65,
+   "high": 31,
+   "fallback": 0,
+   "zero_rate": 0.677,
+   "top_hits": [
+    [
+     [],
+     65
+    ],
+    [
+     [
+      1
+     ],
+     27
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "stick out",
+   "sent": 21,
+   "unique": 7,
+   "multi": 0,
+   "zero": 14,
+   "high": 7,
+   "fallback": 0,
+   "zero_rate": 0.667,
+   "top_hits": [
+    [
+     [],
+     14
+    ],
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "go by",
+   "sent": 165,
+   "unique": 55,
+   "multi": 0,
+   "zero": 110,
+   "high": 55,
+   "fallback": 0,
+   "zero_rate": 0.667,
+   "top_hits": [
+    [
+     [],
+     110
+    ],
+    [
+     [
+      1
+     ],
+     50
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      4
+     ],
+     2
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "hand out",
+   "sent": 23,
+   "unique": 8,
+   "multi": 0,
+   "zero": 15,
+   "high": 8,
+   "fallback": 0,
+   "zero_rate": 0.652,
+   "top_hits": [
+    [
+     [],
+     15
+    ],
+    [
+     [
+      1
+     ],
+     8
+    ]
+   ]
+  },
+  {
+   "word": "move out",
+   "sent": 23,
+   "unique": 8,
+   "multi": 0,
+   "zero": 15,
+   "high": 8,
+   "fallback": 0,
+   "zero_rate": 0.652,
+   "top_hits": [
+    [
+     [],
+     15
+    ],
+    [
+     [
+      2
+     ],
+     8
+    ]
+   ]
+  },
+  {
+   "word": "run over",
+   "sent": 51,
+   "unique": 18,
+   "multi": 0,
+   "zero": 33,
+   "high": 18,
+   "fallback": 0,
+   "zero_rate": 0.647,
+   "top_hits": [
+    [
+     [],
+     33
+    ],
+    [
+     [
+      1
+     ],
+     12
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ]
+   ]
+  },
+  {
+   "word": "shut up",
+   "sent": 75,
+   "unique": 27,
+   "multi": 0,
+   "zero": 48,
+   "high": 27,
+   "fallback": 0,
+   "zero_rate": 0.64,
+   "top_hits": [
+    [
+     [],
+     48
+    ],
+    [
+     [
+      3
+     ],
+     23
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "work out",
+   "sent": 46,
+   "unique": 17,
+   "multi": 0,
+   "zero": 29,
+   "high": 17,
+   "fallback": 0,
+   "zero_rate": 0.63,
+   "top_hits": [
+    [
+     [],
+     29
+    ],
+    [
+     [
+      4
+     ],
+     7
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "look out",
+   "sent": 329,
+   "unique": 122,
+   "multi": 0,
+   "zero": 207,
+   "high": 122,
+   "fallback": 0,
+   "zero_rate": 0.629,
+   "top_hits": [
+    [
+     [],
+     207
+    ],
+    [
+     [
+      1
+     ],
+     78
+    ],
+    [
+     [
+      2
+     ],
+     44
+    ]
+   ]
+  },
+  {
+   "word": "take down",
+   "sent": 43,
+   "unique": 16,
+   "multi": 0,
+   "zero": 27,
+   "high": 16,
+   "fallback": 0,
+   "zero_rate": 0.628,
+   "top_hits": [
+    [
+     [],
+     27
+    ],
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      2
+     ],
+     6
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "turn in",
+   "sent": 91,
+   "unique": 35,
+   "multi": 0,
+   "zero": 56,
+   "high": 35,
+   "fallback": 0,
+   "zero_rate": 0.615,
+   "top_hits": [
+    [
+     [],
+     56
+    ],
+    [
+     [
+      2
+     ],
+     20
+    ],
+    [
+     [
+      3
+     ],
+     15
+    ]
+   ]
+  },
+  {
+   "word": "come on",
+   "sent": 357,
+   "unique": 138,
+   "multi": 0,
+   "zero": 219,
+   "high": 138,
+   "fallback": 0,
+   "zero_rate": 0.613,
+   "top_hits": [
+    [
+     [],
+     219
+    ],
+    [
+     [
+      1
+     ],
+     108
+    ],
+    [
+     [
+      3
+     ],
+     25
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [
+      4
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "break through",
+   "sent": 38,
+   "unique": 15,
+   "multi": 0,
+   "zero": 23,
+   "high": 15,
+   "fallback": 0,
+   "zero_rate": 0.605,
+   "top_hits": [
+    [
+     [],
+     23
+    ],
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      3
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "lay off",
+   "sent": 5,
+   "unique": 2,
+   "multi": 0,
+   "zero": 3,
+   "high": 2,
+   "fallback": 0,
+   "zero_rate": 0.6,
+   "top_hits": [
+    [
+     [],
+     3
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "wear out",
+   "sent": 44,
+   "unique": 18,
+   "multi": 0,
+   "zero": 26,
+   "high": 18,
+   "fallback": 0,
+   "zero_rate": 0.591,
+   "top_hits": [
+    [
+     [],
+     26
+    ],
+    [
+     [
+      2
+     ],
+     13
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "look after",
+   "sent": 139,
+   "unique": 57,
+   "multi": 0,
+   "zero": 82,
+   "high": 57,
+   "fallback": 0,
+   "zero_rate": 0.59,
+   "top_hits": [
+    [
+     [],
+     82
+    ],
+    [
+     [
+      1
+     ],
+     57
+    ]
+   ]
+  },
+  {
+   "word": "clear up",
+   "sent": 34,
+   "unique": 14,
+   "multi": 0,
+   "zero": 20,
+   "high": 14,
+   "fallback": 0,
+   "zero_rate": 0.588,
+   "top_hits": [
+    [
+     [],
+     20
+    ],
+    [
+     [
+      2
+     ],
+     10
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "look around",
+   "sent": 89,
+   "unique": 37,
+   "multi": 0,
+   "zero": 52,
+   "high": 9,
+   "fallback": 28,
+   "zero_rate": 0.584,
+   "top_hits": [
+    [
+     [],
+     52
+    ],
+    [
+     [
+      1
+     ],
+     28
+    ],
+    [
+     [
+      2
+     ],
+     9
+    ]
+   ]
+  },
+  {
+   "word": "put out",
+   "sent": 93,
+   "unique": 39,
+   "multi": 0,
+   "zero": 54,
+   "high": 39,
+   "fallback": 0,
+   "zero_rate": 0.581,
+   "top_hits": [
+    [
+     [],
+     54
+    ],
+    [
+     [
+      1
+     ],
+     31
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "get over",
+   "sent": 88,
+   "unique": 37,
+   "multi": 0,
+   "zero": 51,
+   "high": 37,
+   "fallback": 0,
+   "zero_rate": 0.58,
+   "top_hits": [
+    [
+     [],
+     51
+    ],
+    [
+     [
+      2
+     ],
+     18
+    ],
+    [
+     [
+      1
+     ],
+     13
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ]
+   ]
+  },
+  {
+   "word": "look through",
+   "sent": 50,
+   "unique": 21,
+   "multi": 0,
+   "zero": 29,
+   "high": 21,
+   "fallback": 0,
+   "zero_rate": 0.58,
+   "top_hits": [
+    [
+     [],
+     29
+    ],
+    [
+     [
+      3
+     ],
+     11
+    ],
+    [
+     [
+      1
+     ],
+     8
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "hold on",
+   "sent": 118,
+   "unique": 50,
+   "multi": 0,
+   "zero": 68,
+   "high": 50,
+   "fallback": 0,
+   "zero_rate": 0.576,
+   "top_hits": [
+    [
+     [],
+     68
+    ],
+    [
+     [
+      1
+     ],
+     26
+    ],
+    [
+     [
+      2
+     ],
+     22
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "check in",
+   "sent": 7,
+   "unique": 3,
+   "multi": 0,
+   "zero": 4,
+   "high": 3,
+   "fallback": 0,
+   "zero_rate": 0.571,
+   "top_hits": [
+    [
+     [],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "come along",
+   "sent": 148,
+   "unique": 64,
+   "multi": 0,
+   "zero": 84,
+   "high": 64,
+   "fallback": 0,
+   "zero_rate": 0.568,
+   "top_hits": [
+    [
+     [],
+     84
+    ],
+    [
+     [
+      1
+     ],
+     61
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "turn on",
+   "sent": 86,
+   "unique": 38,
+   "multi": 0,
+   "zero": 48,
+   "high": 38,
+   "fallback": 0,
+   "zero_rate": 0.558,
+   "top_hits": [
+    [
+     [],
+     48
+    ],
+    [
+     [
+      3
+     ],
+     28
+    ],
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "go after",
+   "sent": 24,
+   "unique": 11,
+   "multi": 0,
+   "zero": 13,
+   "high": 11,
+   "fallback": 0,
+   "zero_rate": 0.542,
+   "top_hits": [
+    [
+     [],
+     13
+    ],
+    [
+     [
+      1
+     ],
+     10
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "turn back",
+   "sent": 93,
+   "unique": 43,
+   "multi": 0,
+   "zero": 50,
+   "high": 43,
+   "fallback": 0,
+   "zero_rate": 0.538,
+   "top_hits": [
+    [
+     [],
+     50
+    ],
+    [
+     [
+      1
+     ],
+     43
+    ]
+   ]
+  },
+  {
+   "word": "put away",
+   "sent": 28,
+   "unique": 13,
+   "multi": 0,
+   "zero": 15,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.536,
+   "top_hits": [
+    [
+     [],
+     15
+    ],
+    [
+     [
+      1
+     ],
+     12
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "turn down",
+   "sent": 28,
+   "unique": 13,
+   "multi": 0,
+   "zero": 15,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.536,
+   "top_hits": [
+    [
+     [],
+     15
+    ],
+    [
+     [
+      3
+     ],
+     7
+    ],
+    [
+     [
+      1
+     ],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "pick out",
+   "sent": 38,
+   "unique": 18,
+   "multi": 0,
+   "zero": 20,
+   "high": 18,
+   "fallback": 0,
+   "zero_rate": 0.526,
+   "top_hits": [
+    [
+     [],
+     20
+    ],
+    [
+     [
+      1
+     ],
+     15
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "come over",
+   "sent": 191,
+   "unique": 92,
+   "multi": 0,
+   "zero": 99,
+   "high": 92,
+   "fallback": 0,
+   "zero_rate": 0.518,
+   "top_hits": [
+    [
+     [],
+     99
+    ],
+    [
+     [
+      2
+     ],
+     71
+    ],
+    [
+     [
+      1
+     ],
+     21
+    ]
+   ]
+  },
+  {
+   "word": "bring down",
+   "sent": 26,
+   "unique": 13,
+   "multi": 0,
+   "zero": 13,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.5,
+   "top_hits": [
+    [
+     [],
+     13
+    ],
+    [
+     [
+      2
+     ],
+     6
+    ],
+    [
+     [
+      4
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "let out",
+   "sent": 24,
+   "unique": 12,
+   "multi": 0,
+   "zero": 12,
+   "high": 12,
+   "fallback": 0,
+   "zero_rate": 0.5,
+   "top_hits": [
+    [
+     [],
+     12
+    ],
+    [
+     [
+      3
+     ],
+     4
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      4
+     ],
+     2
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "take back",
+   "sent": 24,
+   "unique": 12,
+   "multi": 0,
+   "zero": 12,
+   "high": 12,
+   "fallback": 0,
+   "zero_rate": 0.5,
+   "top_hits": [
+    [
+     [],
+     12
+    ],
+    [
+     [
+      3
+     ],
+     4
+    ],
+    [
+     [
+      1
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [
+      4
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "make up",
+   "sent": 324,
+   "unique": 171,
+   "multi": 0,
+   "zero": 153,
+   "high": 171,
+   "fallback": 0,
+   "zero_rate": 0.472,
+   "top_hits": [
+    [
+     [],
+     153
+    ],
+    [
+     [
+      6
+     ],
+     137
+    ],
+    [
+     [
+      5
+     ],
+     23
+    ],
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "bring up",
+   "sent": 127,
+   "unique": 68,
+   "multi": 0,
+   "zero": 59,
+   "high": 68,
+   "fallback": 0,
+   "zero_rate": 0.465,
+   "top_hits": [
+    [
+     [],
+     59
+    ],
+    [
+     [
+      1
+     ],
+     52
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ],
+    [
+     [
+      4
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "follow up",
+   "sent": 35,
+   "unique": 19,
+   "multi": 0,
+   "zero": 16,
+   "high": 19,
+   "fallback": 0,
+   "zero_rate": 0.457,
+   "top_hits": [
+    [
+     [],
+     16
+    ],
+    [
+     [
+      1
+     ],
+     10
+    ],
+    [
+     [
+      2
+     ],
+     9
+    ]
+   ]
+  },
+  {
+   "word": "cut down",
+   "sent": 22,
+   "unique": 12,
+   "multi": 0,
+   "zero": 10,
+   "high": 12,
+   "fallback": 0,
+   "zero_rate": 0.455,
+   "top_hits": [
+    [
+     [],
+     10
+    ],
+    [
+     [
+      1
+     ],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "give out",
+   "sent": 36,
+   "unique": 20,
+   "multi": 0,
+   "zero": 16,
+   "high": 20,
+   "fallback": 0,
+   "zero_rate": 0.444,
+   "top_hits": [
+    [
+     [],
+     16
+    ],
+    [
+     [
+      3
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     7
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      4
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "stand up",
+   "sent": 228,
+   "unique": 127,
+   "multi": 0,
+   "zero": 101,
+   "high": 7,
+   "fallback": 120,
+   "zero_rate": 0.443,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     120
+    ],
+    [
+     [],
+     101
+    ],
+    [
+     [
+      3
+     ],
+     7
+    ]
+   ]
+  },
+  {
+   "word": "cut in",
+   "sent": 26,
+   "unique": 15,
+   "multi": 0,
+   "zero": 11,
+   "high": 0,
+   "fallback": 15,
+   "zero_rate": 0.423,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     15
+    ],
+    [
+     [],
+     11
+    ]
+   ]
+  },
+  {
+   "word": "back up",
+   "sent": 19,
+   "unique": 11,
+   "multi": 0,
+   "zero": 8,
+   "high": 11,
+   "fallback": 0,
+   "zero_rate": 0.421,
+   "top_hits": [
+    [
+     [],
+     8
+    ],
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "pass down",
+   "sent": 22,
+   "unique": 13,
+   "multi": 0,
+   "zero": 9,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.409,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     12
+    ],
+    [
+     [],
+     9
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "pull off",
+   "sent": 22,
+   "unique": 13,
+   "multi": 0,
+   "zero": 9,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.409,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [],
+     9
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "hold out",
+   "sent": 152,
+   "unique": 90,
+   "multi": 0,
+   "zero": 62,
+   "high": 90,
+   "fallback": 0,
+   "zero_rate": 0.408,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     84
+    ],
+    [
+     [],
+     62
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "move on",
+   "sent": 54,
+   "unique": 33,
+   "multi": 0,
+   "zero": 21,
+   "high": 33,
+   "fallback": 0,
+   "zero_rate": 0.389,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     33
+    ],
+    [
+     [],
+     21
+    ]
+   ]
+  },
+  {
+   "word": "come off",
+   "sent": 49,
+   "unique": 30,
+   "multi": 0,
+   "zero": 19,
+   "high": 30,
+   "fallback": 0,
+   "zero_rate": 0.388,
+   "top_hits": [
+    [
+     [],
+     19
+    ],
+    [
+     [
+      1
+     ],
+     16
+    ],
+    [
+     [
+      3
+     ],
+     9
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "come out",
+   "sent": 570,
+   "unique": 351,
+   "multi": 0,
+   "zero": 219,
+   "high": 351,
+   "fallback": 0,
+   "zero_rate": 0.384,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     345
+    ],
+    [
+     [],
+     219
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "throw up",
+   "sent": 45,
+   "unique": 28,
+   "multi": 0,
+   "zero": 17,
+   "high": 28,
+   "fallback": 0,
+   "zero_rate": 0.378,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     24
+    ],
+    [
+     [],
+     17
+    ],
+    [
+     [
+      3
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "go around",
+   "sent": 22,
+   "unique": 14,
+   "multi": 0,
+   "zero": 8,
+   "high": 14,
+   "fallback": 0,
+   "zero_rate": 0.364,
+   "top_hits": [
+    [
+     [],
+     8
+    ],
+    [
+     [
+      4
+     ],
+     7
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "take off",
+   "sent": 152,
+   "unique": 99,
+   "multi": 0,
+   "zero": 53,
+   "high": 99,
+   "fallback": 0,
+   "zero_rate": 0.349,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     99
+    ],
+    [
+     [],
+     53
+    ]
+   ]
+  },
+  {
+   "word": "run across",
+   "sent": 29,
+   "unique": 19,
+   "multi": 0,
+   "zero": 10,
+   "high": 19,
+   "fallback": 0,
+   "zero_rate": 0.345,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     12
+    ],
+    [
+     [],
+     10
+    ],
+    [
+     [
+      1
+     ],
+     7
+    ]
+   ]
+  },
+  {
+   "word": "hang up",
+   "sent": 32,
+   "unique": 21,
+   "multi": 0,
+   "zero": 11,
+   "high": 21,
+   "fallback": 0,
+   "zero_rate": 0.344,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     16
+    ],
+    [
+     [],
+     11
+    ],
+    [
+     [
+      1
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "wrap up",
+   "sent": 30,
+   "unique": 20,
+   "multi": 0,
+   "zero": 10,
+   "high": 20,
+   "fallback": 0,
+   "zero_rate": 0.333,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     10
+    ],
+    [
+     [],
+     10
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "build up",
+   "sent": 25,
+   "unique": 17,
+   "multi": 0,
+   "zero": 8,
+   "high": 17,
+   "fallback": 0,
+   "zero_rate": 0.32,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     17
+    ],
+    [
+     [],
+     8
+    ]
+   ]
+  },
+  {
+   "word": "drop off",
+   "sent": 23,
+   "unique": 16,
+   "multi": 0,
+   "zero": 7,
+   "high": 16,
+   "fallback": 0,
+   "zero_rate": 0.304,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     6
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "look up",
+   "sent": 461,
+   "unique": 325,
+   "multi": 0,
+   "zero": 136,
+   "high": 325,
+   "fallback": 0,
+   "zero_rate": 0.295,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     321
+    ],
+    [
+     [],
+     136
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "sit back",
+   "sent": 24,
+   "unique": 17,
+   "multi": 0,
+   "zero": 7,
+   "high": 3,
+   "fallback": 14,
+   "zero_rate": 0.292,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     14
+    ],
+    [
+     [],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "blow up",
+   "sent": 18,
+   "unique": 13,
+   "multi": 0,
+   "zero": 5,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.278,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     6
+    ],
+    [
+     [],
+     5
+    ],
+    [
+     [
+      3
+     ],
+     4
+    ],
+    [
+     [
+      1
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "fill up",
+   "sent": 33,
+   "unique": 24,
+   "multi": 0,
+   "zero": 9,
+   "high": 24,
+   "fallback": 0,
+   "zero_rate": 0.273,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     15
+    ],
+    [
+     [],
+     9
+    ],
+    [
+     [
+      2
+     ],
+     7
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "show up",
+   "sent": 26,
+   "unique": 19,
+   "multi": 0,
+   "zero": 7,
+   "high": 19,
+   "fallback": 0,
+   "zero_rate": 0.269,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     10
+    ],
+    [
+     [],
+     7
+    ],
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "turn off",
+   "sent": 15,
+   "unique": 11,
+   "multi": 0,
+   "zero": 4,
+   "high": 11,
+   "fallback": 0,
+   "zero_rate": 0.267,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     8
+    ],
+    [
+     [],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "run away",
+   "sent": 187,
+   "unique": 138,
+   "multi": 0,
+   "zero": 49,
+   "high": 138,
+   "fallback": 0,
+   "zero_rate": 0.262,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     137
+    ],
+    [
+     [],
+     49
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "hand down",
+   "sent": 16,
+   "unique": 12,
+   "multi": 0,
+   "zero": 4,
+   "high": 2,
+   "fallback": 10,
+   "zero_rate": 0.25,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     10
+    ],
+    [
+     [],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "get along",
+   "sent": 47,
+   "unique": 36,
+   "multi": 0,
+   "zero": 11,
+   "high": 36,
+   "fallback": 0,
+   "zero_rate": 0.234,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     26
+    ],
+    [
+     [],
+     11
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "carry out",
+   "sent": 69,
+   "unique": 53,
+   "multi": 0,
+   "zero": 16,
+   "high": 53,
+   "fallback": 0,
+   "zero_rate": 0.232,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     53
+    ],
+    [
+     [],
+     16
+    ]
+   ]
+  },
+  {
+   "word": "get away",
+   "sent": 173,
+   "unique": 134,
+   "multi": 0,
+   "zero": 39,
+   "high": 134,
+   "fallback": 0,
+   "zero_rate": 0.225,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     118
+    ],
+    [
+     [],
+     39
+    ],
+    [
+     [
+      3
+     ],
+     16
+    ]
+   ]
+  },
+  {
+   "word": "leave out",
+   "sent": 28,
+   "unique": 22,
+   "multi": 0,
+   "zero": 6,
+   "high": 6,
+   "fallback": 16,
+   "zero_rate": 0.214,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     16
+    ],
+    [
+     [],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     6
+    ]
+   ]
+  },
+  {
+   "word": "speak out",
+   "sent": 35,
+   "unique": 28,
+   "multi": 0,
+   "zero": 7,
+   "high": 0,
+   "fallback": 28,
+   "zero_rate": 0.2,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     28
+    ],
+    [
+     [],
+     7
+    ]
+   ]
+  },
+  {
+   "word": "keep out",
+   "sent": 42,
+   "unique": 35,
+   "multi": 0,
+   "zero": 7,
+   "high": 35,
+   "fallback": 0,
+   "zero_rate": 0.167,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     30
+    ],
+    [
+     [],
+     7
+    ],
+    [
+     [
+      1
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "keep back",
+   "sent": 18,
+   "unique": 15,
+   "multi": 0,
+   "zero": 3,
+   "high": 15,
+   "fallback": 0,
+   "zero_rate": 0.167,
+   "top_hits": [
+    [
+     [
+      4
+     ],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ],
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [],
+     3
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "go ahead",
+   "sent": 21,
+   "unique": 18,
+   "multi": 0,
+   "zero": 3,
+   "high": 1,
+   "fallback": 17,
+   "zero_rate": 0.143,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     17
+    ],
+    [
+     [],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "fall out",
+   "sent": 36,
+   "unique": 31,
+   "multi": 0,
+   "zero": 5,
+   "high": 31,
+   "fallback": 0,
+   "zero_rate": 0.139,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     18
+    ],
+    [
+     [
+      3
+     ],
+     11
+    ],
+    [
+     [],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "light up",
+   "sent": 74,
+   "unique": 64,
+   "multi": 0,
+   "zero": 10,
+   "high": 17,
+   "fallback": 47,
+   "zero_rate": 0.135,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     47
+    ],
+    [
+     [
+      2
+     ],
+     17
+    ],
+    [
+     [],
+     10
+    ]
+   ]
+  },
+  {
+   "word": "warm up",
+   "sent": 8,
+   "unique": 7,
+   "multi": 0,
+   "zero": 1,
+   "high": 7,
+   "fallback": 0,
+   "zero_rate": 0.125,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     6
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ],
+    [
+     [],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "count on",
+   "sent": 27,
+   "unique": 25,
+   "multi": 0,
+   "zero": 2,
+   "high": 25,
+   "fallback": 0,
+   "zero_rate": 0.074,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     25
+    ],
+    [
+     [],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "call on",
+   "sent": 139,
+   "unique": 129,
+   "multi": 0,
+   "zero": 10,
+   "high": 25,
+   "fallback": 104,
+   "zero_rate": 0.072,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     104
+    ],
+    [
+     [
+      2
+     ],
+     25
+    ],
+    [
+     [],
+     10
+    ]
+   ]
+  },
+  {
+   "word": "go up",
+   "sent": 417,
+   "unique": 388,
+   "multi": 0,
+   "zero": 29,
+   "high": 3,
+   "fallback": 385,
+   "zero_rate": 0.07,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     385
+    ],
+    [
+     [],
+     29
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "go back",
+   "sent": 461,
+   "unique": 430,
+   "multi": 0,
+   "zero": 31,
+   "high": 6,
+   "fallback": 424,
+   "zero_rate": 0.067,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     424
+    ],
+    [
+     [],
+     31
+    ],
+    [
+     [
+      2
+     ],
+     6
+    ]
+   ]
+  },
+  {
+   "word": "look down on",
+   "sent": 31,
+   "unique": 29,
+   "multi": 0,
+   "zero": 2,
+   "high": 3,
+   "fallback": 26,
+   "zero_rate": 0.065,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     26
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "hold up",
+   "sent": 126,
+   "unique": 118,
+   "multi": 0,
+   "zero": 8,
+   "high": 118,
+   "fallback": 0,
+   "zero_rate": 0.063,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     101
+    ],
+    [
+     [],
+     8
+    ],
+    [
+     [
+      5
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     5
+    ],
+    [
+     [
+      4
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "wipe out",
+   "sent": 17,
+   "unique": 16,
+   "multi": 0,
+   "zero": 1,
+   "high": 16,
+   "fallback": 0,
+   "zero_rate": 0.059,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     8
+    ],
+    [
+     [
+      2
+     ],
+     8
+    ],
+    [
+     [],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "come back",
+   "sent": 647,
+   "unique": 618,
+   "multi": 0,
+   "zero": 29,
+   "high": 20,
+   "fallback": 598,
+   "zero_rate": 0.045,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     598
+    ],
+    [
+     [],
+     29
+    ],
+    [
+     [
+      2
+     ],
+     20
+    ]
+   ]
+  },
+  {
+   "word": "grow up",
+   "sent": 88,
+   "unique": 84,
+   "multi": 0,
+   "zero": 4,
+   "high": 3,
+   "fallback": 81,
+   "zero_rate": 0.045,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     81
+    ],
+    [
+     [],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "call out",
+   "sent": 114,
+   "unique": 110,
+   "multi": 0,
+   "zero": 4,
+   "high": 5,
+   "fallback": 105,
+   "zero_rate": 0.035,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     105
+    ],
+    [
+     [],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "set off",
+   "sent": 94,
+   "unique": 91,
+   "multi": 0,
+   "zero": 3,
+   "high": 1,
+   "fallback": 90,
+   "zero_rate": 0.032,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     90
+    ],
+    [
+     [],
+     3
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "look on",
+   "sent": 167,
+   "unique": 162,
+   "multi": 0,
+   "zero": 5,
+   "high": 26,
+   "fallback": 136,
+   "zero_rate": 0.03,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     136
+    ],
+    [
+     [
+      2
+     ],
+     23
+    ],
+    [
+     [],
+     5
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "go out",
+   "sent": 728,
+   "unique": 706,
+   "multi": 0,
+   "zero": 22,
+   "high": 39,
+   "fallback": 667,
+   "zero_rate": 0.03,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     667
+    ],
+    [
+     [
+      2
+     ],
+     23
+    ],
+    [
+     [],
+     22
+    ],
+    [
+     [
+      3
+     ],
+     16
+    ]
+   ]
+  },
+  {
+   "word": "go down",
+   "sent": 497,
+   "unique": 482,
+   "multi": 0,
+   "zero": 15,
+   "high": 16,
+   "fallback": 466,
+   "zero_rate": 0.03,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     466
+    ],
+    [
+     [],
+     15
+    ],
+    [
+     [
+      2
+     ],
+     15
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "go away",
+   "sent": 358,
+   "unique": 350,
+   "multi": 0,
+   "zero": 8,
+   "high": 0,
+   "fallback": 350,
+   "zero_rate": 0.022,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     350
+    ],
+    [
+     [],
+     8
+    ]
+   ]
+  },
+  {
+   "word": "come in",
+   "sent": 779,
+   "unique": 765,
+   "multi": 0,
+   "zero": 14,
+   "high": 9,
+   "fallback": 756,
+   "zero_rate": 0.018,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     756
+    ],
+    [
+     [],
+     14
+    ],
+    [
+     [
+      2
+     ],
+     6
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "come down",
+   "sent": 424,
+   "unique": 420,
+   "multi": 0,
+   "zero": 4,
+   "high": 3,
+   "fallback": 417,
+   "zero_rate": 0.009,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     417
+    ],
+    [
+     [],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "put on",
+   "sent": 269,
+   "unique": 268,
+   "multi": 0,
+   "zero": 1,
+   "high": 12,
+   "fallback": 256,
+   "zero_rate": 0.004,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     256
+    ],
+    [
+     [
+      4
+     ],
+     10
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "bring about",
+   "sent": 22,
+   "unique": 22,
+   "multi": 0,
+   "zero": 0,
+   "high": 22,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     22
+    ]
+   ]
+  },
+  {
+   "word": "point out",
+   "sent": 112,
+   "unique": 112,
+   "multi": 0,
+   "zero": 0,
+   "high": 112,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     112
+    ]
+   ]
+  },
+  {
+   "word": "look forward to",
+   "sent": 59,
+   "unique": 59,
+   "multi": 0,
+   "zero": 0,
+   "high": 59,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     59
+    ]
+   ]
+  },
+  {
+   "word": "put up with",
+   "sent": 45,
+   "unique": 45,
+   "multi": 0,
+   "zero": 0,
+   "high": 45,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     45
+    ]
+   ]
+  },
+  {
+   "word": "come about",
+   "sent": 49,
+   "unique": 49,
+   "multi": 0,
+   "zero": 0,
+   "high": 7,
+   "fallback": 42,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     42
+    ],
+    [
+     [
+      2
+     ],
+     7
+    ]
+   ]
+  },
+  {
+   "word": "in a body",
+   "sent": 14,
+   "unique": 14,
+   "multi": 0,
+   "zero": 0,
+   "high": 14,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     14
+    ]
+   ]
+  },
+  {
+   "word": "sit down",
+   "sent": 754,
+   "unique": 754,
+   "multi": 0,
+   "zero": 0,
+   "high": 754,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     754
+    ]
+   ]
+  },
+  {
+   "word": "go into",
+   "sent": 423,
+   "unique": 423,
+   "multi": 0,
+   "zero": 0,
+   "high": 50,
+   "fallback": 373,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     373
+    ],
+    [
+     [
+      3
+     ],
+     29
+    ],
+    [
+     [
+      2
+     ],
+     21
+    ]
+   ]
+  },
+  {
+   "word": "come up",
+   "sent": 390,
+   "unique": 390,
+   "multi": 0,
+   "zero": 0,
+   "high": 4,
+   "fallback": 386,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     386
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "get out",
+   "sent": 313,
+   "unique": 313,
+   "multi": 0,
+   "zero": 0,
+   "high": 29,
+   "fallback": 284,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     284
+    ],
+    [
+     [
+      2
+     ],
+     27
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "find out",
+   "sent": 281,
+   "unique": 281,
+   "multi": 0,
+   "zero": 0,
+   "high": 32,
+   "fallback": 249,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     249
+    ],
+    [
+     [
+      2
+     ],
+     32
+    ]
+   ]
+  },
+  {
+   "word": "pick up",
+   "sent": 207,
+   "unique": 207,
+   "multi": 0,
+   "zero": 0,
+   "high": 5,
+   "fallback": 202,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     202
+    ],
+    [
+     [
+      3
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "lie down",
+   "sent": 200,
+   "unique": 200,
+   "multi": 0,
+   "zero": 0,
+   "high": 200,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     200
+    ]
+   ]
+  },
+  {
+   "word": "take out",
+   "sent": 180,
+   "unique": 180,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 180,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     180
+    ]
+   ]
+  },
+  {
+   "word": "get back",
+   "sent": 161,
+   "unique": 161,
+   "multi": 0,
+   "zero": 0,
+   "high": 14,
+   "fallback": 147,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     147
+    ],
+    [
+     [
+      2
+     ],
+     12
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "keep up",
+   "sent": 119,
+   "unique": 119,
+   "multi": 0,
+   "zero": 0,
+   "high": 42,
+   "fallback": 77,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     77
+    ],
+    [
+     [
+      3
+     ],
+     23
+    ],
+    [
+     [
+      2
+     ],
+     19
+    ]
+   ]
+  },
+  {
+   "word": "turn into",
+   "sent": 90,
+   "unique": 90,
+   "multi": 0,
+   "zero": 0,
+   "high": 90,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     90
+    ]
+   ]
+  },
+  {
+   "word": "bring in",
+   "sent": 70,
+   "unique": 70,
+   "multi": 0,
+   "zero": 0,
+   "high": 5,
+   "fallback": 65,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     65
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [
+      4
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "accompany by",
+   "sent": 55,
+   "unique": 55,
+   "multi": 0,
+   "zero": 0,
+   "high": 55,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     55
+    ]
+   ]
+  },
+  {
+   "word": "affected by",
+   "sent": 43,
+   "unique": 43,
+   "multi": 0,
+   "zero": 0,
+   "high": 10,
+   "fallback": 33,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     33
+    ],
+    [
+     [
+      2
+     ],
+     10
+    ]
+   ]
+  },
+  {
+   "word": "think over",
+   "sent": 33,
+   "unique": 33,
+   "multi": 0,
+   "zero": 0,
+   "high": 33,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     33
+    ]
+   ]
+  },
+  {
+   "word": "push on",
+   "sent": 32,
+   "unique": 32,
+   "multi": 0,
+   "zero": 0,
+   "high": 32,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     32
+    ]
+   ]
+  },
+  {
+   "word": "die out",
+   "sent": 31,
+   "unique": 31,
+   "multi": 0,
+   "zero": 0,
+   "high": 31,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     31
+    ]
+   ]
+  },
+  {
+   "word": "show off",
+   "sent": 31,
+   "unique": 31,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 30,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     30
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "keep away",
+   "sent": 25,
+   "unique": 25,
+   "multi": 0,
+   "zero": 0,
+   "high": 25,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     25
+    ]
+   ]
+  },
+  {
+   "word": "put aside",
+   "sent": 25,
+   "unique": 25,
+   "multi": 0,
+   "zero": 0,
+   "high": 7,
+   "fallback": 18,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     18
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "hold back",
+   "sent": 22,
+   "unique": 22,
+   "multi": 0,
+   "zero": 0,
+   "high": 22,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     11
+    ],
+    [
+     [
+      4
+     ],
+     6
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "put together",
+   "sent": 21,
+   "unique": 21,
+   "multi": 0,
+   "zero": 0,
+   "high": 5,
+   "fallback": 16,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     16
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "turn around",
+   "sent": 21,
+   "unique": 21,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 20,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     20
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "cheer up",
+   "sent": 20,
+   "unique": 20,
+   "multi": 0,
+   "zero": 0,
+   "high": 20,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     18
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "drop out",
+   "sent": 19,
+   "unique": 19,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 17,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     17
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "write down",
+   "sent": 19,
+   "unique": 19,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 19,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     19
+    ]
+   ]
+  },
+  {
+   "word": "get together",
+   "sent": 19,
+   "unique": 19,
+   "multi": 0,
+   "zero": 0,
+   "high": 5,
+   "fallback": 14,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     14
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "wear off",
+   "sent": 18,
+   "unique": 18,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 18,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     18
+    ]
+   ]
+  },
+  {
+   "word": "base on",
+   "sent": 16,
+   "unique": 16,
+   "multi": 0,
+   "zero": 0,
+   "high": 16,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     16
+    ]
+   ]
+  },
+  {
+   "word": "die down",
+   "sent": 17,
+   "unique": 17,
+   "multi": 0,
+   "zero": 0,
+   "high": 17,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     17
+    ]
+   ]
+  },
+  {
+   "word": "tear down",
+   "sent": 16,
+   "unique": 16,
+   "multi": 0,
+   "zero": 0,
+   "high": 4,
+   "fallback": 12,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     12
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "tear up",
+   "sent": 17,
+   "unique": 17,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 14,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     14
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "advantage in",
+   "sent": 14,
+   "unique": 14,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 14,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     14
+    ]
+   ]
+  },
+  {
+   "word": "call back",
+   "sent": 15,
+   "unique": 15,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 12,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     12
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "give away",
+   "sent": 16,
+   "unique": 16,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 15,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     15
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "let in",
+   "sent": 16,
+   "unique": 16,
+   "multi": 0,
+   "zero": 0,
+   "high": 9,
+   "fallback": 7,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     9
+    ],
+    [
+     [
+      1
+     ],
+     7
+    ]
+   ]
+  },
+  {
+   "word": "hang out",
+   "sent": 15,
+   "unique": 15,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 15,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     15
+    ]
+   ]
+  },
+  {
+   "word": "let down",
+   "sent": 14,
+   "unique": 14,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 14,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     14
+    ]
+   ]
+  },
+  {
+   "word": "put forward",
+   "sent": 16,
+   "unique": 16,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 14,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     14
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "butt in",
+   "sent": 13,
+   "unique": 13,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 12,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     12
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "slow down",
+   "sent": 14,
+   "unique": 14,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 14,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     14
+    ]
+   ]
+  },
+  {
+   "word": "come around",
+   "sent": 13,
+   "unique": 13,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 11,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     11
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "fall back on",
+   "sent": 13,
+   "unique": 13,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 10,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     10
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "shut down",
+   "sent": 13,
+   "unique": 13,
+   "multi": 0,
+   "zero": 0,
+   "high": 10,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      3
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [
+      1
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "speak up",
+   "sent": 13,
+   "unique": 13,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 13,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     13
+    ]
+   ]
+  },
+  {
+   "word": "bustle about",
+   "sent": 13,
+   "unique": 13,
+   "multi": 0,
+   "zero": 0,
+   "high": 13,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     13
+    ]
+   ]
+  },
+  {
+   "word": "convert into",
+   "sent": 11,
+   "unique": 11,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 9,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "fill in",
+   "sent": 12,
+   "unique": 12,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 9,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "fill out",
+   "sent": 12,
+   "unique": 12,
+   "multi": 0,
+   "zero": 0,
+   "high": 6,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ],
+    [
+     [
+      4
+     ],
+     2
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "pay off",
+   "sent": 12,
+   "unique": 12,
+   "multi": 0,
+   "zero": 0,
+   "high": 4,
+   "fallback": 8,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     8
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "pull in",
+   "sent": 11,
+   "unique": 11,
+   "multi": 0,
+   "zero": 0,
+   "high": 9,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      3
+     ],
+     5
+    ],
+    [
+     [
+      4
+     ],
+     4
+    ],
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "send off",
+   "sent": 12,
+   "unique": 12,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 11,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     11
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "take after",
+   "sent": 12,
+   "unique": 12,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 11,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     11
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "wind up",
+   "sent": 27,
+   "unique": 27,
+   "multi": 0,
+   "zero": 0,
+   "high": 10,
+   "fallback": 17,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     17
+    ],
+    [
+     [
+      3
+     ],
+     8
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ],
+    [
+     [
+      4
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "keep off",
+   "sent": 11,
+   "unique": 11,
+   "multi": 0,
+   "zero": 0,
+   "high": 5,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      3
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ],
+    [
+     [
+      4
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "sell out",
+   "sent": 11,
+   "unique": 11,
+   "multi": 0,
+   "zero": 0,
+   "high": 5,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "bridge over",
+   "sent": 11,
+   "unique": 11,
+   "multi": 0,
+   "zero": 0,
+   "high": 11,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     11
+    ]
+   ]
+  },
+  {
+   "word": "clean up",
+   "sent": 11,
+   "unique": 11,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 8,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     8
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "fit in",
+   "sent": 20,
+   "unique": 20,
+   "multi": 0,
+   "zero": 0,
+   "high": 7,
+   "fallback": 13,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     13
+    ],
+    [
+     [
+      3
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "hang around",
+   "sent": 10,
+   "unique": 10,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 8,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     8
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "knock down",
+   "sent": 10,
+   "unique": 10,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 10,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     10
+    ]
+   ]
+  },
+  {
+   "word": "let off",
+   "sent": 10,
+   "unique": 10,
+   "multi": 0,
+   "zero": 0,
+   "high": 5,
+   "fallback": 5,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ],
+    [
+     [
+      4
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "step up",
+   "sent": 15,
+   "unique": 15,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 15,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     15
+    ]
+   ]
+  },
+  {
+   "word": "use up",
+   "sent": 10,
+   "unique": 10,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 9,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     9
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "watch out",
+   "sent": 10,
+   "unique": 10,
+   "multi": 0,
+   "zero": 0,
+   "high": 4,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "acquiesce in",
+   "sent": 9,
+   "unique": 9,
+   "multi": 0,
+   "zero": 0,
+   "high": 9,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     9
+    ]
+   ]
+  },
+  {
+   "word": "act up",
+   "sent": 9,
+   "unique": 9,
+   "multi": 0,
+   "zero": 0,
+   "high": 9,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "advantage over",
+   "sent": 9,
+   "unique": 9,
+   "multi": 0,
+   "zero": 0,
+   "high": 9,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     9
+    ]
+   ]
+  },
+  {
+   "word": "put back",
+   "sent": 10,
+   "unique": 10,
+   "multi": 0,
+   "zero": 0,
+   "high": 7,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      4
+     ],
+     4
+    ],
+    [
+     [
+      1
+     ],
+     3
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "take over",
+   "sent": 9,
+   "unique": 9,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 7,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     7
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "try out",
+   "sent": 9,
+   "unique": 9,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "beset by",
+   "sent": 8,
+   "unique": 8,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 7,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "give back",
+   "sent": 8,
+   "unique": 8,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 7,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "knock out",
+   "sent": 8,
+   "unique": 8,
+   "multi": 0,
+   "zero": 0,
+   "high": 7,
+   "fallback": 1,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      5
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ],
+    [
+     [
+      6
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "stay up",
+   "sent": 8,
+   "unique": 8,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "step down",
+   "sent": 13,
+   "unique": 13,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 11,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     11
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "try on",
+   "sent": 8,
+   "unique": 8,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 7,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "beam on",
+   "sent": 7,
+   "unique": 7,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 7,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     7
+    ]
+   ]
+  },
+  {
+   "word": "branch off",
+   "sent": 7,
+   "unique": 7,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "call off",
+   "sent": 7,
+   "unique": 7,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 4,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     2
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "catch on",
+   "sent": 7,
+   "unique": 7,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "get ahead",
+   "sent": 7,
+   "unique": 7,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "look ahead",
+   "sent": 9,
+   "unique": 9,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 7,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     7
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "calm down",
+   "sent": 6,
+   "unique": 6,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 4,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "get by",
+   "sent": 6,
+   "unique": 6,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 5,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     5
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "condense into",
+   "sent": 5,
+   "unique": 5,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 5,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "put through",
+   "sent": 5,
+   "unique": 5,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "think through",
+   "sent": 5,
+   "unique": 5,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 4,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     4
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "think up",
+   "sent": 5,
+   "unique": 5,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 5,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     5
+    ]
+   ]
+  },
+  {
+   "word": "back down",
+   "sent": 3,
+   "unique": 3,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "brush up",
+   "sent": 4,
+   "unique": 4,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "circle around",
+   "sent": 4,
+   "unique": 4,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "drop by",
+   "sent": 4,
+   "unique": 4,
+   "multi": 0,
+   "zero": 0,
+   "high": 4,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "end up",
+   "sent": 5,
+   "unique": 5,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "pull through",
+   "sent": 4,
+   "unique": 4,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "set back",
+   "sent": 4,
+   "unique": 4,
+   "multi": 0,
+   "zero": 0,
+   "high": 4,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      4
+     ],
+     4
+    ]
+   ]
+  },
+  {
+   "word": "sort out",
+   "sent": 3,
+   "unique": 3,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "coil in",
+   "sent": 3,
+   "unique": 3,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "contract in",
+   "sent": 3,
+   "unique": 3,
+   "multi": 0,
+   "zero": 0,
+   "high": 3,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "figure out",
+   "sent": 3,
+   "unique": 3,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 1,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     1
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "get around",
+   "sent": 3,
+   "unique": 3,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "give off",
+   "sent": 3,
+   "unique": 3,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "add on",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "add up",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "back off",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "base in",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "branch out",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 1,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     1
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "bridge across",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "center on",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "cut back",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "kick off",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "pay back",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "pick on",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 1,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      2
+     ],
+     1
+    ],
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "speed up",
+   "sent": 3,
+   "unique": 3,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 3,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     3
+    ]
+   ]
+  },
+  {
+   "word": "bounce off",
+   "sent": 1,
+   "unique": 1,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 1,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "brag about",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 2,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "word": "burn out",
+   "sent": 7,
+   "unique": 7,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 6,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     6
+    ],
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "chip in",
+   "sent": 3,
+   "unique": 3,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ],
+    [
+     [
+      2
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "clutter up",
+   "sent": 1,
+   "unique": 1,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "decrease by",
+   "sent": 1,
+   "unique": 1,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "fall apart",
+   "sent": 1,
+   "unique": 1,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 1,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "write off",
+   "sent": 1,
+   "unique": 1,
+   "multi": 0,
+   "zero": 0,
+   "high": 1,
+   "fallback": 0,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      3
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "angle on",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "ask around",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "aspire after",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "blunder away",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "bolster up",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "bounce back",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "bulk up",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "check out",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "cipher out",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "cue in",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "see off",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "sign up",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "stick around",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "take apart",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "burn off",
+   "sent": 0,
+   "unique": 0,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 0,
+   "zero_rate": null,
+   "top_hits": []
+  },
+  {
+   "word": "burn through",
+   "sent": 1,
+   "unique": 1,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 1,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     1
+    ]
+   ]
+  },
+  {
+   "word": "cool down",
+   "sent": 2,
+   "unique": 2,
+   "multi": 0,
+   "zero": 0,
+   "high": 0,
+   "fallback": 2,
+   "zero_rate": 0.0,
+   "top_hits": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  }
+ ],
+ "ledger": {
+  "meta": {
+   "note": "甲′：库外/真漏召形状逐条记名＋全量精确计数；official 为已入账口径，actual 为本次实扫",
+   "official": 56,
+   "actual": 56
+  },
+  "rows": [
+   {
+    "name": "come up with",
+    "word": "come up",
+    "category": "库外/别的词组",
+    "pattern": "\\b(?:come|comes|came|coming)\\s+up\\s+with\\b",
+    "note": "不是 cue 漏召；`come up with` 是独立词组",
+    "official": 21,
+    "actual": 21,
+    "delta": 0,
+    "evidence": [
+     {
+      "book": "103",
+      "sentence": "“Well, my friend,” said the detective, coming up with him, “is your passport _visaed?_” “Ah, it’s you, is it, monsieur?” responded Passepartout."
+     },
+     {
+      "book": "1056",
+      "sentence": "They slowed down, and were in the thick of the crowd as they came up with him."
+     },
+     {
+      "book": "1260",
+      "sentence": "I listened for the bell to ring below; I listened for Leah coming up with a message; I fancied sometimes I heard Mr."
+     },
+     {
+      "book": "1342",
+      "sentence": "Jane, who was not so light, nor so much in the habit of running as Elizabeth, soon lagged behind, while her sister, panting for breath, came up with him, and eagerly cried out,-- “Oh, papa, what news? what news? have you heard from my uncle?”"
+     },
+     {
+      "book": "1400",
+      "sentence": "Standing at the door was a Jewish man with an unnatural heavy smear of eyebrow, who caught my eyes as we advanced, and said, when we came up with him,— “Mr."
+     },
+     {
+      "book": "1400",
+      "sentence": "“And you remember that we came up with the two in a ditch, and that there was a scuffle between them, and that one of them had been severely handled and much mauled about the face by the other?”"
+     },
+     {
+      "book": "1400",
+      "sentence": "Meantime the galley, which was very skilfully handled, had crossed us, let us come up with her, and fallen alongside."
+     },
+     {
+      "book": "1400",
+      "sentence": "As I drew nearer yet, it was about to turn away, when it stopped, and let me come up with it."
+     },
+     {
+      "book": "158",
+      "sentence": "Weston, capital in her country-dances, was seated, and beginning an irresistible waltz; and Frank Churchill, coming up with most becoming gallantry to Emma, had secured her hand, and led her up to the top."
+     },
+     {
+      "book": "2084",
+      "sentence": "It was a lovely April morning, but with a fresh air blowing from off the sea; the tide was high, and the river was alive with shipping coming up with wind and tide."
+     },
+     {
+      "book": "217",
+      "sentence": "Now and again, Annie came up with a handful of alder-currants."
+     },
+     {
+      "book": "2226",
+      "sentence": "He comes up with his men and he consorts with the lama, and then he calls me a fool, and is very rude—” “But wherefore—wherefore?”"
+     },
+     {
+      "book": "2226",
+      "sentence": "I come up with ten lame horses and three strong-backed men—thanks to that chicken of a Babu—to break a sick boy by force out of an old trot’s house."
+     },
+     {
+      "book": "233",
+      "sentence": "He was sitting in a corner after dinner, staring at the floor, when Carrie came up with another of the guests."
+     },
+     {
+      "book": "2701",
+      "sentence": "Ultimately the defendants (the crew of another ship) came up with the whale, struck, killed, seized, and finally appropriated it before the very eyes of the plaintiffs."
+     },
+     {
+      "book": "2701",
+      "sentence": "According to usage they were pumping the ship next morning; and lo! no inconsiderable oil came up with the water; the casks below must have sprung a bad leak."
+     },
+     {
+      "book": "345",
+      "sentence": "All at once we heard the crow of a cock coming up with preternatural shrillness through the clear morning air; Count Dracula, jumping to his feet, said:-- “Why, there is the morning again!"
+     },
+     {
+      "book": "4397",
+      "sentence": "Ah! how well he knew his father in that phrase; how all the Victorian Age came up with it!"
+     },
+     {
+      "book": "543",
+      "sentence": "She was at once helpless before his mature fixity, and touched by his excitement as he sent his magazine skittering along the aisle, stooped for their bags, came up with flushed face, and gloated, “Here we are!”"
+     },
+     {
+      "book": "543",
+      "sentence": "In the shade of the lilacs in front of the Gougerling house he came up with her, stayed her flight by a hand on her shoulder."
+     },
+     {
+      "book": "910",
+      "sentence": "The near bank was a yard away; but he had come up with his back to it, and the first thing his eyes rested upon was the opposite bank, toward which he immediately began to swim."
+     }
+    ]
+   },
+   {
+    "name": "be found out",
+    "word": "find out",
+    "category": "库外/θ反被动",
+    "pattern": "\\b(?:is|are|was|were|be|been|being|am)\\s+found\\s+out\\b(?!\\s+of\\b)",
+    "note": "败露/识破，与 find out（得知/查明）θ 反；排除 `be found out of`",
+    "official": 14,
+    "actual": 14,
+    "delta": 0,
+    "evidence": [
+     {
+      "book": "1260",
+      "sentence": "She went up to London last winter with her mama, and there everybody admired her, and a young lord fell in love with her: but his relations were against the match; and—what do you think?—he and Miss Georgiana made it up to run away; but they were found out and stopped."
+     },
+     {
+      "book": "1400",
+      "sentence": "Joe, when the fear of being found out was lifted off me."
+     },
+     {
+      "book": "1400",
+      "sentence": "Wopsle was not the man we had thought him, and that he was beginning to be found out."
+     },
+     {
+      "book": "1400",
+      "sentence": "I had the wildest dreams concerning him, and woke unrefreshed; I woke, too, to recover the fear which I had lost in the night, of his being found out as a returned transport."
+     },
+     {
+      "book": "1400",
+      "sentence": "The stronger will win in the end, but the stronger has to be found out first."
+     },
+     {
+      "book": "158",
+      "sentence": "On that article, truth seemed attainable. _What_ she was, must be uncertain; but _who_ she was, might be found out; and setting aside the 10,000 l., it did not appear that she was at all Harriet’s superior."
+     },
+     {
+      "book": "158",
+      "sentence": "“These matters are always a secret, till it is found out that every body knows them."
+     },
+     {
+      "book": "2084",
+      "sentence": "Also he should have to say where he had been, and there was a danger of being found out if he did not speak the truth."
+     },
+     {
+      "book": "2084",
+      "sentence": "Those, as I have said, were always happy times, when Theobald was away for a whole day certain; the boy was beginning to feel easy in his mind as though God had heard his prayers, and he was not going to be found out."
+     },
+     {
+      "book": "233",
+      "sentence": "He lost sympathy for the man that made a mistake and was found out."
+     },
+     {
+      "book": "2641",
+      "sentence": "But she answered dreamily, “I bathed here, too, till I was found out."
+     },
+     {
+      "book": "543",
+      "sentence": "“I can't sit down, I must hurry home, but I couldn't devote myself to my own selfish cares till I'd warned you, and heaven knows I don't expect any thanks for trying to warn the town against her, there's always so much evil in the world that folks simply won't see or appreciate your trying to safeguard them----And forcing herself in here to get in with you and Carrie, many 's the time I've seen her doing it, and, thank heaven, she was found out in time before she could do any more harm, it simply breaks my heart and prostrates me to think what she may have done already, even if some of us that understand and know about things----” “Whoa-up!"
+     },
+     {
+      "book": "55",
+      "sentence": "Think of me, and the terrible trouble I’m in at being found out.”"
+     },
+     {
+      "book": "55",
+      "sentence": "“I have fooled everyone so long that I thought I should never be found out."
+     }
+    ]
+   },
+   {
+    "name": "find out that,",
+    "word": "find out",
+    "category": "真漏召",
+    "pattern": "\\b(?:find|finds|finding|found)\\s+out\\b(?:(?!\\b(?:that|what)\\b)[^.?!;,]){0,12}?\\bthat\\s*,\\s*",
+    "note": "that 前逗号插入；乙已加 `,?`",
+    "official": 2,
+    "actual": 2,
+    "delta": 0,
+    "evidence": [
+     {
+      "book": "103",
+      "sentence": "IN WHICH PASSEPARTOUT FINDS OUT THAT, EVEN AT THE ANTIPODES, IT IS CONVENIENT TO HAVE SOME MONEY IN ONE’S POCKET CHAPTER XXIII."
+     },
+     {
+      "book": "103",
+      "sentence": "IN WHICH PASSEPARTOUT FINDS OUT THAT, EVEN AT THE ANTIPODES, IT IS CONVENIENT TO HAVE SOME MONEY IN ONE’S POCKET The “Carnatic,” setting sail from Hong Kong at half-past six on the 7th of November, directed her course at full steam towards Japan."
+     }
+    ]
+   },
+   {
+    "name": "go into matter/subject(s)",
+    "word": "go into",
+    "category": "真漏召",
+    "pattern": "\\b(?:go|goes|going|went|gone)\\s+into\\s+(?:(?:the|a|an|his|her|my|your|their|our|its|this|that|these|those|some|any|no|every|all the|[A-Za-z\\u2019\\x27]+[\\u2019\\x27]?s?)\\s+)?(?:\\w+\\s+){0,2}?\\b(?:matter|subjects?)\\b",
+    "note": "乙已补 matter|subjects?；按实扫 7 入账",
+    "official": 7,
+    "actual": 7,
+    "delta": 0,
+    "evidence": [
+     {
+      "book": "1400",
+      "sentence": "Then why go into subjects, old chap, which as betwixt two sech must be for ever onnecessary?"
+     },
+     {
+      "book": "2084",
+      "sentence": "Then we went into the subject of his finances."
+     },
+     {
+      "book": "345",
+      "sentence": "Seward said to us, when we were alone, that he did not wish to go into the matter; the question of an inquest had to be considered, and it would never do to put forward the truth, as no one would believe it."
+     },
+     {
+      "book": "4397",
+      "sentence": "“The agent lives in that cottage,” he said; “he’ll give us some lunch—we’d better have lunch before we go into this matter.”"
+     },
+     {
+      "book": "541",
+      "sentence": "\"My dear sir--\" he always addressed Archer as \"sir\"--\"I have sent for you to go into a little matter; a matter which, for the moment, I prefer not to mention either to Mr."
+     },
+     {
+      "book": "541",
+      "sentence": "Come and dine with me tonight if you're free, and we'll go into the matter afterward: in case you wish to call on our client tomorrow.\""
+     },
+     {
+      "book": "541",
+      "sentence": "He had formed his own opinion from the papers entrusted to him, and did not especially want to go into the matter with his senior partner."
+     }
+    ]
+   },
+   {
+    "name": "pick up buy",
+    "word": "pick up",
+    "category": "库外缺义",
+    "pattern": "\\b(?:pick|picks|picking|picked)\\s+up\\b[^.?!;,]{0,45}?\\b(?:stall|sale)\\b",
+    "note": "买到；只收 stall/sale 证据，排除 `bargains`",
+    "official": 3,
+    "actual": 3,
+    "delta": 0,
+    "evidence": [
+     {
+      "book": "244",
+      "sentence": "This is a queer old book I picked up at a stall yesterday—‘De Jure inter Gentes’—published in Latin at Liege in the Lowlands, in 1642."
+     },
+     {
+      "book": "4397",
+      "sentence": "In the hall an Inspector of Police stood stolidly regarding with heavy-lidded pale-blue eyes the fine old English furniture picked up by James at the famous Mavrojano sale in Portman Square."
+     },
+     {
+      "book": "4397",
+      "sentence": "This old ‘ship-bowl’ I picked up at the sale when that precious rip, the Marquis, came to grief."
+     }
+    ]
+   },
+   {
+    "name": "pick up ride",
+    "word": "pick up",
+    "category": "库外缺义",
+    "pattern": "\\b(?:pick|picks|picking|picked)\\s+up\\s+(?:a|the|my|his|her|our|your|their)?\\s*(?:(?:public|Broadway|railway|railroad|street)\\s+)?(?:car|conveyance|train)\\b",
+    "note": "搭乘；按实扫 4 入账（含 pick up my train for the Junction）",
+    "official": 4,
+    "actual": 4,
+    "delta": 0,
+    "evidence": [
+     {
+      "book": "289",
+      "sentence": "I give it up—when we get to the town we’ll go to the railway station, and with luck we may pick up a train there that’ll get us back to riverbank to-night."
+     },
+     {
+      "book": "4517",
+      "sentence": "On my arrival at Starkfield, Denis Eady, the rich Irish grocer, who was the proprietor of Starkfield’s nearest approach to a livery stable, had entered into an agreement to send me over daily to Corbury Flats, where I had to pick up my train for the Junction."
+     },
+     {
+      "book": "541",
+      "sentence": "They laughed, astonished at the miracle of picking up a public conveyance at that hour, and in that unlikely spot, in a city where cab-stands were still a \"foreign\" novelty."
+     },
+     {
+      "book": "541",
+      "sentence": "May's brougham awaited her at the door, and she was to drive Archer to Union Square, where he could pick up a Broadway car to carry him to the office."
+     }
+    ]
+   },
+   {
+    "name": "pick up acquaintance",
+    "word": "pick up",
+    "category": "库外缺义",
+    "pattern": "\\b(?:pick|picks|picking|picked)\\s+up\\b[^.?!;,]{0,30}?\\bacquaintance\\w*\\b|\\b(?:pick|picks|picking|picked)\\s+up\\s+with\\s+(?:her|him|them)\\b",
+    "note": "结识/招募；排除 `an old stumpy-tailed albatross`",
+    "official": 4,
+    "actual": 4,
+    "delta": 0,
+    "evidence": [
+     {
+      "book": "1661",
+      "sentence": "I went in the shape of a loafer to Sir George’s house, managed to pick up an acquaintance with his valet, learned that his master had cut his head the night before, and, finally, at the expense of six shillings, made all sure by buying a pair of his cast-off shoes."
+     },
+     {
+      "book": "217",
+      "sentence": "He had always been fond of Beatrice Wyld, and during his furlough he picked up with her again."
+     },
+     {
+      "book": "233",
+      "sentence": "Once in a while they would go to a theatre together, occasionally in season to the beaches and different points about the city, but they picked up no acquaintances."
+     },
+     {
+      "book": "233",
+      "sentence": "However, as Hurstwood’s business increased, he, as stated, began to pick up acquaintances."
+     }
+    ]
+   },
+   {
+    "name": "pick up rescue",
+    "word": "pick up",
+    "category": "库外缺义",
+    "pattern": "\\b(?:pick|picks|picking|picked)\\s+up\\s+the\\s+floating\\s+mariners\\b",
+    "note": "海上救起；只收明确救人的 floating mariners；oars/creatures 待裁",
+    "official": 1,
+    "actual": 1,
+    "delta": 0,
+    "evidence": [
+     {
+      "book": "2701",
+      "sentence": "As before, the attentive ship having descried the whole fight, again came bearing down to the rescue, and dropping a boat, picked up the floating mariners, tubs, oars, and whatever else could be caught at, and safely landed them on her decks."
+     }
+    ]
+   }
+  ]
+ }
+}

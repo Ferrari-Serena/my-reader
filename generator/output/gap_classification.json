@@ -1,0 +1,2027 @@
+{
+ "meta": {
+  "note": "GAP = phrases_senses_curated.json 中 examples 为空的义项；n_pool/n_cue 取自 cue_corpus_scan.json。",
+  "total_words": 320,
+  "total_senses": 870,
+  "non_gap": 619,
+  "gap": 251,
+  "A_pool_zero": 30,
+  "B_pool_but_no_cue": 182,
+  "C_cue_hit": 39,
+  "words_with_gap": 172
+ },
+ "A_pool_zero": [
+  {
+   "word": "angle on",
+   "rank": 1,
+   "zh": "拐弯抹角地引（人）上钩；诱引",
+   "en": "to guide or manoeuvre indirectly",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "angle on",
+   "rank": 2,
+   "zh": "斜向；对准（某角度）",
+   "en": "to slant or aim at an angle",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "ask around",
+   "rank": 1,
+   "zh": "四处打听；到处问（ask around for sb/sth）",
+   "en": "to inquire of various people",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "aspire after",
+   "rank": 1,
+   "zh": "渴望；追求（aspire after/to sth）",
+   "en": "to have a lofty goal; to long for",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "blunder away",
+   "rank": 1,
+   "zh": "挥霍掉；白白丢掉（机会／财产）",
+   "en": "to squander or waste",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "blunder away",
+   "rank": 2,
+   "zh": "（笨手笨脚地）弄丢；失掉",
+   "en": "to lose by clumsiness",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "bolster up",
+   "rank": 1,
+   "zh": "支撑；加固；加强（信心／制度）",
+   "en": "to support and strengthen",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "bounce back",
+   "rank": 1,
+   "zh": "（受挫／病后）恢复；复元；重振",
+   "en": "to recover or improve after a setback",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "bulk up",
+   "rank": 1,
+   "zh": "（使）变厚实／增大；（练）长肌肉",
+   "en": "to increase in size, weight, or muscle",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "bulk up",
+   "rank": 2,
+   "zh": "膨出；鼓起来",
+   "en": "to stick out or swell",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "check out",
+   "rank": 1,
+   "zh": "检查；查看（是否正常／无误）",
+   "en": "to examine so as to determine accuracy or condition",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "check out",
+   "rank": 2,
+   "zh": "（住客）结账离开（旅馆）",
+   "en": "to announce one's departure from a hotel",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "check out",
+   "rank": 3,
+   "zh": "查证属实；对得上（经得起检查）",
+   "en": "to be verified or confirmed; to pass inspection",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "check out",
+   "rank": 4,
+   "zh": "办（借书／结账）手续；登记借出",
+   "en": "to record and receive payment for items purchased",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "check out",
+   "rank": 5,
+   "zh": "打量；试探（某人的底细／意向）",
+   "en": "to try to learn sb's opinions and intentions",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "cipher out",
+   "rank": 1,
+   "zh": "算出；解出（数目／难题）",
+   "en": "to work out by arithmetic or calculation",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "cipher out",
+   "rank": 2,
+   "zh": "琢磨出；想出（意思／办法）",
+   "en": "to puzzle out; to work out by contrivance",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "cue in",
+   "rank": 1,
+   "zh": "给…提示；（提示演员）上场／接话",
+   "en": "to give a cue to an actor to begin",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "cue in",
+   "rank": 2,
+   "zh": "知会；把情况告诉（某人）",
+   "en": "to give sb the necessary information",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "see off",
+   "rank": 1,
+   "zh": "给…送行；送别",
+   "en": "to go to the station or port to say goodbye",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "see off",
+   "rank": 2,
+   "zh": "赶走；击退（入侵者／追兵）",
+   "en": "to drive away or repel",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "sign up",
+   "rank": 1,
+   "zh": "报名参加；签约加入（sign up for/to do）",
+   "en": "to join an activity or course by signing",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "sign up",
+   "rank": 2,
+   "zh": "签约；签约聘请（某人）",
+   "en": "to engage by written agreement",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "stick around",
+   "rank": 1,
+   "zh": "待在原地；不走开",
+   "en": "to stay put; to remain in a place",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "stick around",
+   "rank": 2,
+   "zh": "留在旁边（等候）；待命",
+   "en": "to be available or ready nearby",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "take apart",
+   "rank": 1,
+   "zh": "拆开；拆卸（拆成零件）",
+   "en": "to take into constituent pieces; to dismantle",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "take apart",
+   "rank": 2,
+   "zh": "拆散；肢解",
+   "en": "to divide into pieces",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "take apart",
+   "rank": 3,
+   "zh": "剖析；逐条分析（并痛批）",
+   "en": "to break down into components; to analyze",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "burn off",
+   "rank": 1,
+   "zh": "烧掉；烧除（用火烧掉地面的草木等）",
+   "en": "to clear land of its vegetation by burning",
+   "n_pool": 0,
+   "n_cue": 0
+  },
+  {
+   "word": "burn off",
+   "rank": 2,
+   "zh": "（靠运动）消耗掉（脂肪／热量）",
+   "en": "to use up (energy or fat)",
+   "n_pool": 0,
+   "n_cue": 0
+  }
+ ],
+ "B_pool_but_no_cue": [
+  {
+   "word": "account for",
+   "rank": 2,
+   "zh": "占（比例）；构成",
+   "en": "to form a particular part of a total",
+   "n_pool": 100,
+   "n_cue": 0
+  },
+  {
+   "word": "put off",
+   "rank": 2,
+   "zh": "使反感；使失去兴趣",
+   "en": "to make sb dislike or lose interest",
+   "n_pool": 46,
+   "n_cue": 0
+  },
+  {
+   "word": "take off",
+   "rank": 1,
+   "zh": "起飞",
+   "en": "(of an aircraft) to leave the ground",
+   "n_pool": 152,
+   "n_cue": 0
+  },
+  {
+   "word": "take off",
+   "rank": 3,
+   "zh": "突然走红；迅速成功",
+   "en": "to become successful/popular suddenly",
+   "n_pool": 152,
+   "n_cue": 0
+  },
+  {
+   "word": "break up",
+   "rank": 1,
+   "zh": "分手；（关系）破裂",
+   "en": "to end a relationship",
+   "n_pool": 78,
+   "n_cue": 0
+  },
+  {
+   "word": "come up with",
+   "rank": 1,
+   "zh": "想出；提出；找到",
+   "en": "to think of or produce (an idea/solution)",
+   "n_pool": 21,
+   "n_cue": 0
+  },
+  {
+   "word": "set off",
+   "rank": 2,
+   "zh": "引发；激起（连锁反应）",
+   "en": "to cause (sth) to start happening",
+   "n_pool": 94,
+   "n_cue": 0
+  },
+  {
+   "word": "look up",
+   "rank": 3,
+   "zh": "好转；改善（生意/形势）",
+   "en": "to get better (of business or a situation)",
+   "n_pool": 461,
+   "n_cue": 0
+  },
+  {
+   "word": "go up",
+   "rank": 3,
+   "zh": "（建筑）盖起来／（房屋）着火",
+   "en": "to be built; to be destroyed by fire",
+   "n_pool": 416,
+   "n_cue": 0
+  },
+  {
+   "word": "go away",
+   "rank": 2,
+   "zh": "消失；不复存在（疼痛/烦恼）",
+   "en": "to disappear; to stop existing",
+   "n_pool": 358,
+   "n_cue": 0
+  },
+  {
+   "word": "make up",
+   "rank": 3,
+   "zh": "和好；和解（make up with）",
+   "en": "to become friendly again",
+   "n_pool": 324,
+   "n_cue": 0
+  },
+  {
+   "word": "make up",
+   "rank": 4,
+   "zh": "化妆；涂（化妆品）",
+   "en": "to apply cosmetics",
+   "n_pool": 324,
+   "n_cue": 0
+  },
+  {
+   "word": "stand up",
+   "rank": 2,
+   "zh": "（说法/论点）站得住脚",
+   "en": "to remain valid under scrutiny",
+   "n_pool": 228,
+   "n_cue": 0
+  },
+  {
+   "word": "pick up",
+   "rank": 4,
+   "zh": "收拾；整理",
+   "en": "to tidy up",
+   "n_pool": 207,
+   "n_cue": 0
+  },
+  {
+   "word": "take out",
+   "rank": 3,
+   "zh": "取得；办理（执照/保险/专利）",
+   "en": "to obtain (officially)",
+   "n_pool": 180,
+   "n_cue": 0
+  },
+  {
+   "word": "go over",
+   "rank": 2,
+   "zh": "（演出/建议）受欢迎；效果好",
+   "en": "to be received in a specified way",
+   "n_pool": 178,
+   "n_cue": 0
+  },
+  {
+   "word": "get away",
+   "rank": 2,
+   "zh": "抽身走开；（去）度假",
+   "en": "to go away for a rest",
+   "n_pool": 173,
+   "n_cue": 0
+  },
+  {
+   "word": "get in",
+   "rank": 3,
+   "zh": "（被）录取；选上",
+   "en": "to be admitted to (a school)",
+   "n_pool": 161,
+   "n_cue": 0
+  },
+  {
+   "word": "come along",
+   "rank": 2,
+   "zh": "（机会等）出现；到来",
+   "en": "to appear or arrive",
+   "n_pool": 148,
+   "n_cue": 0
+  },
+  {
+   "word": "turn away",
+   "rank": 2,
+   "zh": "拒之门外；不接纳",
+   "en": "to refuse to admit or accept",
+   "n_pool": 140,
+   "n_cue": 0
+  },
+  {
+   "word": "break out",
+   "rank": 4,
+   "zh": "（疹子/汗）冒出来；突发",
+   "en": "to erupt (of a rash, sweat)",
+   "n_pool": 138,
+   "n_cue": 0
+  },
+  {
+   "word": "run down",
+   "rank": 1,
+   "zh": "撞倒；撞伤（车/机器）",
+   "en": "to injure or kill by running over",
+   "n_pool": 138,
+   "n_cue": 0
+  },
+  {
+   "word": "run down",
+   "rank": 4,
+   "zh": "贬低；说…的坏话",
+   "en": "to disparage; to speak ill of",
+   "n_pool": 138,
+   "n_cue": 0
+  },
+  {
+   "word": "look over",
+   "rank": 2,
+   "zh": "宽恕；不计较（look over a fault）",
+   "en": "to pass over without censure",
+   "n_pool": 112,
+   "n_cue": 0
+  },
+  {
+   "word": "turn back",
+   "rank": 2,
+   "zh": "驱回；挡住（来敌/潮水）",
+   "en": "to check or drive back",
+   "n_pool": 93,
+   "n_cue": 0
+  },
+  {
+   "word": "turn back",
+   "rank": 3,
+   "zh": "翻回（书页）",
+   "en": "to turn back (the pages)",
+   "n_pool": 93,
+   "n_cue": 0
+  },
+  {
+   "word": "put out",
+   "rank": 4,
+   "zh": "出版；发布（书刊/文告）",
+   "en": "to publish or issue",
+   "n_pool": 93,
+   "n_cue": 0
+  },
+  {
+   "word": "turn in",
+   "rank": 1,
+   "zh": "上交；交出",
+   "en": "to hand over or surrender",
+   "n_pool": 91,
+   "n_cue": 0
+  },
+  {
+   "word": "wake up",
+   "rank": 2,
+   "zh": "唤醒；叫醒（他人）",
+   "en": "to cause sb to wake",
+   "n_pool": 90,
+   "n_cue": 0
+  },
+  {
+   "word": "run out",
+   "rank": 2,
+   "zh": "（期限）到期；失效",
+   "en": "to lose validity",
+   "n_pool": 87,
+   "n_cue": 0
+  },
+  {
+   "word": "get over",
+   "rank": 4,
+   "zh": "把…了结；做完（不快的事）",
+   "en": "to bring (a task) to an end",
+   "n_pool": 88,
+   "n_cue": 0
+  },
+  {
+   "word": "turn on",
+   "rank": 4,
+   "zh": "使兴奋；激起（turn sb on）",
+   "en": "to excite or rouse",
+   "n_pool": 86,
+   "n_cue": 0
+  },
+  {
+   "word": "put down",
+   "rank": 3,
+   "zh": "贬低；羞辱",
+   "en": "to reduce in worth or character, verbally",
+   "n_pool": 82,
+   "n_cue": 0
+  },
+  {
+   "word": "put down",
+   "rank": 4,
+   "zh": "镇压；平定",
+   "en": "to put down by force or authority",
+   "n_pool": 82,
+   "n_cue": 0
+  },
+  {
+   "word": "pass on",
+   "rank": 4,
+   "zh": "（婉辞）去世",
+   "en": "to die (euphemism)",
+   "n_pool": 79,
+   "n_cue": 0
+  },
+  {
+   "word": "take away",
+   "rank": 3,
+   "zh": "削减；减弱（效果）",
+   "en": "to diminish",
+   "n_pool": 81,
+   "n_cue": 0
+  },
+  {
+   "word": "take away",
+   "rank": 4,
+   "zh": "外带；买走（食物）",
+   "en": "to buy prepared food to eat elsewhere",
+   "n_pool": 81,
+   "n_cue": 0
+  },
+  {
+   "word": "come through",
+   "rank": 4,
+   "zh": "（消息/申请）到达；获准",
+   "en": "to succeed in reaching after overcoming problems",
+   "n_pool": 75,
+   "n_cue": 0
+  },
+  {
+   "word": "shut up",
+   "rank": 2,
+   "zh": "使闭嘴；堵住（嘴）",
+   "en": "to cause sb to be quiet",
+   "n_pool": 75,
+   "n_cue": 0
+  },
+  {
+   "word": "break down",
+   "rank": 3,
+   "zh": "拆解；分解（分析成分）",
+   "en": "to analyze into components",
+   "n_pool": 70,
+   "n_cue": 0
+  },
+  {
+   "word": "bring in",
+   "rank": 3,
+   "zh": "卖得（某价钱）",
+   "en": "to be sold for a certain price",
+   "n_pool": 70,
+   "n_cue": 0
+  },
+  {
+   "word": "come across",
+   "rank": 2,
+   "zh": "给人…印象；显得",
+   "en": "to be perceived in a certain way",
+   "n_pool": 69,
+   "n_cue": 0
+  },
+  {
+   "word": "come across",
+   "rank": 3,
+   "zh": "（意思）被理解；传达出",
+   "en": "to communicate the intended impression",
+   "n_pool": 69,
+   "n_cue": 0
+  },
+  {
+   "word": "go along",
+   "rank": 2,
+   "zh": "同意；配合；随大流（go along with sth）",
+   "en": "to cooperate or pretend to cooperate",
+   "n_pool": 69,
+   "n_cue": 0
+  },
+  {
+   "word": "run through",
+   "rank": 1,
+   "zh": "匆匆过一遍；浏览",
+   "en": "to examine hastily",
+   "n_pool": 68,
+   "n_cue": 0
+  },
+  {
+   "word": "run through",
+   "rank": 4,
+   "zh": "通读；推敲（think through）",
+   "en": "to apply thoroughly; think through",
+   "n_pool": 68,
+   "n_cue": 0
+  },
+  {
+   "word": "get down",
+   "rank": 2,
+   "zh": "咽下；吞下",
+   "en": "to pass through the esophagus",
+   "n_pool": 67,
+   "n_cue": 0
+  },
+  {
+   "word": "get down",
+   "rank": 3,
+   "zh": "写下；记下",
+   "en": "to set down in writing",
+   "n_pool": 67,
+   "n_cue": 0
+  },
+  {
+   "word": "get down",
+   "rank": 4,
+   "zh": "使沮丧；使消沉",
+   "en": "to lower someone’s spirits",
+   "n_pool": 67,
+   "n_cue": 0
+  },
+  {
+   "word": "pull out",
+   "rank": 3,
+   "zh": "退出；撤出（协议/活动）",
+   "en": "to withdraw from an undertaking",
+   "n_pool": 64,
+   "n_cue": 0
+  },
+  {
+   "word": "pull out",
+   "rank": 4,
+   "zh": "抽出；提取（信息/要点）",
+   "en": "to remove with force or effort",
+   "n_pool": 64,
+   "n_cue": 0
+  },
+  {
+   "word": "pass out",
+   "rank": 1,
+   "zh": "昏倒；失去知觉",
+   "en": "to faint",
+   "n_pool": 61,
+   "n_cue": 0
+  },
+  {
+   "word": "pass out",
+   "rank": 2,
+   "zh": "分发；散发",
+   "en": "to give to several people",
+   "n_pool": 61,
+   "n_cue": 0
+  },
+  {
+   "word": "pass out",
+   "rank": 3,
+   "zh": "（军校）毕业",
+   "en": "to graduate from a military academy",
+   "n_pool": 61,
+   "n_cue": 0
+  },
+  {
+   "word": "bring back",
+   "rank": 2,
+   "zh": "使苏醒；使恢复知觉",
+   "en": "to return to consciousness",
+   "n_pool": 59,
+   "n_cue": 0
+  },
+  {
+   "word": "move in",
+   "rank": 2,
+   "zh": "占据；进驻",
+   "en": "to occupy a place",
+   "n_pool": 54,
+   "n_cue": 0
+  },
+  {
+   "word": "move on",
+   "rank": 2,
+   "zh": "转向（新话题/新阶段）",
+   "en": "to travel onward in time or space",
+   "n_pool": 54,
+   "n_cue": 0
+  },
+  {
+   "word": "pass by",
+   "rank": 2,
+   "zh": "（对…）不起作用；未理会；错过",
+   "en": "to fail to notice or affect",
+   "n_pool": 52,
+   "n_cue": 0
+  },
+  {
+   "word": "set down",
+   "rank": 3,
+   "zh": "让（乘客）下车",
+   "en": "to let (a passenger) leave a vehicle",
+   "n_pool": 56,
+   "n_cue": 0
+  },
+  {
+   "word": "accompany by",
+   "rank": 2,
+   "zh": "（音乐）由…伴奏",
+   "en": "to perform an accompaniment to",
+   "n_pool": 55,
+   "n_cue": 0
+  },
+  {
+   "word": "hang on",
+   "rank": 2,
+   "zh": "稍等；（打电话）别挂断",
+   "en": "to hold the phone line open",
+   "n_pool": 54,
+   "n_cue": 0
+  },
+  {
+   "word": "hang on",
+   "rank": 3,
+   "zh": "坚持；不放弃",
+   "en": "to be persistent, refuse to stop",
+   "n_pool": 54,
+   "n_cue": 0
+  },
+  {
+   "word": "take on",
+   "rank": 3,
+   "zh": "雇用；招收",
+   "en": "to engage or hire for work",
+   "n_pool": 56,
+   "n_cue": 0
+  },
+  {
+   "word": "take on",
+   "rank": 4,
+   "zh": "与…较量；迎战",
+   "en": "to contend against an opponent",
+   "n_pool": 56,
+   "n_cue": 0
+  },
+  {
+   "word": "get through",
+   "rank": 2,
+   "zh": "通过（考试）；获准",
+   "en": "to succeed in an examination or be approved",
+   "n_pool": 50,
+   "n_cue": 0
+  },
+  {
+   "word": "get through",
+   "rank": 5,
+   "zh": "接通（电话）；联系上",
+   "en": "to be in or establish communication with sb",
+   "n_pool": 50,
+   "n_cue": 0
+  },
+  {
+   "word": "run over",
+   "rank": 2,
+   "zh": "溢出；漫过",
+   "en": "to flow or run over a limit or brim",
+   "n_pool": 51,
+   "n_cue": 0
+  },
+  {
+   "word": "see through",
+   "rank": 2,
+   "zh": "支持…渡过（难关）",
+   "en": "to support (sb) through a period of time",
+   "n_pool": 41,
+   "n_cue": 0
+  },
+  {
+   "word": "see through",
+   "rank": 3,
+   "zh": "把…坚持做完",
+   "en": "to remain with until completion",
+   "n_pool": 41,
+   "n_cue": 0
+  },
+  {
+   "word": "throw out",
+   "rank": 4,
+   "zh": "驳回；不予受理",
+   "en": "to cease to consider; dismiss (a case)",
+   "n_pool": 46,
+   "n_cue": 0
+  },
+  {
+   "word": "throw out",
+   "rank": 5,
+   "zh": "撵走；罢免",
+   "en": "to remove from a position or office",
+   "n_pool": 46,
+   "n_cue": 0
+  },
+  {
+   "word": "throw up",
+   "rank": 1,
+   "zh": "呕吐",
+   "en": "to eject the contents of the stomach",
+   "n_pool": 45,
+   "n_cue": 0
+  },
+  {
+   "word": "take down",
+   "rank": 4,
+   "zh": "（言语）贬低；使丢脸",
+   "en": "to reduce in worth or character, usually verbally",
+   "n_pool": 43,
+   "n_cue": 0
+  },
+  {
+   "word": "step in",
+   "rank": 2,
+   "zh": "暂代；顶替",
+   "en": "to act as a substitute",
+   "n_pool": 53,
+   "n_cue": 0
+  },
+  {
+   "word": "work out",
+   "rank": 5,
+   "zh": "锻炼；健身",
+   "en": "to do physical exercise",
+   "n_pool": 46,
+   "n_cue": 0
+  },
+  {
+   "word": "cut out",
+   "rank": 4,
+   "zh": "（机器）突然停止运转",
+   "en": "to cease operating",
+   "n_pool": 37,
+   "n_cue": 0
+  },
+  {
+   "word": "clear up",
+   "rank": 4,
+   "zh": "（病）痊愈；好转",
+   "en": "to become better or disappear (of an illness)",
+   "n_pool": 34,
+   "n_cue": 0
+  },
+  {
+   "word": "fill up",
+   "rank": 4,
+   "zh": "吃饱",
+   "en": "to eat until one is sated",
+   "n_pool": 33,
+   "n_cue": 0
+  },
+  {
+   "word": "wrap up",
+   "rank": 4,
+   "zh": "完成；收尾（工作）",
+   "en": "to finish (a task, a meeting)",
+   "n_pool": 30,
+   "n_cue": 0
+  },
+  {
+   "word": "put away",
+   "rank": 3,
+   "zh": "把…关起来（监狱/精神病院）",
+   "en": "to confine (in prison or an asylum)",
+   "n_pool": 28,
+   "n_cue": 0
+  },
+  {
+   "word": "put away",
+   "rank": 4,
+   "zh": "大吃；吃光",
+   "en": "to eat up (a large quantity of food)",
+   "n_pool": 28,
+   "n_cue": 0
+  },
+  {
+   "word": "cut in",
+   "rank": 2,
+   "zh": "（车辆）抢道；加塞",
+   "en": "to drive into the space in front of another vehicle",
+   "n_pool": 26,
+   "n_cue": 0
+  },
+  {
+   "word": "cut in",
+   "rank": 3,
+   "zh": "让…分一份；算…一份（cut sb in on sth）",
+   "en": "to allow sb a share of the profit",
+   "n_pool": 26,
+   "n_cue": 0
+  },
+  {
+   "word": "drop off",
+   "rank": 4,
+   "zh": "顺路送到；让…下车",
+   "en": "to leave or unload (sb or sth)",
+   "n_pool": 23,
+   "n_cue": 0
+  },
+  {
+   "word": "go around",
+   "rank": 5,
+   "zh": "够用；人人有份",
+   "en": "to be sufficient for everyone",
+   "n_pool": 22,
+   "n_cue": 0
+  },
+  {
+   "word": "turn around",
+   "rank": 2,
+   "zh": "好转；扭转（局面）",
+   "en": "to improve significantly; to go from bad to good",
+   "n_pool": 21,
+   "n_cue": 0
+  },
+  {
+   "word": "back up",
+   "rank": 3,
+   "zh": "备份（文件/资料）",
+   "en": "to make a security copy of (data)",
+   "n_pool": 19,
+   "n_cue": 0
+  },
+  {
+   "word": "drop out",
+   "rank": 3,
+   "zh": "退学；辍学",
+   "en": "to leave school or a course prematurely",
+   "n_pool": 19,
+   "n_cue": 0
+  },
+  {
+   "word": "drop out",
+   "rank": 4,
+   "zh": "（从社会/常规中）退出；离群索居",
+   "en": "to withdraw from established society",
+   "n_pool": 19,
+   "n_cue": 0
+  },
+  {
+   "word": "write down",
+   "rank": 2,
+   "zh": "减低（账面价值）；贬低",
+   "en": "to reduce the estimated value of",
+   "n_pool": 19,
+   "n_cue": 0
+  },
+  {
+   "word": "wear off",
+   "rank": 2,
+   "zh": "磨掉；磨去（字面）",
+   "en": "to diminish by friction; to rub away",
+   "n_pool": 18,
+   "n_cue": 0
+  },
+  {
+   "word": "advantage in",
+   "rank": 2,
+   "zh": "（网球）发球占先",
+   "en": "a tennis score favouring the server",
+   "n_pool": 14,
+   "n_cue": 0
+  },
+  {
+   "word": "call back",
+   "rank": 3,
+   "zh": "回电话",
+   "en": "to return or repeat a telephone call",
+   "n_pool": 15,
+   "n_cue": 0
+  },
+  {
+   "word": "give away",
+   "rank": 3,
+   "zh": "（婚礼上）把新娘交给新郎",
+   "en": "to hand over (a bride) to the bridegroom",
+   "n_pool": 16,
+   "n_cue": 0
+  },
+  {
+   "word": "let in",
+   "rank": 3,
+   "zh": "让…参与；接纳（let sb in on sth）",
+   "en": "to allow sb to participate in or share",
+   "n_pool": 16,
+   "n_cue": 0
+  },
+  {
+   "word": "hang out",
+   "rank": 2,
+   "zh": "闲逛；厮混（hang out with sb）",
+   "en": "to spend time idly (with sb)",
+   "n_pool": 15,
+   "n_cue": 0
+  },
+  {
+   "word": "let down",
+   "rank": 3,
+   "zh": "使失望；辜负",
+   "en": "to fail to meet the hopes of",
+   "n_pool": 14,
+   "n_cue": 0
+  },
+  {
+   "word": "put forward",
+   "rank": 3,
+   "zh": "提名；推举（候选人）",
+   "en": "to propose as a candidate",
+   "n_pool": 16,
+   "n_cue": 0
+  },
+  {
+   "word": "turn off",
+   "rank": 3,
+   "zh": "使…反感；使失去兴趣",
+   "en": "to cause to feel dislike or distaste",
+   "n_pool": 15,
+   "n_cue": 0
+  },
+  {
+   "word": "slow down",
+   "rank": 2,
+   "zh": "放慢；减缓（进度/速度）",
+   "en": "to cause to proceed more slowly",
+   "n_pool": 14,
+   "n_cue": 0
+  },
+  {
+   "word": "slow down",
+   "rank": 3,
+   "zh": "松弛下来；别太拼命",
+   "en": "to relax; to take one’s ease",
+   "n_pool": 14,
+   "n_cue": 0
+  },
+  {
+   "word": "build up",
+   "rank": 2,
+   "zh": "增强（体力/信心）；使强健",
+   "en": "to bolster or strengthen",
+   "n_pool": 25,
+   "n_cue": 0
+  },
+  {
+   "word": "come around",
+   "rank": 3,
+   "zh": "回心转意；改变看法",
+   "en": "to change one’s position or opinion",
+   "n_pool": 13,
+   "n_cue": 0
+  },
+  {
+   "word": "fill in",
+   "rank": 4,
+   "zh": "临时替补；代替（他人）",
+   "en": "to act as a substitute for sb",
+   "n_pool": 12,
+   "n_cue": 0
+  },
+  {
+   "word": "pay off",
+   "rank": 3,
+   "zh": "有回报；见成效；成功",
+   "en": "to bring a good result",
+   "n_pool": 12,
+   "n_cue": 0
+  },
+  {
+   "word": "pay off",
+   "rank": 4,
+   "zh": "贿赂；收买",
+   "en": "to bribe",
+   "n_pool": 12,
+   "n_cue": 0
+  },
+  {
+   "word": "pay off",
+   "rank": 5,
+   "zh": "报复；算账",
+   "en": "to take revenge on sb",
+   "n_pool": 12,
+   "n_cue": 0
+  },
+  {
+   "word": "pull in",
+   "rank": 2,
+   "zh": "赚（钱）；挣得",
+   "en": "to earn money",
+   "n_pool": 11,
+   "n_cue": 0
+  },
+  {
+   "word": "pull in",
+   "rank": 5,
+   "zh": "集合；聚集（人/物）",
+   "en": "to gather together",
+   "n_pool": 11,
+   "n_cue": 0
+  },
+  {
+   "word": "send off",
+   "rank": 3,
+   "zh": "送别；为…送行",
+   "en": "to say goodbye to sb who is leaving",
+   "n_pool": 12,
+   "n_cue": 0
+  },
+  {
+   "word": "take after",
+   "rank": 3,
+   "zh": "仿效；学…的样；以…为榜样",
+   "en": "to imitate the behavior of sb",
+   "n_pool": 12,
+   "n_cue": 0
+  },
+  {
+   "word": "wind up",
+   "rank": 5,
+   "zh": "使兴奋；激起（情绪）",
+   "en": "to excite or arouse sb",
+   "n_pool": 27,
+   "n_cue": 0
+  },
+  {
+   "word": "wind up",
+   "rank": 6,
+   "zh": "（投球前）抡臂；挥臂",
+   "en": "to swing the arm before pitching",
+   "n_pool": 27,
+   "n_cue": 0
+  },
+  {
+   "word": "clean up",
+   "rank": 4,
+   "zh": "大赚一笔（短期暴利）",
+   "en": "to make a big profit in a short time",
+   "n_pool": 11,
+   "n_cue": 0
+  },
+  {
+   "word": "knock down",
+   "rank": 2,
+   "zh": "打倒在地（重击）",
+   "en": "to knock sb down with force",
+   "n_pool": 10,
+   "n_cue": 0
+  },
+  {
+   "word": "knock down",
+   "rank": 3,
+   "zh": "拆除；拆掉（建筑/棚屋）",
+   "en": "to demolish a building",
+   "n_pool": 10,
+   "n_cue": 0
+  },
+  {
+   "word": "knock down",
+   "rank": 4,
+   "zh": "降价；压低（价格）",
+   "en": "to reduce a price",
+   "n_pool": 10,
+   "n_cue": 0
+  },
+  {
+   "word": "step up",
+   "rank": 2,
+   "zh": "提高；增加（程度/强度）",
+   "en": "to increase in extent or intensity",
+   "n_pool": 15,
+   "n_cue": 0
+  },
+  {
+   "word": "step up",
+   "rank": 3,
+   "zh": "加速（引擎转速）",
+   "en": "to speed up an engine",
+   "n_pool": 15,
+   "n_cue": 0
+  },
+  {
+   "word": "step up",
+   "rank": 4,
+   "zh": "站出来；挺身而出；采取行动",
+   "en": "to come forward and take action",
+   "n_pool": 15,
+   "n_cue": 0
+  },
+  {
+   "word": "act up",
+   "rank": 3,
+   "zh": "（旧病）发作；（机器）出毛病",
+   "en": "(of an illness or machine) to become troublesome",
+   "n_pool": 9,
+   "n_cue": 0
+  },
+  {
+   "word": "blow up",
+   "rank": 4,
+   "zh": "发怒；大发脾气",
+   "en": "to become very angry",
+   "n_pool": 18,
+   "n_cue": 0
+  },
+  {
+   "word": "blow up",
+   "rank": 5,
+   "zh": "夸大；渲染（使显得更大）",
+   "en": "to exaggerate or make sth seem bigger",
+   "n_pool": 18,
+   "n_cue": 0
+  },
+  {
+   "word": "blow up",
+   "rank": 6,
+   "zh": "充气；使膨胀",
+   "en": "to fill sth with air or gas",
+   "n_pool": 18,
+   "n_cue": 0
+  },
+  {
+   "word": "put back",
+   "rank": 5,
+   "zh": "使花费（多少钱）",
+   "en": "to cost sb a certain amount",
+   "n_pool": 10,
+   "n_cue": 0
+  },
+  {
+   "word": "take over",
+   "rank": 4,
+   "zh": "收购；接管（公司）",
+   "en": "to take over ownership of a company",
+   "n_pool": 9,
+   "n_cue": 0
+  },
+  {
+   "word": "try out",
+   "rank": 3,
+   "zh": "试演；参加选拔",
+   "en": "to audition for a role",
+   "n_pool": 9,
+   "n_cue": 0
+  },
+  {
+   "word": "try out",
+   "rank": 4,
+   "zh": "尝试（新事物）",
+   "en": "to try sth new in order to gain experience",
+   "n_pool": 9,
+   "n_cue": 0
+  },
+  {
+   "word": "check in",
+   "rank": 1,
+   "zh": "登记入住；报到（旅馆/机场）",
+   "en": "to register one’s arrival",
+   "n_pool": 7,
+   "n_cue": 0
+  },
+  {
+   "word": "knock out",
+   "rank": 2,
+   "zh": "淘汰；击败（使不能继续参赛）",
+   "en": "to eliminate sb from a competition",
+   "n_pool": 8,
+   "n_cue": 0
+  },
+  {
+   "word": "knock out",
+   "rank": 4,
+   "zh": "使倾倒；使惊叹（着迷）",
+   "en": "to overwhelm sb with admiration",
+   "n_pool": 8,
+   "n_cue": 0
+  },
+  {
+   "word": "step down",
+   "rank": 3,
+   "zh": "降低；减弱（程度／规模）",
+   "en": "to reduce the level or intensity of sth",
+   "n_pool": 13,
+   "n_cue": 0
+  },
+  {
+   "word": "try on",
+   "rank": 3,
+   "zh": "耍（花招）；拿…试探／戏弄",
+   "en": "to attempt sth risky, or to tease sb",
+   "n_pool": 8,
+   "n_cue": 0
+  },
+  {
+   "word": "warm up",
+   "rank": 1,
+   "zh": "热身；做准备活动",
+   "en": "to do exercises to prepare for sports",
+   "n_pool": 8,
+   "n_cue": 0
+  },
+  {
+   "word": "warm up",
+   "rank": 4,
+   "zh": "变暖；转暖",
+   "en": "to get warm or warmer",
+   "n_pool": 8,
+   "n_cue": 0
+  },
+  {
+   "word": "warm up",
+   "rank": 5,
+   "zh": "（机器／引擎）预热",
+   "en": "to run until the normal working temperature is reached",
+   "n_pool": 8,
+   "n_cue": 0
+  },
+  {
+   "word": "beam on",
+   "rank": 2,
+   "zh": "（光／阳光）照在…上；照耀",
+   "en": "to shine brightly on sth",
+   "n_pool": 7,
+   "n_cue": 0
+  },
+  {
+   "word": "beam on",
+   "rank": 3,
+   "zh": "（向…）播送；发送（电波／节目）",
+   "en": "to broadcast in a given direction",
+   "n_pool": 7,
+   "n_cue": 0
+  },
+  {
+   "word": "call off",
+   "rank": 4,
+   "zh": "喊出（方阵舞的舞步）",
+   "en": "to give the calls for a square dance",
+   "n_pool": 7,
+   "n_cue": 0
+  },
+  {
+   "word": "catch on",
+   "rank": 2,
+   "zh": "流行起来；为大众所接受",
+   "en": "to become popular",
+   "n_pool": 7,
+   "n_cue": 0
+  },
+  {
+   "word": "get across",
+   "rank": 2,
+   "zh": "（话／意思）被听懂；被接受",
+   "en": "to become clear to sb",
+   "n_pool": 7,
+   "n_cue": 0
+  },
+  {
+   "word": "get by",
+   "rank": 3,
+   "zh": "侥幸逃过；未受惩罚",
+   "en": "to escape unpleasant consequences",
+   "n_pool": 6,
+   "n_cue": 0
+  },
+  {
+   "word": "condense into",
+   "rank": 2,
+   "zh": "凝结成；冷凝成（气体变成液体）",
+   "en": "to change from a gas to a liquid",
+   "n_pool": 5,
+   "n_cue": 0
+  },
+  {
+   "word": "lay off",
+   "rank": 2,
+   "zh": "停止；搁下（工作／嗜好）",
+   "en": "to put an end to an activity",
+   "n_pool": 5,
+   "n_cue": 0
+  },
+  {
+   "word": "pull over",
+   "rank": 1,
+   "zh": "（车）靠边停车；把车开到路边",
+   "en": "to steer a vehicle to the side of the road",
+   "n_pool": 5,
+   "n_cue": 0
+  },
+  {
+   "word": "put through",
+   "rank": 3,
+   "zh": "接通（电话）；为…接通电话",
+   "en": "to connect by telephone",
+   "n_pool": 5,
+   "n_cue": 0
+  },
+  {
+   "word": "think up",
+   "rank": 2,
+   "zh": "凭空编造；捏造（借口／谎话）",
+   "en": "to invent a story or excuse",
+   "n_pool": 5,
+   "n_cue": 0
+  },
+  {
+   "word": "back down",
+   "rank": 1,
+   "zh": "让步；退缩；打退堂鼓",
+   "en": "to withdraw from a stand or claim",
+   "n_pool": 3,
+   "n_cue": 0
+  },
+  {
+   "word": "brush up",
+   "rank": 2,
+   "zh": "（重新）修饰；使完善；改进",
+   "en": "to bring to a finished or refined state",
+   "n_pool": 4,
+   "n_cue": 0
+  },
+  {
+   "word": "set back",
+   "rank": 1,
+   "zh": "推迟；延后",
+   "en": "to hold back to a later time",
+   "n_pool": 4,
+   "n_cue": 0
+  },
+  {
+   "word": "set back",
+   "rank": 2,
+   "zh": "阻碍；延缓（进展）",
+   "en": "to slow down the progress of",
+   "n_pool": 4,
+   "n_cue": 0
+  },
+  {
+   "word": "set back",
+   "rank": 3,
+   "zh": "使花费（多少钱）",
+   "en": "to cost a certain amount",
+   "n_pool": 4,
+   "n_cue": 0
+  },
+  {
+   "word": "sort out",
+   "rank": 3,
+   "zh": "惩罚；整治（某人）",
+   "en": "to punish or deal with sb",
+   "n_pool": 3,
+   "n_cue": 0
+  },
+  {
+   "word": "get around",
+   "rank": 2,
+   "zh": "绕开；避开（难题／规定）",
+   "en": "to avoid or circumvent",
+   "n_pool": 3,
+   "n_cue": 0
+  },
+  {
+   "word": "get around",
+   "rank": 3,
+   "zh": "（消息／谣言）传开；流传",
+   "en": "to become known or circulate",
+   "n_pool": 3,
+   "n_cue": 0
+  },
+  {
+   "word": "get around",
+   "rank": 4,
+   "zh": "交游广；到处交际",
+   "en": "to be socially active",
+   "n_pool": 3,
+   "n_cue": 0
+  },
+  {
+   "word": "give off",
+   "rank": 2,
+   "zh": "产生（副产品）；附带生出",
+   "en": "to have as a by-product",
+   "n_pool": 3,
+   "n_cue": 0
+  },
+  {
+   "word": "add on",
+   "rank": 2,
+   "zh": "扩（建）；在末尾添建",
+   "en": "to add at the end; to make an extension",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "add up",
+   "rank": 2,
+   "zh": "加起来（是）；合计（达）",
+   "en": "to amount to; to total",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "add up",
+   "rank": 3,
+   "zh": "（说法／情况）说得通；对得上",
+   "en": "to be reasonable, logical or consistent",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "add up",
+   "rank": 4,
+   "zh": "累积成；最终意味着（add up to）",
+   "en": "to develop into; to amount to",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "back off",
+   "rank": 2,
+   "zh": "（从主张／承诺上）退缩；放弃",
+   "en": "to withdraw from a stand or commitment",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "center on",
+   "rank": 2,
+   "zh": "把…置于中心；把中心放在…上",
+   "en": "to place at the center",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "cut back",
+   "rank": 1,
+   "zh": "削减；缩减（开支／规模）",
+   "en": "to reduce or cut down on",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "cut back",
+   "rank": 3,
+   "zh": "修剪（树枝／灌木）；剪短",
+   "en": "to prune or trim back growth",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "cut back",
+   "rank": 4,
+   "zh": "（叙述）回溯；倒叙（cut back to）",
+   "en": "to return in time",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "kick off",
+   "rank": 2,
+   "zh": "开始；启动（活动／会议）",
+   "en": "to begin or launch",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "kick off",
+   "rank": 3,
+   "zh": "（足球）开球；开赛",
+   "en": "to start a football match",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "pay back",
+   "rank": 2,
+   "zh": "报复；以牙还牙（pay sb back）",
+   "en": "to take vengeance on; to get even",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "pay back",
+   "rank": 3,
+   "zh": "报答；答谢",
+   "en": "to act or give recompense in return",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "speed up",
+   "rank": 2,
+   "zh": "（自身）加速；越走越快",
+   "en": "to move faster",
+   "n_pool": 3,
+   "n_cue": 0
+  },
+  {
+   "word": "bounce off",
+   "rank": 2,
+   "zh": "（把想法）说给…听以探反应",
+   "en": "to test an idea on sb",
+   "n_pool": 1,
+   "n_cue": 0
+  },
+  {
+   "word": "burn out",
+   "rank": 2,
+   "zh": "（把…）烧坏；烧毁（内部烧坏）",
+   "en": "to destroy or become useless by burning",
+   "n_pool": 7,
+   "n_cue": 0
+  },
+  {
+   "word": "fall apart",
+   "rank": 2,
+   "zh": "崩溃；瓦解（关系／计划／局面）",
+   "en": "to fail or come to pieces",
+   "n_pool": 1,
+   "n_cue": 0
+  },
+  {
+   "word": "fall apart",
+   "rank": 3,
+   "zh": "（精神）垮掉；情绪失控",
+   "en": "to lose one's emotional composure",
+   "n_pool": 1,
+   "n_cue": 0
+  },
+  {
+   "word": "write off",
+   "rank": 1,
+   "zh": "（把…）勾销；注销（债务／账目）",
+   "en": "to cancel a debt",
+   "n_pool": 1,
+   "n_cue": 0
+  },
+  {
+   "word": "write off",
+   "rank": 2,
+   "zh": "把…看作没用；认定…不行",
+   "en": "to concede the loss or worthlessness of",
+   "n_pool": 1,
+   "n_cue": 0
+  },
+  {
+   "word": "write off",
+   "rank": 4,
+   "zh": "（不假思索地）一挥而就；顺手写出",
+   "en": "to write fluently and without hesitation",
+   "n_pool": 1,
+   "n_cue": 0
+  },
+  {
+   "word": "burn through",
+   "rank": 2,
+   "zh": "烧穿；烧出洞（烧透某物）",
+   "en": "to burn a hole through; to penetrate by burning",
+   "n_pool": 1,
+   "n_cue": 0
+  },
+  {
+   "word": "burn through",
+   "rank": 3,
+   "zh": "迅速花光（钱／资金／燃料）",
+   "en": "to spend (significant amounts of money) rapidly",
+   "n_pool": 1,
+   "n_cue": 0
+  },
+  {
+   "word": "cool down",
+   "rank": 2,
+   "zh": "（物体／天气）变凉；冷却",
+   "en": "to lose heat; to become cooler",
+   "n_pool": 2,
+   "n_cue": 0
+  },
+  {
+   "word": "cool down",
+   "rank": 3,
+   "zh": "使变凉；把…弄凉",
+   "en": "to make cool or cooler",
+   "n_pool": 2,
+   "n_cue": 0
+  }
+ ],
+ "C_cue_hit": [
+  {
+   "word": "set up",
+   "rank": 2,
+   "zh": "安装；架设",
+   "en": "to assemble/install",
+   "n_pool": 69,
+   "n_cue": 4
+  },
+  {
+   "word": "run into",
+   "rank": 2,
+   "zh": "撞上；撞到",
+   "en": "to hit (sth) with force",
+   "n_pool": 58,
+   "n_cue": 2
+  },
+  {
+   "word": "stick out",
+   "rank": 2,
+   "zh": "显眼；突出（引人注意）",
+   "en": "to be very noticeable",
+   "n_pool": 21,
+   "n_cue": 1
+  },
+  {
+   "word": "come out",
+   "rank": 3,
+   "zh": "结果是；结局（如何）",
+   "en": "to end or result in a particular way",
+   "n_pool": 570,
+   "n_cue": 3
+  },
+  {
+   "word": "go out",
+   "rank": 2,
+   "zh": "（与某人）交往；谈恋爱",
+   "en": "to have a romantic relationship with sb",
+   "n_pool": 727,
+   "n_cue": 23
+  },
+  {
+   "word": "come up",
+   "rank": 3,
+   "zh": "出现；发生（意外的事）",
+   "en": "to arise or occur unexpectedly",
+   "n_pool": 390,
+   "n_cue": 2
+  },
+  {
+   "word": "come on",
+   "rank": 2,
+   "zh": "（灯/机器）亮起；开始运转",
+   "en": "(of a light or machine) to start working",
+   "n_pool": 357,
+   "n_cue": 3
+  },
+  {
+   "word": "come on",
+   "rank": 4,
+   "zh": "进步；进展（如何）",
+   "en": "to make progress; to fare",
+   "n_pool": 357,
+   "n_cue": 2
+  },
+  {
+   "word": "get out",
+   "rank": 3,
+   "zh": "（消息/真相）传出去；泄露",
+   "en": "(of news) to become known",
+   "n_pool": 313,
+   "n_cue": 2
+  },
+  {
+   "word": "put on",
+   "rank": 2,
+   "zh": "打开（灯/暖气/音乐）",
+   "en": "to switch on (a device)",
+   "n_pool": 269,
+   "n_cue": 2
+  },
+  {
+   "word": "go through",
+   "rank": 3,
+   "zh": "（提案/法案）获通过",
+   "en": "to be approved or accepted",
+   "n_pool": 243,
+   "n_cue": 3
+  },
+  {
+   "word": "pick up",
+   "rank": 2,
+   "zh": "（开车）接（人）；搭载",
+   "en": "to give sb a lift",
+   "n_pool": 207,
+   "n_cue": 1
+  },
+  {
+   "word": "make out",
+   "rank": 3,
+   "zh": "填写；开（支票/单据）",
+   "en": "to write out (a cheque/list)",
+   "n_pool": 155,
+   "n_cue": 1
+  },
+  {
+   "word": "hold up",
+   "rank": 4,
+   "zh": "举…为例；作为榜样",
+   "en": "to hold sth up as an example",
+   "n_pool": 126,
+   "n_cue": 4
+  },
+  {
+   "word": "take in",
+   "rank": 2,
+   "zh": "欺骗；哄骗",
+   "en": "to deceive or cheat",
+   "n_pool": 115,
+   "n_cue": 3
+  },
+  {
+   "word": "call out",
+   "rank": 2,
+   "zh": "点名；高声叫（名字/号码）",
+   "en": "to call aloud (names or numbers)",
+   "n_pool": 114,
+   "n_cue": 1
+  },
+  {
+   "word": "set out",
+   "rank": 3,
+   "zh": "陈列；陈述（有条理地摆出）",
+   "en": "to arrange or state in order",
+   "n_pool": 96,
+   "n_cue": 1
+  },
+  {
+   "word": "break off",
+   "rank": 2,
+   "zh": "掰下；折断（一块/一端）",
+   "en": "to detach by breaking",
+   "n_pool": 94,
+   "n_cue": 3
+  },
+  {
+   "word": "wake up",
+   "rank": 3,
+   "zh": "醒悟；意识到（wake up to）",
+   "en": "to become aware of",
+   "n_pool": 90,
+   "n_cue": 6
+  },
+  {
+   "word": "pass on",
+   "rank": 2,
+   "zh": "传授；传播（知识/消息）",
+   "en": "to transmit (knowledge or skills)",
+   "n_pool": 79,
+   "n_cue": 1
+  },
+  {
+   "word": "come through",
+   "rank": 2,
+   "zh": "兑现；如期履行（come through with）",
+   "en": "to do what is expected or promised",
+   "n_pool": 75,
+   "n_cue": 1
+  },
+  {
+   "word": "break through",
+   "rank": 2,
+   "zh": "取得突破（进展）",
+   "en": "to penetrate; make a breakthrough",
+   "n_pool": 38,
+   "n_cue": 2
+  },
+  {
+   "word": "fill out",
+   "rank": 4,
+   "zh": "（帆）鼓起；张开",
+   "en": "(of sails) to swell and take the wind",
+   "n_pool": 12,
+   "n_cue": 2
+  },
+  {
+   "word": "bridge over",
+   "rank": 2,
+   "zh": "帮…渡过（难关）；接济度过",
+   "en": "to help sb get through a short period",
+   "n_pool": 11,
+   "n_cue": 11
+  },
+  {
+   "word": "act up",
+   "rank": 2,
+   "zh": "调皮捣蛋；（孩子）胡闹",
+   "en": "to misbehave; to behave badly",
+   "n_pool": 9,
+   "n_cue": 2
+  },
+  {
+   "word": "knock out",
+   "rank": 1,
+   "zh": "打昏；击倒（拳击中打晕对手）",
+   "en": "to knock sb unconscious, esp. in boxing",
+   "n_pool": 8,
+   "n_cue": 1
+  },
+  {
+   "word": "branch off",
+   "rank": 2,
+   "zh": "（话题）岔开；转到别的话题上",
+   "en": "to turn to a different subject",
+   "n_pool": 7,
+   "n_cue": 1
+  },
+  {
+   "word": "call off",
+   "rank": 1,
+   "zh": "取消；叫停（活动／比赛／计划）",
+   "en": "to cancel or call to a halt",
+   "n_pool": 7,
+   "n_cue": 4
+  },
+  {
+   "word": "think through",
+   "rank": 1,
+   "zh": "彻底想清楚；通盘考虑（再动手）",
+   "en": "to consider sth thoroughly",
+   "n_pool": 5,
+   "n_cue": 4
+  },
+  {
+   "word": "circle around",
+   "rank": 2,
+   "zh": "围绕（某物）转；绕到…去",
+   "en": "to move around sth or to get round to it",
+   "n_pool": 4,
+   "n_cue": 1
+  },
+  {
+   "word": "drop by",
+   "rank": 1,
+   "zh": "顺路拜访；随便来访",
+   "en": "to visit informally and spontaneously",
+   "n_pool": 4,
+   "n_cue": 4
+  },
+  {
+   "word": "add on",
+   "rank": 1,
+   "zh": "另外加上；附加（额外之物）",
+   "en": "to add as an extra",
+   "n_pool": 2,
+   "n_cue": 2
+  },
+  {
+   "word": "base in",
+   "rank": 1,
+   "zh": "把…设在（某地）；以…为基地／本部",
+   "en": "to station or establish in a place",
+   "n_pool": 2,
+   "n_cue": 2
+  },
+  {
+   "word": "bridge across",
+   "rank": 1,
+   "zh": "架桥横跨；在…上架桥（跨越）",
+   "en": "to build a bridge across; to span",
+   "n_pool": 2,
+   "n_cue": 2
+  },
+  {
+   "word": "speed up",
+   "rank": 1,
+   "zh": "（使）加快；加速（进程）",
+   "en": "to cause to move or happen faster",
+   "n_pool": 3,
+   "n_cue": 3
+  },
+  {
+   "word": "bounce off",
+   "rank": 1,
+   "zh": "（从…上）弹起；弹开",
+   "en": "to rebound off a surface",
+   "n_pool": 1,
+   "n_cue": 1
+  },
+  {
+   "word": "burn out",
+   "rank": 3,
+   "zh": "精疲力竭；累垮（身心耗尽）",
+   "en": "to exhaust or wear out from overwork",
+   "n_pool": 7,
+   "n_cue": 1
+  },
+  {
+   "word": "clutter up",
+   "rank": 1,
+   "zh": "使杂乱；堆满（clutter up + 地方）",
+   "en": "to fill or cover in a disorderly way",
+   "n_pool": 1,
+   "n_cue": 1
+  },
+  {
+   "word": "decrease by",
+   "rank": 1,
+   "zh": "减少了（若干）；（按…幅度）下降",
+   "en": "to diminish by a certain amount",
+   "n_pool": 1,
+   "n_cue": 1
+  }
+ ]
+}
