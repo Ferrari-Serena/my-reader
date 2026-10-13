@@ -154,11 +154,11 @@ CUE = {
     ("pick up", 3): r"\b(?:pick|picks|picking|picked)\s+up\b[^.?!;,]{0,20}?\b(?:French|English|German|Spanish|Italian|Latin|Greek|a language|languages|the language|the habit|habits|knowledge|a smattering|the use of|the rudiments|the knack|the trick|the art of|the news|information|a few words|the local|points?)\b",
     ("pick up", 4): r"\b(?:pick|picks|picking|picked)\s+up\b[^.?!;,]{0,15}?\b(?:the (?:room|rooms|house|things|toys|mess)|everything)\b|\b(?:pick|picks|picking|picked)\s+up\b\s+after\s+(?:him|her|them|me|us|you|the (?:party|guests|others))\b",
     ("lie down", 1): r"\b(?:lie|lies|lying|lay|lain) down\b",
-    ("come over", 1): r"\b(?:come|comes|came|coming) over\b[^.?!]{0,20}?\b(?:to (?:my|his|her|our|the|your) (?:house|place|room|flat)|here|and see|to see|this evening|tonight|to-morrow|tomorrow|to dinner|to tea)\b",
-    ("come over", 2): r"\b(?:feeling|sense|wave|emotion|fear|faintness|dizziness|despair|sadness|memories?|a change)\b[^.?!]{0,25}?\b(?:come|comes|came|coming) over\b|\b(?:come|comes|came|coming) over\b[^.?!]{0,15}?\b(?:him|her|me|us|them)\b",
-    ("go off", 1): r"\b(?:bomb|shell|gun|pistol|rifle|cartridge|explosive)\b[^.?!]{0,25}?\b(?:go|goes|going|went|gone) off\b|\b(?:go|goes|going|went|gone) off\b[^.?!]{0,15}?\b(?:with a bang|with a crash)\b",
+    ("come over", 1): r"\b(?:come|comes|came|coming) over\b[^.?!]{0,20}?\b(?:to (?:my|his|her|our|the|your) (?:house|place|room|flat)|to (?:me|him|her|us|them)|with (?:me|him|her|us|them)|here|and see|and help|to see|this evening|tonight|to-morrow|tomorrow|to dinner|to tea)\b",
+    ("come over", 2): r"\b(?:feeling|sense|wave|emotion|fear|faintness|dizziness|despair|sadness|memories?|a change)\b[^.?!]{0,25}?\b(?:come|comes|came|coming) over\b|\b(?:come|comes|came|coming) over\s+(?:him|her|me|us|them)\b",
+    ("go off", 1): r"\b(?:bombs?|shells?|guns?|pistols?|rifles?|cartridges?|explosives?|mines?)\b[^.?!]{0,25}?\b(?:go|goes|going|went|gone) off\b|\b(?:go|goes|going|went|gone) off\b[^.?!]{0,15}?\b(?:with a bang|with a crash)\b",
     ("go off", 2): r"\b(?:alarm|bell|clock|whistle|signal|bugle)\b[^.?!]{0,25}?\b(?:go|goes|going|went|gone) off\b",
-    ("go off", 3): r"\b(?:go|goes|going|went|gone) off\b[^.?!]{0,20}?\b(?:to (?:the|his|her|a|town)|by himself|by herself|alone|without|early|at once|together)\b|\b(?:go|goes|going|went|gone) off\b\s*[.,!?]",
+    ("go off", 3): r"\b(?:go|goes|going|went|gone) off\b[^.?!]{0,20}?\b(?:to (?:the|his|her|a|town)|by himself|by herself|alone|without|early|at once|together)\b|\b(?:I|he|she|we|they|you|it)\b[^.?!]{0,20}?\b(?:go|goes|going|went|gone) off\b\s*[.,!?]|\bintending to go off\b|\band (?:went|gone|going|goes|go) off\b\s*[.,!?]|\b(?:painting|picture|colou?r|face|complexion)\b[^.?!]{0,20}?\b(?:go|goes|going|went|gone) off\b|\bthe thing\b[^.?!]{0,20}?\b(?:go|goes|going|went|gone) off\b|\bthe silver\b[^.?!]{0,20}?\b(?:go|goes|going|went|gone) off\b",
     ("run away", 1): r"\b(?:run|runs|running|ran) away\b[^.?!]{0,20}?\b(?:from|with|to)\b|\b(?:run|runs|running|ran) away\b\s*[.,!?]",
     ("run away", 2): r"\b(?:run|runs|running|ran) away from home\b|\b(?:run|runs|running|ran) away\b[^.?!]{0,15}?\bhome\b",
     ("take out", 1): r"^(?!.*\b(?:take|takes|taking|took|taken)\s+(?:her|him|them|me|us|you|the girl|the boy)\s+out\b)(?!.*\b(?:take|takes|taking|took|taken) out\b[^.?!]{0,20}?\b(?:licen[cs]e|licenses?|patent|insurance|policy|a policy|permit|summons|warrant|a warrant)\b).*\b(?:take|takes|taking|took|taken) out\b",
@@ -273,8 +273,8 @@ CUE = {
     ("live on", 1): r"\bliv(?:e|es|ed|ing) on\b[^.?!]{0,20}?\b(?:rum|goats?|berries|oysters|bread|treacle|rice|fish|milk|fruit|charity|the (?:climate|land|country)|nothing|what|it|his|her|their)\b",
     ("live on", 2): r"\bliv(?:e|es|ed|ing) on\b[^.?!]{0,20}?\b(?:for ever|forever|a thousand|in (?:the )?(?:memory|hearts|minds)|after (?:his|her|their) death)\b",
     # turn back
-    ("turn back", 1): r"\bturn(?:s|ed|ing)? back\b[^.?!]{0,20}?\b(?:and (?:ask|walk|look|go|enter|say)|to (?:the|his|her|their|my|our)|into (?:the|his|her)|for (?:his|her|the|a)|home|towards|toward|upon (?:his|her) (?:steps|way))\b",
-    ("turn back", 2): r"\bturn(?:s|ed|ing)? back\b[^.?!]{0,20}?\b(?:the (?:enemy|tide|flood|attack|army|invaders|troops|wave)|them|him|her|the (?:crowd|mob))\b",
+    ("turn back", 1): r"\bturn(?:s|ed|ing)? back\b[^.?!]{0,30}?\b(?:and (?:ask(?:ed)?|walk(?:ed)?|look(?:ed)?|went|go(?:es)?|enter(?:ed)?|say|said)|to (?:the|his|her|their|my|our)|to (?:look|accompany)|with (?:him|her|them|me|us|you)|into (?:the|his|her)|for (?:his|her|the|a)|home|towards|toward|(?:his|her) (?:head|face|eyes|gaze)|upon (?:his|her) (?:steps|way))\b",
+    ("turn back", 2): r"\bturn(?:s|ed|ing)? back\s+(?:the (?:enemy|tide|flood|attack|army|invaders|troops|wave)|them|him|her(?!\s+(?:head|face|eyes?|gaze))|the (?:crowd|mob))\b",
     ("turn back", 3): r"\bturn(?:s|ed|ing)? back\b[^.?!]{0,20}?\b(?:to (?:a |the |his |her )?(?:previous|former|old|earlier)|the (?:clock|hands of)|into (?:a |the )?(?:child|boy|girl))\b",
     # turn over
     ("turn over", 1): r"\bturn(?:s|ed|ing)? over\b[^.?!]{0,20}?\b(?:on (?:his|her|its|the|their) (?:side|face|back)|and (?:went|go|lay|look|swim)|upon (?:its|his|her) side|in the (?:air|water)|upside)\b",
@@ -468,7 +468,7 @@ CUE = {
     ("come off", 3): r"\b(?:come|comes|came|coming) off\b[^.?!]{0,25}?\b(?:soon|to-?night|to-?morrow|next (?:week|month)|when convenient|that (?:day|night))\b|\b(?:marriage|wedding|drive|match|fight|race|ceremony|event|party|things?|miracle)\b[^.?!]{0,30}?\b(?:come|comes|came|coming) off\b|\bit (?:came|comes|will) off\b",
     # get along
     ("get along", 1): r"\b(?:get|gets|getting|got|gotten) along\b[^.?!]{0,15}?\b(?:with (?:my|his|her|their|your|the|one|him|her|them|us|people|me|Grey|each other)|together)\b",
-    ("get along", 2): r"\b(?:get|gets|getting|got|gotten) along\b[^.?!]{0,12}?\b(?:all right|well|fine|nicely|better|splendidly|pretty|enough|without)\b|\bhow\b[^.?!]{0,20}?\b(?:get|gets|getting|got) along\b",
+    ("get along", 2): r"\b(?:get|gets|getting|got|gotten) along\b(?!\s+together\b)[^.?!]{0,12}?\b(?:all right|well|fine|nicely|better|splendidly|pretty|enough|without)\b|\bhow\b[^.?!]{0,20}?\b(?:get|gets|getting|got|gotten) along\b(?!\s+with\b)",
     ("get along", 3): r"\bget along (?:to bed|to|home|now|with you|with ye)\b|\bget along\b\s*!",
     # see through
     ("see through", 1): r"\b(?:see|sees|seeing|saw|seen) through\b[^.?!]{0,12}?\b(?:me|him|her|them|us|you|it|his (?:disguise|hollowness)|the (?:disguise|hollowness|sham|trick|plot|scheme|pretence|manouevre|maneuver)|such (?:thick-headed )?nonsense)\b",
@@ -538,15 +538,15 @@ CUE = {
     # fall out
     ("fall out", 1): r"\b(?:fall|falls|falling|fell|fallen) out of\b",
     ("fall out", 2): r"\b(?:fall|falls|falling|fell|fallen) out\b[^.?!]{0,15}?\b(?:with (?:him|her|them|each other)|as to|about|over|nor)\b",
-    ("fall out", 3): r"\b(?:it|things?|all|that|matters?)\b[^.?!]{0,15}?\b(?:fell|fallen|fall|falls) out\b|\bas things fell out\b|\bit so fell out\b|\bit fell out\b|\bthere fell out\b",
+    ("fall out", 3): r"\b(?:it|things?|all|that|matters?)\b[^.?!]{0,15}?\b(?:fell|fallen|fall|falls) out\b(?!\s+of\b)|\bas things fell out\b|\bit so fell out\b|\bit fell out\b|\bthere fell out\b",
     # mix up
     ("mix up", 1): r"\bmix(?:es|ed|ing)? up\b[^.?!]{0,20}?\b(?:two|sentiment and|and reason|the (?:four|two|accounts?|ideas?|months?)|not only)\b|\bmixes up\b",
     ("mix up", 2): r"\ball mixed up\b|\b(?:quite|thoroughly|completely|utterly) mixed up\b",
     # give out
     ("give out", 1): r"\b(?:give|gives|giving|gave|given) out\b[^.?!]{0,20}?\b(?:books?|money|prizes?|papers?|tracts?|food|bread|rations|numbers?|the (?:number|books?|papers?|money|prizes?|psalm)|to (?:the|each|her|his)|among)\b",
     ("give out", 2): r"\b(?:give|gives|giving|gave|given) out\b[^.?!]{0,15}?\b(?:light|heat|sound|melody|music|scent|perfume|smell|shimmer|rustle|creak|call|gleam|glow|rays?|cry|steam|odour|odor|murmur|whistle|burst)\b|\b(?:light|scent|perfume|smell|rustle|creak|melody|call|murmur|whistle|shimmer)\b[^.?!]{0,15}?\b(?:give|gives|gave|given|giving) out\b",
-    ("give out", 3): r"\b(?:give|gives|giving|gave|given) out\b[^.?!]{0,15}?\b(?:supply|coal|food|money|strength|patience|breath|steam)\b|\b(?:supply|coal|money|food|strength|patience|steam|iron of his flesh)\b[^.?!]{0,20}?\b(?:give|gives|gave|given|giving) out\b",
-    ("give out", 4): r"\bgave out\b\s*[.!?]|\bgive out or fail\b|\bI gave out\b",
+    ("give out", 3): r"\b(?:supply|coal|money|food|strength|patience|steam|iron of his flesh)\b[^.?!]{0,20}?\b(?:give|gives|gave|given|giving) out\b",
+    ("give out", 4): r"\bgive out or fail\b|\bI gave out\b",
     # clear up
     ("clear up", 1): r"\b(?:cleared|clear|clears|clearing) up\b[^.?!]{0,15}?\b(?:weather|sky|day|clouds?|face)\b|\b(?:weather|sky|face)\b[^.?!]{0,15}?\b(?:cleared|clear|clears) up\b",
     ("clear up", 2): r"\b(?:clear|cleared|clears|clearing) up\b[^.?!]{0,25}?\b(?:mystery|points?|case|matters?|mistake|bewilderment|puzzle|question|detail|business|misunderstanding|all that)\b",
