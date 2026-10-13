@@ -199,7 +199,7 @@ CUE = {
     # ===== 块 B″ 第三批（2026-10-10 十三续 · 30 词）=====
     # break out
     ("break out", 1): r"\b(?:break|breaks|breaking|broke|broken) out\b[^.?!]{0,25}?\b(?:war|fighting|fire|flames|plague|cholera|fever|epidemic|revolution|riots?|storm|violence|explosion|outbreak|hostilities)\b|\b(?:war|fire|plague|cholera|epidemic|riots?|violence|hostilities)\b[^.?!]{0,25}?\b(?:break|breaks|breaking|broke|broken) out\b",
-    ("break out", 2): r"\b(?:break|breaks|breaking|broke|broken) out\b[^.?!]{0,25}?\b(?:laugh|laughing|laughter|tears|crying|oath|cursing|singing|into (?:laughter|a|an)|with (?:a|an|the)|afresh|impulsively|impatiently|angrily|good-naturedly|fiercely)\b",
+    ("break out", 2): r"\b(?:break|breaks|breaking|broke|broken) out\b[^.?!]{0,25}?\b(?:laugh|laughing|laughter|tears|crying|oath|cursing|singing|into (?:laughter|a|an)|with (?:a|an|the)|impulsively|impatiently|angrily|good-naturedly|fiercely)\b",
     ("break out", 3): r"\b(?:break|breaks|breaking|broke|broken) out\b[^.?!]{0,20}?\b(?:of (?:prison|jail|gaol|the prison|his cell|the camp|all bounds)|escape|free|the enemy)\b",
     ("break out", 4): r"\b(?:break|breaks|breaking|broke|broken) out\b[^.?!]{0,20}?\b(?:in (?:a |an )?(?:rash|spots|blisters|sweat)|all over)\b",
     # call on
@@ -219,9 +219,9 @@ CUE = {
     ("go about", 2): r"\b(?:go|goes|going|went) about\b[^.?!]{0,25}?\b(?:carrying|with (?:posters|flags)|the (?:streets|town|country|city)|among|from (?:door|house)|everywhere|singing|begging)\b",
     ("go about", 3): r"\b(?:stand by|ready) to go about\b|\b(?:go|goes|going|went) about\b[^.?!]{0,20}?\b(?:ship|tack|wind|shore|sail|helm|bow|hove)\b|\bwent about ship\b",
     # put up
-    ("put up", 1): r"\bput(?:s|ting)? up\b[^.?!]{0,20}?\b(?:hand|hands|arms?|poles?|sails?|umbrella|flag|head|stick|finger|his (?:hand|hands|arms?|head))\b",
+    ("put up", 1): r"(?!put(?:s|ting)? up with\b)\bput(?:s|ting)? up\b[^.?!]{0,20}?\b(?:hand|hands|arms?|poles?|sails?|umbrella|flag|head|stick|finger|his (?:hand|hands|arms?|head))\b",
     ("put up", 2): r"\bput(?:s|ting)? up\b[^.?!]{0,20}?\b(?:building|house|shed|hut|wall|fence|monument|statue|tent|stage|scaffold|barracks|factory|frame)\b",
-    ("put up", 3): r"\bput(?:s|ting)? up\b[^.?!]{0,20}?\b(?:at (?:the|a|an|his|her|their|my)|for (?:the )?night|lodging|board|for (?:him|her|them|us|me))\b",
+    ("put up", 3): r"(?!put(?:s|ting)? up with\b)\bput(?:s|ting)? up\b[^.?!]{0,20}?\b(?:at (?:the|a|an|his|her|their|my)|for (?:the )?night|lodging|board|for (?:him|her|them|us|me))\b",
     ("put up", 4): r"\bput(?:s|ting)? up\b[^.?!]{0,20}?\b(?:notice|notices|poster|posters|bill|bills|placard|advertisement|sign|announcement)\b",
     ("put up", 5): r"\bput(?:s|ting)? up\b[^.?!]{0,20}?\b(?:a (?:fight|struggle|resistance|brave|game|good)|fight|resistance|defence|defense|spectacle)\b",
     # bring up
@@ -236,7 +236,7 @@ CUE = {
     ("hold up", 4): r"\bhold(?:s|ing)? up\b[^.?!;,]{0,30}?\b(?:as (?:an? )?(?:example|model|instance|pattern)|for admiration|to admiration)\b|\bheld up\b[^.?!;,]{0,30}?\b(?:as (?:an? )?(?:example|model|instance|pattern)|as a colossal liar|to be seen|(?:daily )?in warning)\b",
     ("hold up", 5): r"\b(?<!to )hold up\b\s*(?:[!,.]|--|[\u2014\u2013\u201c\u201d])|\bheld up\b(?!\s+(?:his|her|their|my|your|its|the|a|an)\b)[^.?!]{0,20}?\b(?:well|under|badly|and (?:looked|smiled|waited))\b",
     # turn up
-    ("turn up", 1): r"\b(?:turn|turns|turning|turned) up\b[^.?!]{0,25}?\b(?:unexpectedly|at (?:the|last)|sooner|later|by the end|in my mind|again|here|there|somewhere|among|amongst)\b|\b(?:if|unless) (?:we|they|he|she|you) (?:don't|do not) turn up\b",
+    ("turn up", 1): r"\b(?:turn|turns|turning|turned) up\b[^.?!]{0,25}?\b(?:unexpectedly|at last|sooner|later|by the end|in my mind|again|here|there|somewhere|among|amongst)\b|\b(?:if|unless) (?:we|they|he|she|you) (?:don't|do not) turn up\b",
     ("turn up", 2): r"\b(?:turn|turns|turning|turned) up\b[^.?!]{0,20}?\b(?:volume|music|radio|lamp|light|gas|fire|heat|steam)\b",
     ("turn up", 3): r"\b(?:turn|turns|turning|turned) up\b[^.?!]{0,20}?\b(?:cuffs?|sleeves?|trousers|trouser|skirt|hem|collar|nose|hair)\b",
     ("turn up", 4): r"\b(?:turn|turns|turning|turned) up\b[^.?!]{0,20}?\b(?:a card|cards|trumps?|a (?:coin|penny|sixpence)|evidence|a (?:letter|paper|body))\b",
@@ -438,7 +438,7 @@ CUE = {
     # hang on
     ("hang on", 1): r"\b(?:hang|hangs|hanging|hung) on\b[^.?!]{0,20}?\b(?:to (?:the|his|her|a)|by (?:his|her|the) (?:hands|teeth)|tight|desperately|for (?:his|her|dear) life)\b",
     ("hang on", 2): r"\bhang on\b\s*[!,]|\b(?:hang|hangs|hanging|hung) on\b[^.?!]{0,15}?\b(?:a (?:minute|moment|second)|till (?:I|we)|while (?:I|we))\b",
-    ("hang on", 3): r"\b(?:hang|hangs|hanging|hung) on\b[^.?!]{0,20}?\b(?:till|until|to the (?:end|last)|and (?:won|survived|endured)|bravely|patiently)\b",
+    ("hang on", 3): r"\b(?:hang|hangs|hanging|hung) on\b[^.?!]{0,20}?\b(?:till|until|and (?:won|survived|endured)|bravely|patiently)\b",
     ("hang on", 4): r"\b(?:hang|hangs|hanging|hung) on\b[^.?!]{0,20}?\b(?:whether|what|how|his (?:life|fate|future)|her (?:life|fate)|the (?:answer|whole|result|question|issue))\b",
     # take on
     ("take on", 1): r"\b(?:take|takes|taking|took|taken) on\b[^.?!]{0,25}?\b(?:the (?:work|duty|duties|task|job|responsibility|responsibilities|office|charge|burden|cares|care|management|business)|his (?:duties|duty|share|part)|her (?:duties|duty|share|part)|a (?:new|fresh) (?:task|duty|job))\b",
@@ -452,7 +452,7 @@ CUE = {
     ("get through", 1): r"\b(?:get|gets|getting|got|gotten) through\b[^.?!]{0,25}?\b(?:the work|his work|her work|their work|my work|a vast amount of work|the business|the job|the task|the letter|the letters|the correspondence|his lesson|the lessons|the meal|the breakfast|things?)\b|\b(?:work|business|job|task|letters?|lessons?|things?)\b[^.?!]{0,20}?\b(?:get|gets|getting|got|gotten) through\b",
     ("get through", 2): r"\b(?:get|gets|getting|got|gotten) through\b[^.?!]{0,25}?\b(?:the exam|an exam|exams|the test|the examination|the interview|the scrutiny|the ordeal)\b|\b(?:exam|exams|examination|test)\b[^.?!]{0,25}?\b(?:get|gets|getting|got|gotten) through\b",
     ("get through", 3): r"\b(?:get|gets|getting|got|gotten) through\b[^.?!]{0,12}?\b(?:the door|the doorway|the window|the wall|the gate|the opening|the hole|the bars|the belt of trees|the crowd|the passage)\b",
-    ("get through", 4): r"\b(?:get|gets|getting|got|gotten) through\b[^.?!]{0,25}?\b(?:the (?:summer|winter|day|days|night|week|month|year|evening|meal|afternoon|desolation|rest of|whole)|three more minutes)\b",
+    ("get through", 4): r"\b(?:get|gets|getting|got|gotten) through\b[^.?!]{0,25}?\b(?:the (?:summer|winter|day|days|night|week|month|year|evening|afternoon|desolation|rest of|whole)|three more minutes)\b",
     ("get through", 5): r"\b(?:telephone|phone|wire|exchange|operator|the line)\b[^.?!]{0,25}?\b(?:get|gets|getting|got|gotten) through\b|\b(?:get|gets|getting|got|gotten) through\b[^.?!]{0,20}?\b(?:telephone|phone|wire|exchange|operator)\b",
     # run over
     ("run over", 1): r"\b(?:get|got|gets|gotten|been|being|be|was|were|is|are)\s+run over\b|\b(?:run|runs|running|ran) over\b[^.?!]{0,25}?\b(?:his|her|my|your|their|a|the) (?:hand|foot|legs?|dog|child|children|man|woman|boy|girl|people|pedestrian|wife|husband|horse)\b|\bstreet car\b[^.?!]{0,25}?\brun over\b",
@@ -1157,7 +1157,7 @@ CUE = {
     ("give up", 2): r"\b(?:give|gives|giving|gave|given) up\b[^.?!]{0,22}?\b(?:smoking|drinking|cigarettes?|tobacco|liquor|drink|wine|whisky|whiskey|brandy|beer|cigars?|coffee|opium|walking in my sleep)\b|\b(?:smoking|drinking|cigarettes?|tobacco|liquor|drink|wine|whisky|whiskey|brandy|beer|cigars?|coffee|opium|walking in my sleep)\b[^.?!]{0,22}?\b(?:give|gives|giving|gave|given) up\b",
     ("give up", 3): r"\b(?:give|gives|giving|gave|given) up\b[^.?!]{0,22}?\b(?:seat|seats|place|places|throne|crown|claim|room|berth|quarters|ground|advantage)\b|\b(?:seat|seats|place|places|throne|crown|claim|room|berth|quarters|ground|advantage)\b[^.?!]{0,22}?\b(?:give|gives|giving|gave|given) up\b",
     ("set up", 1): r"\b(?:set|sets|setting) up\b[^.?!]{0,22}?\b(?:establishment|business|shop|store|school|house|home|firm|college|church|hospital|colony|kingdom|bank|office|practice)\b|\b(?:establishment|business|shop|store|school|house|home|firm|college|church|hospital|colony|kingdom|bank|office|practice)\b[^.?!]{0,22}?\b(?:set|sets|setting) up\b",
-    ("set up", 2): r"\b(?:set|sets|setting) up\b[^.?!]{0,22}?\b(?:bench|apparatus|machine|engine|printing-press|press|telegraph|wires?|transformer|poles?|stove|tent|bed|monument|stone|table|frame|lamp)\b|\b(?:bench|apparatus|machine|engine|printing-press|press|telegraph|wires?|transformer|poles?|stove|tent|bed|monument|stone|table|frame|lamp)\b[^.?!]{0,22}?\b(?:set|sets|setting) up\b",
+    ("set up", 2): r"\b(?:set|sets|setting) up\b[^.?!]{0,22}?\b(?:bench|apparatus|machine|engine|printing-press|press|telegraph|wires?|transformer|poles?|stove|tent|bed|monument|stone|table|frame|lamp(?!-))\b|\b(?:bench|apparatus|machine|engine|printing-press|press|telegraph|wires?|transformer|poles?|stove|tent|bed|monument|stone|table|frame|lamp(?!-))\b[^.?!]{0,22}?\b(?:set|sets|setting) up\b",
     ("set up", 3): r"\b(?:set|sets|setting) up\b[^.?!]{0,22}?\b(?:game|experiment|committee|inquiry|trial|system|rules|arrangement)\b|\b(?:game|experiment|committee|inquiry|trial|system|rules|arrangement)\b[^.?!]{0,22}?\b(?:set|sets|setting) up\b",
     ("take off", 1): r"\b(?:take|takes|taking|took|taken) off\b[^.?!]{0,22}?\b(?:aeroplane|airplane|plane|flight|runway|aerial|airship|balloon)\b|\b(?:aeroplane|airplane|plane|flight|runway|aerial|airship|balloon)\b[^.?!]{0,22}?\b(?:take|takes|taking|took|taken) off\b",
     ("take off", 2): r"\b(?:take|takes|taking|took|taken) off\b[^.?!]{0,22}?\b(?:coat|coats|waistcoat|hat|hats|cap|bonnet|shoes|boots|clothes|dress|dresses|surplice|bandages?|cover|lid|gloves?|cloak|jacket|shirt|veil|apron|trousers|stockings?|wig|muffler|shawl|scarf|vest|blouse|kimono|slippers?|socks?|uniform|overcoat)\b|\b(?:coat|coats|waistcoat|hat|hats|cap|bonnet|shoes|boots|clothes|dress|dresses|surplice|bandages?|cover|lid|gloves?|cloak|jacket|shirt|veil|apron|trousers|stockings?|wig|muffler|shawl|scarf|vest|blouse|kimono|slippers?|socks?|uniform|overcoat)\b[^.?!]{0,22}?\b(?:take|takes|taking|took|taken) off\b",
