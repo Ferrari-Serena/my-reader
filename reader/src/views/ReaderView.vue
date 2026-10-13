@@ -1022,16 +1022,18 @@ async function onWordClick(event) {
         senses: entry.senses,
         resolution: resolvePhraseSense(entry, sentence)
       }
+    } else if (entry?.defs?.length) {
+      selectedPhrase.value = { phrase: span.base, defs: entry.defs }
     } else {
-      selectedPhrase.value = { phrase: span.base, defs: span.defs }
+      selectedPhrase.value = null
     }
   } else {
     selectedPhrase.value = null
   }
 
-  // 词组义项弹窗：有 senses 时直接显示四块，不再查单词义
-  if (selectedPhrase.value?.senses?.length) {
-    selectedWord.value = word
+  // 词组义项弹窗：有 senses 或 defs 时直接显示词组义，不再查单词义
+  if (selectedPhrase.value?.senses?.length || selectedPhrase.value?.defs?.length) {
+    selectedWord.value = selectedPhrase.value.phrase
     dictEntry.value = null
     dictLoading.value = false
     return

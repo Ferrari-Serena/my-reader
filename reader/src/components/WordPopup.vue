@@ -47,6 +47,18 @@
             </section>
           </div>
 
+          <!-- 无 senses 但有 defs 的词组：直接显示词组义，不再落单词义 -->
+          <div v-else-if="hasSimpleDefs" class="phrase-sense-panel">
+            <section class="sense-block">
+              <h4 class="sense-label">词组义</h4>
+              <ol class="sense-list">
+                <li v-for="(def, i) in phraseInfo.defs" :key="i" class="sense-item">
+                  <span>{{ def }}</span>
+                </li>
+              </ol>
+            </section>
+          </div>
+
           <!-- 无 senses 的词组/普通词：保留旧弹窗内容 -->
           <template v-else>
             <div v-if="phraseInfo" class="phrase-banner">
@@ -137,6 +149,12 @@ const visible = computed(() => !!props.word)
 
 const hasSenses = computed(() =>
   Array.isArray(props.phraseInfo?.senses) && props.phraseInfo.senses.length > 0
+)
+
+const hasSimpleDefs = computed(() =>
+  !hasSenses.value &&
+  Array.isArray(props.phraseInfo?.defs) &&
+  props.phraseInfo.defs.length > 0
 )
 
 const resolution = computed(() =>
