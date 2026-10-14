@@ -5,6 +5,12 @@
  */
 
 import { reactive, computed } from 'vue'
+import {
+  resolvePhraseSense,
+  sentenceForToken,
+  buildMatchIndex,
+  scanParagraphText
+} from '../utils/phraseSolve.js'
 
 const state = reactive({
   loaded: false,
@@ -27,18 +33,9 @@ async function init() {
       const res = await fetch(`${import.meta.env.BASE_URL}data/phrases.json`)
       if (!res.ok) throw new Error(`phrases.json ${res.status}`)
       const data = await res.json()
-      const idx = new Map()
-      for (const [base, entry] of Object.entries(data)) {
-        const wc = base.split(' ').length
-        if (wc > maxPhraseWords) maxPhraseWords = wc
-        idx.set(base, { base, entry, wordCount: wc })
-        for (const form of entry.forms || []) {
-          const fwc = form.split(' ').length
-          if (fwc > maxPhraseWords) maxPhraseWords = fwc
-          idx.set(form, { base, entry, wordCount: fwc })
-        }
-      }
-      matchIndex = idx
+      const built = buildMatchIndex(data)
+      matchIndex = built.matchIndex
+      maxPhraseWords = built.maxPhraseWords
       state.entries = data
       state.loaded = true
     } catch {
@@ -50,60 +47,6 @@ async function init() {
   return initPromise
 }
 
-const SENTENCE_END = /[.!?]$/
-
-function cleanToken(tok) {
-  return tok.replace(/^[^a-zA-Z]+|[^a-zA-Z']+$/g, '').toLowerCase()
-}
-
-function cueTier(cue) {
-  if (!cue) return 'none'
-  return cue.startsWith('^') ? 'low' : 'high'
-}
-
-/**
- * 用命中 token 所在的句子跑 L1（`cue` 正则），与 generator/l1_probe.py 同口径。
- * 返回 `unique`（唯一显式 marker）/ `fallback`（唯一兜底，只排序、不打 ★）/
- * `multi`（≥2）/ `zero`（0）；空 cue 不命中。
- */
-export function resolvePhraseSense(entry, sentence) {
-  const senses = entry?.senses || []
-  const hits = []
-  for (const s of senses) {
-    if (!s.cue) continue
-    const tier = cueTier(s.cue)
-    if (new RegExp(s.cue, 'i').test(sentence || '')) hits.push({ rank: s.rank, tier })
-  }
-  if (hits.length === 1) {
-    return { state: hits[0].tier === 'high' ? 'unique' : 'fallback', rank: hits[0].rank, hits }
-  }
-  if (hits.length >= 2) return { state: 'multi', rank: null, hits }
-  return { state: 'zero', rank: null, hits }
-}
-
-/**
- * 取 tokenIdx 所在的一句（tokenIdx 与模板里 `para.text.split(/(\s+)/)` 对齐）。
- * 句边界沿用 scanParagraph 的 SENTENCE_END。
- */
-export function sentenceForToken(text, tokenIdx) {
-  const tokens = text.split(/(\s+)/)
-  let start = 0
-  for (let i = tokenIdx - 1; i >= 0; i--) {
-    if (/\S/.test(tokens[i]) && SENTENCE_END.test(tokens[i])) {
-      start = i + 1
-      break
-    }
-  }
-  let end = tokens.length - 1
-  for (let i = tokenIdx + 1; i < tokens.length; i++) {
-    if (/\S/.test(tokens[i]) && SENTENCE_END.test(tokens[i])) {
-      end = i
-      break
-    }
-  }
-  return tokens.slice(start, end + 1).join('').replace(/\s+/g, ' ').trim()
-}
-
 /**
  * 扫描段落，返回词组高亮范围。
  * @param {string} text 段落原文
@@ -113,42 +56,7 @@ export function sentenceForToken(text, tokenIdx) {
  */
 function scanParagraph(text) {
   if (!state.loaded) return []
-
-  const tokens = text.split(/(\s+)/)
-  // 词 token 的下标与清洗后文本
-  const words = []
-  for (let i = 0; i < tokens.length; i++) {
-    if (/\S/.test(tokens[i])) {
-      words.push({ idx: i, clean: cleanToken(tokens[i]), raw: tokens[i] })
-    }
-  }
-
-  const spans = []
-  const claimed = new Set() // 已被更长匹配占用的词位置
-
-  // 对每个词位置，尝试从它开始的 2..maxPhraseWords 词片段（先长后短 → 最长匹配优先）
-  for (let wi = 0; wi < words.length; wi++) {
-    if (claimed.has(wi)) continue
-    for (let len = Math.min(maxPhraseWords, words.length - wi); len >= 2; len--) {
-      const slice = words.slice(wi, wi + len)
-      // 句内约束：片段中间不得有句末标点（最后一词允许）
-      if (slice.slice(0, -1).some(w => SENTENCE_END.test(w.raw))) continue
-      if (slice.some((w, k) => k > 0 && claimed.has(wi + k))) continue
-      const key = slice.map(w => w.clean).filter(Boolean).join(' ')
-      if (slice.some(w => !w.clean)) continue
-      const hit = matchIndex.get(key)
-      if (!hit) continue
-      spans.push({
-        start: slice[0].idx,
-        end: slice[slice.length - 1].idx,
-        base: hit.base,
-        defs: hit.entry.defs || []
-      })
-      for (let k = 0; k < len; k++) claimed.add(wi + k)
-      break // 该起点已取最长匹配
-    }
-  }
-  return spans
+  return scanParagraphText(text, matchIndex, maxPhraseWords)
 }
 
 /** 词组测验数据：转为数组形态 [{ phrase, defs, pos, verb, particle, forms }] */
@@ -164,7 +72,11 @@ export function usePhrases() {
     all: allPhrases,
     init,
     scanParagraph,
+    resolvePhraseSense,
+    sentenceForToken,
     /** 直接按短语文本查条目（WordPopup 词组信息行用） */
     get: (phrase) => state.entries[phrase] || null
   }
 }
+
+export { resolvePhraseSense, sentenceForToken }

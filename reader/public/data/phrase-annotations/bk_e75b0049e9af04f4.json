@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "bookId": "bk_e75b0049e9af04f4",
+  "generatedAt": "2026-10-14T04:38:51.859Z",
+  "engine": "l1-unique + qwen2.5-3b",
+  "scope": "chapter:ch-25",
+  "counts": {
+    "total": 26,
+    "l1": 10,
+    "llm": 16,
+    "unresolved": 0
+  },
+  "annotations": [
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-003",
+      "start": 20,
+      "end": 22,
+      "phrase": "base on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-019",
+      "start": 18,
+      "end": 20,
+      "phrase": "look back",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-026",
+      "start": 2,
+      "end": 4,
+      "phrase": "go on",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-037",
+      "start": 32,
+      "end": 34,
+      "phrase": "break up",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-052",
+      "start": 48,
+      "end": 50,
+      "phrase": "sit down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-057",
+      "start": 12,
+      "end": 14,
+      "phrase": "look up",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-066",
+      "start": 6,
+      "end": 8,
+      "phrase": "turn away",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-079",
+      "start": 68,
+      "end": 70,
+      "phrase": "work out",
+      "rank": 4,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-087",
+      "start": 10,
+      "end": 12,
+      "phrase": "break off",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-107",
+      "start": 36,
+      "end": 38,
+      "phrase": "hold on",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-012",
+      "start": 6,
+      "end": 8,
+      "phrase": "hand over",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-012",
+      "start": 48,
+      "end": 50,
+      "phrase": "take up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-021",
+      "start": 78,
+      "end": 80,
+      "phrase": "look back",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-024",
+      "start": 64,
+      "end": 66,
+      "phrase": "break down",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-025",
+      "start": 4,
+      "end": 6,
+      "phrase": "get back",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-033",
+      "start": 2,
+      "end": 4,
+      "phrase": "turn in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-074",
+      "start": 24,
+      "end": 26,
+      "phrase": "get up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-082",
+      "start": 64,
+      "end": 66,
+      "phrase": "figure out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-087",
+      "start": 2,
+      "end": 4,
+      "phrase": "call out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-094",
+      "start": 2,
+      "end": 4,
+      "phrase": "pick up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-099",
+      "start": 46,
+      "end": 48,
+      "phrase": "bounce off",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-101",
+      "start": 0,
+      "end": 2,
+      "phrase": "turn out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-111",
+      "start": 52,
+      "end": 54,
+      "phrase": "run after",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-112",
+      "start": 2,
+      "end": 4,
+      "phrase": "get back",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-115",
+      "start": 2,
+      "end": 4,
+      "phrase": "get out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-25",
+      "paragraphId": "p-25-126",
+      "start": 0,
+      "end": 2,
+      "phrase": "shut up",
+      "rank": 1,
+      "source": "llm"
+    }
+  ]
+}

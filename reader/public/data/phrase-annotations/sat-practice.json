@@ -1,0 +1,483 @@
+{
+  "version": 1,
+  "bookId": "sat-practice",
+  "generatedAt": "2026-10-14T04:29:52.667Z",
+  "engine": "l1-unique",
+  "scope": "all-chapters",
+  "counts": {
+    "total": 52,
+    "l1": 52,
+    "llm": 0,
+    "unresolved": 130
+  },
+  "annotations": [
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-087",
+      "start": 10,
+      "end": 12,
+      "phrase": "accompany by",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-090",
+      "start": 10,
+      "end": 12,
+      "phrase": "set out",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-121",
+      "start": 6,
+      "end": 8,
+      "phrase": "acquiesce in",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-190",
+      "start": 24,
+      "end": 26,
+      "phrase": "base on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-213",
+      "start": 14,
+      "end": 16,
+      "phrase": "go on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-230",
+      "start": 8,
+      "end": 10,
+      "phrase": "base on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-306",
+      "start": 0,
+      "end": 2,
+      "phrase": "look back",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-327",
+      "start": 22,
+      "end": 24,
+      "phrase": "come out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-412",
+      "start": 24,
+      "end": 26,
+      "phrase": "hold up",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-683",
+      "start": 8,
+      "end": 10,
+      "phrase": "come on",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-738",
+      "start": 8,
+      "end": 10,
+      "phrase": "cut out",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-803",
+      "start": 2,
+      "end": 4,
+      "phrase": "cut off",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-836",
+      "start": 4,
+      "end": 6,
+      "phrase": "get away",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-1036",
+      "start": 20,
+      "end": 22,
+      "phrase": "go away",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-1039",
+      "start": 26,
+      "end": 28,
+      "phrase": "stand by",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-1065",
+      "start": 4,
+      "end": 6,
+      "phrase": "bridge across",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-1074",
+      "start": 10,
+      "end": 12,
+      "phrase": "go on",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-1294",
+      "start": 12,
+      "end": 14,
+      "phrase": "base on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-a-c",
+      "paragraphId": "p-sat-a-c-1427",
+      "start": 40,
+      "end": 42,
+      "phrase": "run out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-d-f",
+      "paragraphId": "p-sat-d-f-122",
+      "start": 4,
+      "end": 6,
+      "phrase": "run out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-d-f",
+      "paragraphId": "p-sat-d-f-314",
+      "start": 0,
+      "end": 2,
+      "phrase": "look after",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-d-f",
+      "paragraphId": "p-sat-d-f-336",
+      "start": 6,
+      "end": 8,
+      "phrase": "get away",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-d-f",
+      "paragraphId": "p-sat-d-f-578",
+      "start": 8,
+      "end": 10,
+      "phrase": "base on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-d-f",
+      "paragraphId": "p-sat-d-f-589",
+      "start": 2,
+      "end": 4,
+      "phrase": "run away",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-g-i",
+      "paragraphId": "p-sat-g-i-173",
+      "start": 2,
+      "end": 4,
+      "phrase": "point out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-g-i",
+      "paragraphId": "p-sat-g-i-188",
+      "start": 0,
+      "end": 2,
+      "phrase": "base on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-g-i",
+      "paragraphId": "p-sat-g-i-243",
+      "start": 6,
+      "end": 8,
+      "phrase": "base on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-g-i",
+      "paragraphId": "p-sat-g-i-507",
+      "start": 22,
+      "end": 24,
+      "phrase": "look back",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-g-i",
+      "paragraphId": "p-sat-g-i-640",
+      "start": 16,
+      "end": 18,
+      "phrase": "base in",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-g-i",
+      "paragraphId": "p-sat-g-i-654",
+      "start": 6,
+      "end": 8,
+      "phrase": "put on",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-g-i",
+      "paragraphId": "p-sat-g-i-680",
+      "start": 56,
+      "end": 58,
+      "phrase": "come out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-j-l",
+      "paragraphId": "p-sat-j-l-038",
+      "start": 8,
+      "end": 10,
+      "phrase": "hold on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-j-l",
+      "paragraphId": "p-sat-j-l-097",
+      "start": 2,
+      "end": 4,
+      "phrase": "hand out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-m-o",
+      "paragraphId": "p-sat-m-o-113",
+      "start": 2,
+      "end": 4,
+      "phrase": "look up",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-m-o",
+      "paragraphId": "p-sat-m-o-204",
+      "start": 2,
+      "end": 4,
+      "phrase": "look up",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-m-o",
+      "paragraphId": "p-sat-m-o-437",
+      "start": 16,
+      "end": 18,
+      "phrase": "keep up",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-p-r",
+      "paragraphId": "p-sat-p-r-298",
+      "start": 10,
+      "end": 12,
+      "phrase": "come out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-p-r",
+      "paragraphId": "p-sat-p-r-410",
+      "start": 6,
+      "end": 8,
+      "phrase": "give in",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-p-r",
+      "paragraphId": "p-sat-p-r-508",
+      "start": 2,
+      "end": 4,
+      "phrase": "turn out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-p-r",
+      "paragraphId": "p-sat-p-r-528",
+      "start": 8,
+      "end": 10,
+      "phrase": "get around",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-p-r",
+      "paragraphId": "p-sat-p-r-656",
+      "start": 12,
+      "end": 16,
+      "phrase": "look forward to",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-p-r",
+      "paragraphId": "p-sat-p-r-693",
+      "start": 22,
+      "end": 24,
+      "phrase": "work on",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-p-r",
+      "paragraphId": "p-sat-p-r-862",
+      "start": 20,
+      "end": 22,
+      "phrase": "come out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-p-r",
+      "paragraphId": "p-sat-p-r-863",
+      "start": 20,
+      "end": 22,
+      "phrase": "turn into",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-s-u",
+      "paragraphId": "p-sat-s-u-297",
+      "start": 10,
+      "end": 12,
+      "phrase": "run away",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-s-u",
+      "paragraphId": "p-sat-s-u-471",
+      "start": 8,
+      "end": 10,
+      "phrase": "go on",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-s-u",
+      "paragraphId": "p-sat-s-u-529",
+      "start": 2,
+      "end": 4,
+      "phrase": "go about",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-s-u",
+      "paragraphId": "p-sat-s-u-615",
+      "start": 4,
+      "end": 6,
+      "phrase": "work on",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-s-u",
+      "paragraphId": "p-sat-s-u-665",
+      "start": 0,
+      "end": 2,
+      "phrase": "keep away",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-v-z",
+      "paragraphId": "p-sat-v-z-036",
+      "start": 16,
+      "end": 18,
+      "phrase": "base on",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-v-z",
+      "paragraphId": "p-sat-v-z-226",
+      "start": 22,
+      "end": 24,
+      "phrase": "set off",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "sat-v-z",
+      "paragraphId": "p-sat-v-z-231",
+      "start": 4,
+      "end": 6,
+      "phrase": "put up",
+      "rank": 5,
+      "source": "l1"
+    }
+  ]
+}

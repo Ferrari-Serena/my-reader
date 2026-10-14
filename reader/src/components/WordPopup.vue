@@ -147,7 +147,8 @@ const resolution = computed(() =>
 )
 
 const currentSense = computed(() => {
-  if (!hasSenses.value || resolution.value.state !== 'unique' || !resolution.value.rank) return null
+  if (!hasSenses.value || !resolution.value.rank) return null
+  if (!['unique', 'annotated', 'cloud'].includes(resolution.value.state)) return null
   return props.phraseInfo.senses.find(s => s.rank === resolution.value.rank) || null
 })
 
@@ -157,6 +158,10 @@ const isHitSense = (sense) => hitRanks.value.includes(sense.rank)
 const isCurrentSense = (sense) => currentSense.value?.rank === sense.rank
 
 const unresolvedText = computed(() => {
+  if (resolution.value.cloudStatus === 'loading') return '云端判断中…'
+  if (resolution.value.cloudStatus === 'unavailable') return '云端暂不可用'
+  if (resolution.value.cloudStatus === 'uncertain') return '云端未能确定'
+  if (resolution.value.cloudStatus === 'offline') return '离线未确定'
   return '未确定'
 })
 

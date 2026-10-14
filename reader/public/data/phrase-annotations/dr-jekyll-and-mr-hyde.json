@@ -1,0 +1,438 @@
+{
+  "version": 1,
+  "bookId": "dr-jekyll-and-mr-hyde",
+  "generatedAt": "2026-10-14T04:29:52.045Z",
+  "engine": "l1-unique",
+  "scope": "all-chapters",
+  "counts": {
+    "total": 47,
+    "l1": 47,
+    "llm": 0,
+    "unresolved": 78
+  },
+  "annotations": [
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-001",
+      "start": 420,
+      "end": 422,
+      "phrase": "come about",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-002",
+      "start": 370,
+      "end": 372,
+      "phrase": "set aside",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-003",
+      "start": 112,
+      "end": 114,
+      "phrase": "lay out",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 290,
+      "end": 292,
+      "phrase": "run into",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 492,
+      "end": 494,
+      "phrase": "bring out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 516,
+      "end": 518,
+      "phrase": "turn out",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 552,
+      "end": 554,
+      "phrase": "put in",
+      "rank": 4,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 1410,
+      "end": 1412,
+      "phrase": "point out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 1472,
+      "end": 1474,
+      "phrase": "come out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 1620,
+      "end": 1624,
+      "phrase": "in a body",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 1634,
+      "end": 1636,
+      "phrase": "give in",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-015",
+      "start": 90,
+      "end": 92,
+      "phrase": "look on",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-001",
+      "start": 28,
+      "end": 30,
+      "phrase": "sit down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-001",
+      "start": 234,
+      "end": 236,
+      "phrase": "sit down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-013",
+      "start": 346,
+      "end": 348,
+      "phrase": "stand by",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-021",
+      "start": 46,
+      "end": 48,
+      "phrase": "look up",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-001",
+      "start": 200,
+      "end": 202,
+      "phrase": "sit down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-001",
+      "start": 808,
+      "end": 810,
+      "phrase": "break out",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-005",
+      "start": 30,
+      "end": 32,
+      "phrase": "light up",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-017",
+      "start": 112,
+      "end": 114,
+      "phrase": "get out",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-05",
+      "paragraphId": "p-06-013",
+      "start": 40,
+      "end": 42,
+      "phrase": "hand in",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-05",
+      "paragraphId": "p-06-020",
+      "start": 48,
+      "end": 50,
+      "phrase": "hand in",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-05",
+      "paragraphId": "p-06-026",
+      "start": 10,
+      "end": 12,
+      "phrase": "sit down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-06",
+      "paragraphId": "p-07-001",
+      "start": 102,
+      "end": 104,
+      "phrase": "come out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-06",
+      "paragraphId": "p-07-001",
+      "start": 344,
+      "end": 346,
+      "phrase": "come out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-06",
+      "paragraphId": "p-07-004",
+      "start": 92,
+      "end": 94,
+      "phrase": "get away",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-06",
+      "paragraphId": "p-07-006",
+      "start": 12,
+      "end": 14,
+      "phrase": "hold up",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-06",
+      "paragraphId": "p-07-011",
+      "start": 14,
+      "end": 16,
+      "phrase": "sit down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-012",
+      "start": 20,
+      "end": 22,
+      "phrase": "come along",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-014",
+      "start": 334,
+      "end": 336,
+      "phrase": "take off",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-035",
+      "start": 12,
+      "end": 14,
+      "phrase": "hand out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-044",
+      "start": 98,
+      "end": 100,
+      "phrase": "break in",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-050",
+      "start": 40,
+      "end": 42,
+      "phrase": "look up",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-061",
+      "start": 166,
+      "end": 168,
+      "phrase": "sit down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-071",
+      "start": 130,
+      "end": 132,
+      "phrase": "lay out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-004",
+      "start": 36,
+      "end": 38,
+      "phrase": "set out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-012",
+      "start": 208,
+      "end": 210,
+      "phrase": "accompany by",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-016",
+      "start": 88,
+      "end": 90,
+      "phrase": "sit down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-023",
+      "start": 184,
+      "end": 186,
+      "phrase": "set down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-010",
+      "start": 236,
+      "end": 238,
+      "phrase": "pass away",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-012",
+      "start": 64,
+      "end": 66,
+      "phrase": "point out",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-014",
+      "start": 508,
+      "end": 510,
+      "phrase": "sit down",
+      "rank": 1,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-016",
+      "start": 426,
+      "end": 428,
+      "phrase": "fall out",
+      "rank": 3,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-022",
+      "start": 312,
+      "end": 314,
+      "phrase": "come over",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-025",
+      "start": 74,
+      "end": 76,
+      "phrase": "look back",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-025",
+      "start": 90,
+      "end": 92,
+      "phrase": "come over",
+      "rank": 2,
+      "source": "l1"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-028",
+      "start": 510,
+      "end": 512,
+      "phrase": "lie down",
+      "rank": 1,
+      "source": "l1"
+    }
+  ]
+}

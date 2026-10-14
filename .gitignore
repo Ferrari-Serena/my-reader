@@ -18,3 +18,9 @@ reader/public/books/*/audio/
 
 # Kokoro ONNX 模型镜像（dev 用，93 MB+，绝不进 git / 构建）
 reader/public/models/
+
+# 第 10 步义项库的生产语料（公版纯文本；只供本机跑数/抽例句，不上架、不进仓库）
+generator/corpus/
+
+# 本机免问白名单（个人授权，不进仓库）
+.claude/settings.local.json

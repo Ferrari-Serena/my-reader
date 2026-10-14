@@ -226,7 +226,10 @@ import ChapterNav from '../components/ChapterNav.vue'
 import AudioPlayer from '../components/AudioPlayer.vue'
 import WordPopup from '../components/WordPopup.vue'
 import { useVocabulary } from '../composables/useVocabulary'
-import { usePhrases, resolvePhraseSense, sentenceForToken } from '../composables/usePhrases'
+import { usePhrases, sentenceForToken } from '../composables/usePhrases'
+import { usePhraseAnnotations } from '../composables/usePhraseAnnotations.js'
+import { resolvePhraseSenseWithAnnotation } from '../utils/phraseSolve.js'
+import { cloudNeeded, resolveCloudSense } from '../utils/phraseCloud.js'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
 import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { chapterAudioPath, chapterTimingsUrl, fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
@@ -801,6 +804,7 @@ vocab.init()
 
 const phrases = usePhrases()
 phrases.init()
+const phraseAnnotations = usePhraseAnnotations()
 
 // ---- 词典表面形别名表（实现在 utils/dictIndex.js，纯函数、可单测）----
 
@@ -858,6 +862,7 @@ const paraWordTags = computed(() => {
 
 // 当前弹窗词所在的词组（点击词组内词时，弹窗顶部显示词组信息行）
 const selectedPhrase = ref(null)
+let phraseCloudSeq = 0
 
 // 词组 spans（供 WordPopup 显示词组信息），与词组高亮同口径（命中即标）
 const paraPhraseSpans = computed(() => {
@@ -1015,12 +1020,26 @@ async function onWordClick(event) {
     const para = currentChapter.value?.paragraphs.find(p => p.id === paraId)
     if (entry?.senses?.length && para) {
       const sentence = sentenceForToken(para.text, tokenIdx)
+      const annotation = phraseAnnotations.get(paraId, span.start, span.end)
+      const localResolution = resolvePhraseSenseWithAnnotation(entry, sentence, annotation)
       selectedPhrase.value = {
         phrase: span.base,
         defs: span.defs,
         literal: entry.literal || '',
         senses: entry.senses,
-        resolution: resolvePhraseSense(entry, sentence)
+        resolution: localResolution
+      }
+      if (cloudNeeded(entry.senses, localResolution)) {
+        void runPhraseCloud({
+          bookId: bookId.value,
+          chapterId: currentChapter.value?.id || '',
+          paragraphId: paraId,
+          start: span.start,
+          end: span.end,
+          phrase: span.base,
+          sentence,
+          senses: entry.senses,
+        })
       }
     } else if (entry?.defs?.length) {
       selectedPhrase.value = { phrase: span.base, defs: entry.defs }
@@ -1075,6 +1094,25 @@ async function onWordClick(event) {
   } finally {
     clearTimeout(timeoutId)
     if (selectedWord.value === word) dictLoading.value = false
+  }
+}
+
+/** 云端终判：只在本地无法给唯一义项时调用，结果写回当前弹窗的 resolution。 */
+async function runPhraseCloud(payloadInput) {
+  const seq = ++phraseCloudSeq
+  if (selectedPhrase.value) {
+    selectedPhrase.value.resolution = {
+      ...(selectedPhrase.value.resolution || { state: 'zero', rank: null, hits: [] }),
+      cloudStatus: 'loading'
+    }
+  }
+  const result = await resolveCloudSense(payloadInput)
+  if (seq !== phraseCloudSeq || !selectedPhrase.value) return
+  const prev = selectedPhrase.value.resolution || { state: 'zero', rank: null, hits: [] }
+  if (result.status === 'cloud') {
+    selectedPhrase.value.resolution = { ...prev, state: 'cloud', rank: result.rank, cloudStatus: 'cloud' }
+  } else {
+    selectedPhrase.value.resolution = { ...prev, cloudStatus: result.status }
   }
 }
 
@@ -1147,6 +1185,7 @@ async function loadBook() {
   error.value = null
   missingBook.value = false
   explicitChapterOnLoad = !!chapterId.value
+  phraseAnnotations.load(bookId.value)
 
   try {
     // 释义层是每本书自己的：不在这里清，换到一本没有词典的书时会残留上一本的表
