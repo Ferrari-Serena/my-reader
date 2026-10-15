@@ -1,14 +1,14 @@
 {
   "version": 1,
   "bookId": "dr-jekyll-and-mr-hyde",
-  "generatedAt": "2026-10-14T04:29:52.045Z",
-  "engine": "l1-unique",
+  "generatedAt": "2026-10-15T04:41:44.794Z",
+  "engine": "l1-unique + qwen2.5-3b",
   "scope": "all-chapters",
   "counts": {
-    "total": 47,
+    "total": 123,
     "l1": 47,
-    "llm": 0,
-    "unresolved": 78
+    "llm": 76,
+    "unresolved": 2
   },
   "annotations": [
     {
@@ -433,6 +433,690 @@
       "phrase": "lie down",
       "rank": 1,
       "source": "l1"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 118,
+      "end": 120,
+      "phrase": "light up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 1160,
+      "end": 1162,
+      "phrase": "stick out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 1258,
+      "end": 1260,
+      "phrase": "come back",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-01",
+      "paragraphId": "p-02-008",
+      "start": 1558,
+      "end": 1560,
+      "phrase": "set off",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-001",
+      "start": 160,
+      "end": 162,
+      "phrase": "take away",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-001",
+      "start": 166,
+      "end": 168,
+      "phrase": "take up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-001",
+      "start": 176,
+      "end": 178,
+      "phrase": "go into",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-003",
+      "start": 14,
+      "end": 16,
+      "phrase": "put on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-010",
+      "start": 142,
+      "end": 144,
+      "phrase": "come across",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-013",
+      "start": 132,
+      "end": 134,
+      "phrase": "go by",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-013",
+      "start": 242,
+      "end": 244,
+      "phrase": "pass on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-037",
+      "start": 50,
+      "end": 52,
+      "phrase": "let in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-040",
+      "start": 258,
+      "end": 260,
+      "phrase": "go out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-046",
+      "start": 56,
+      "end": 58,
+      "phrase": "go by",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-02",
+      "paragraphId": "p-03-047",
+      "start": 6,
+      "end": 8,
+      "phrase": "set out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-03",
+      "paragraphId": "p-04-011",
+      "start": 230,
+      "end": 232,
+      "phrase": "take in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-03",
+      "paragraphId": "p-04-014",
+      "start": 148,
+      "end": 150,
+      "phrase": "take away",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-001",
+      "start": 708,
+      "end": 710,
+      "phrase": "break out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-001",
+      "start": 740,
+      "end": 742,
+      "phrase": "carry on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-002",
+      "start": 110,
+      "end": 112,
+      "phrase": "break in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-010",
+      "start": 192,
+      "end": 194,
+      "phrase": "break up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-011",
+      "start": 106,
+      "end": 108,
+      "phrase": "pass out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-011",
+      "start": 138,
+      "end": 140,
+      "phrase": "settle down",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-04",
+      "paragraphId": "p-05-012",
+      "start": 92,
+      "end": 94,
+      "phrase": "go away",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-05",
+      "paragraphId": "p-06-001",
+      "start": 434,
+      "end": 436,
+      "phrase": "look out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-05",
+      "paragraphId": "p-06-001",
+      "start": 554,
+      "end": 556,
+      "phrase": "hold out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-05",
+      "paragraphId": "p-06-021",
+      "start": 4,
+      "end": 6,
+      "phrase": "send off",
+      "rank": 3,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-06",
+      "paragraphId": "p-07-003",
+      "start": 22,
+      "end": 24,
+      "phrase": "come in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-06",
+      "paragraphId": "p-07-012",
+      "start": 476,
+      "end": 478,
+      "phrase": "come on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-07",
+      "paragraphId": "p-08-001",
+      "start": 56,
+      "end": 58,
+      "phrase": "come in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-005",
+      "start": 32,
+      "end": 34,
+      "phrase": "shut up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-019",
+      "start": 16,
+      "end": 18,
+      "phrase": "light up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-025",
+      "start": 122,
+      "end": 124,
+      "phrase": "set down",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-025",
+      "start": 142,
+      "end": 144,
+      "phrase": "call on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-028",
+      "start": 32,
+      "end": 34,
+      "phrase": "take up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-041",
+      "start": 108,
+      "end": 110,
+      "phrase": "look up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-041",
+      "start": 116,
+      "end": 118,
+      "phrase": "come in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-041",
+      "start": 272,
+      "end": 274,
+      "phrase": "hand over",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-053",
+      "start": 122,
+      "end": 124,
+      "phrase": "get in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-057",
+      "start": 48,
+      "end": 50,
+      "phrase": "go down",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-061",
+      "start": 98,
+      "end": 100,
+      "phrase": "break in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-067",
+      "start": 96,
+      "end": 98,
+      "phrase": "go up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-072",
+      "start": 178,
+      "end": 180,
+      "phrase": "look on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-079",
+      "start": 58,
+      "end": 60,
+      "phrase": "go back",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-089",
+      "start": 2,
+      "end": 4,
+      "phrase": "catch up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-08",
+      "paragraphId": "p-09-097",
+      "start": 2,
+      "end": 4,
+      "phrase": "go out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-002",
+      "start": 56,
+      "end": 58,
+      "phrase": "break in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-007",
+      "start": 116,
+      "end": 118,
+      "phrase": "set aside",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-007",
+      "start": 240,
+      "end": 242,
+      "phrase": "move in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-007",
+      "start": 404,
+      "end": 406,
+      "phrase": "take out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-007",
+      "start": 416,
+      "end": 418,
+      "phrase": "fill up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-008",
+      "start": 24,
+      "end": 26,
+      "phrase": "make up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-012",
+      "start": 308,
+      "end": 310,
+      "phrase": "turn on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-013",
+      "start": 122,
+      "end": 124,
+      "phrase": "hang on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-013",
+      "start": 262,
+      "end": 264,
+      "phrase": "fit in",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-014",
+      "start": 24,
+      "end": 26,
+      "phrase": "set down",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-09",
+      "paragraphId": "p-10-027",
+      "start": 46,
+      "end": 48,
+      "phrase": "hold on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-001",
+      "start": 204,
+      "end": 206,
+      "phrase": "come about",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-005",
+      "start": 72,
+      "end": 74,
+      "phrase": "go into",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-006",
+      "start": 176,
+      "end": 178,
+      "phrase": "come about",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-011",
+      "start": 84,
+      "end": 86,
+      "phrase": "come back",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-011",
+      "start": 128,
+      "end": 130,
+      "phrase": "call out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-011",
+      "start": 182,
+      "end": 184,
+      "phrase": "center on",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-014",
+      "start": 46,
+      "end": 48,
+      "phrase": "wake up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-014",
+      "start": 356,
+      "end": 358,
+      "phrase": "come back",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-017",
+      "start": 110,
+      "end": 112,
+      "phrase": "give up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-018",
+      "start": 44,
+      "end": 46,
+      "phrase": "affected by",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-018",
+      "start": 56,
+      "end": 58,
+      "phrase": "run through",
+      "rank": 3,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-018",
+      "start": 162,
+      "end": 164,
+      "phrase": "come out",
+      "rank": 2,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-019",
+      "start": 226,
+      "end": 228,
+      "phrase": "set out",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-021",
+      "start": 204,
+      "end": 206,
+      "phrase": "wear off",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-022",
+      "start": 336,
+      "end": 338,
+      "phrase": "pass away",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-023",
+      "start": 72,
+      "end": 74,
+      "phrase": "come about",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-023",
+      "start": 406,
+      "end": 408,
+      "phrase": "light up",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-026",
+      "start": 474,
+      "end": 476,
+      "phrase": "wear off",
+      "rank": 1,
+      "source": "llm"
+    },
+    {
+      "chapterId": "ch-10",
+      "paragraphId": "p-11-027",
+      "start": 94,
+      "end": 96,
+      "phrase": "go on",
+      "rank": 1,
+      "source": "llm"
     }
   ]
 }
