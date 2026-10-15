@@ -1,10 +1,10 @@
 """
-build_sat_bank.py — 从 tasks1/tasks2 现有 SAT 词表数据生成 my-reader 标准书格式。
+build_sat_bank.py — 从 mytest/myvocab 现有 SAT 词表数据生成 my-reader 标准书格式。
 
 数据源（全部本地，无网络请求）：
-  tasks2/vocabulary/src/vocabulary/json_original/json-sentence/SAT_2.json  主数据（音标/词性/中文释义/例句/词组）
-  tasks2/vocabulary/src/vocabulary/json_original/json-sentence/SAT_3.json  同上，与 SAT_2 合并去重
-  tasks1/merged_dict.json                                                  英文释义补充（{p,c,e} 格式）
+  myvocab/vocabulary/src/vocabulary/json_original/json-sentence/SAT_2.json  主数据（音标/词性/中文释义/例句/词组）
+  myvocab/vocabulary/src/vocabulary/json_original/json-sentence/SAT_3.json  同上，与 SAT_2 合并去重
+  mytest/merged_dict.json                                                  英文释义补充（{p,c,e} 格式）
 
 输出：
   reader/public/books/sat-practice/chapters.json    按首字母分章；段落 = 有例句词的真实例句（供 sentenceCloze）
@@ -26,10 +26,10 @@ OUT_DIR = READER_PUBLIC / "books" / "sat-practice"
 STAGING_DIR = Path(__file__).resolve().parent / "output"
 
 SAT_SENTENCE_FILES = [
-    ROOT / "tasks2" / "vocabulary" / "src" / "vocabulary" / "json_original" / "json-sentence" / "SAT_2.json",
-    ROOT / "tasks2" / "vocabulary" / "src" / "vocabulary" / "json_original" / "json-sentence" / "SAT_3.json",
+    ROOT / "myvocab" / "vocabulary" / "src" / "vocabulary" / "json_original" / "json-sentence" / "SAT_2.json",
+    ROOT / "myvocab" / "vocabulary" / "src" / "vocabulary" / "json_original" / "json-sentence" / "SAT_3.json",
 ]
-MERGED_DICT = ROOT / "tasks1" / "merged_dict.json"
+MERGED_DICT = ROOT / "mytest" / "merged_dict.json"
 
 # 首字母分章：8 组
 LETTER_GROUPS = [
