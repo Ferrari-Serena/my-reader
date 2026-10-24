@@ -18,6 +18,7 @@ export const CLOUD_CACHE_PROMPT_VERSION = 'p2-abstain'
 export const CLOUD_CACHE_LEXICON_VERSION = 'l1'
 export const CLOUD_VERSIONS_STORAGE_KEY = 'mr.phrase.cloudVersions.v1'
 export const CLOUD_VERSIONS_TTL_MS = 60 * 60 * 1000
+export const CLOUD_CLIENT_VERSION = 2
 
 const LEGACY_CLOUD_CACHE_PREFIX = 'mr.phrase.cloud.'
 const VERSION_FIELDS = ['schema', 'model', 'prompt', 'lexicon']
@@ -94,6 +95,7 @@ export function buildCloudPayload(input) {
     phrase,
     sentence,
     senses,
+    clientVersion: CLOUD_CLIENT_VERSION,
   }
 }
 
@@ -257,18 +259,41 @@ export function pruneCloudCache(storage) {
   } catch { /* 容量清理失败不阻断主流程 */ }
 }
 
-/** 云端响应 → 在义项表里可验证的 rank；非法/未定回 null。 */
-export function cloudRankFromResponse(data, senses) {
+/**
+ * 云端响应 → { rank, source }；非法/未定回 null。
+ *
+ * 兼容三代 Worker：
+ *   `confidence:'selected'` → 新（第 0 步之后）
+ *   `confidence:'certain'`  → 第 0 步首版（措辞已废，仍认）
+ *   `confidence` 缺失       → 旧 Worker（回滚或灰度期），标 `legacy`
+ * 三者都必须过「rank 在候选表里」这一关。
+ *
+ * `source` 是 provenance（这话从哪来），不是置信度：
+ *   model = 本次模型选的；cache = 服务端/本地缓存；legacy = 旧版 Worker 回的。
+ */
+export function cloudAnswerFromResponse(data, senses) {
   if (!data || typeof data !== 'object') return null
-  if (data.status !== 'cloud' || data.confidence !== 'certain') return null
+  if (data.status !== 'cloud') return null
   if (!Number.isInteger(data.rank)) return null
-  return senses.some(s => s.rank === data.rank) ? data.rank : null
+  if (!Array.isArray(senses) || !senses.some(s => s.rank === data.rank)) return null
+  const conf = typeof data.confidence === 'string' ? data.confidence : ''
+  if (conf === 'selected' || conf === 'certain') {
+    return { rank: data.rank, source: data.source === 'cache' ? 'cache' : 'model' }
+  }
+  if (conf === '') return { rank: data.rank, source: 'legacy' }
+  return null
+}
+
+/** 只要 rank 的旧接口。 */
+export function cloudRankFromResponse(data, senses) {
+  const answer = cloudAnswerFromResponse(data, senses)
+  return answer ? answer.rank : null
 }
 
 /**
  * 发一次云端终判。恒不抛：
- *   { status:'cloud', rank }     已确认（含本地缓存命中）
- *   { status:'uncertain' }       服务端判断不了
+ *   { status:'cloud', rank, source }  拿到一条（source: model|cache|legacy）
+ *   { status:'uncertain', reason }    服务端判断不了；reason 区分「不确定 / 上下文不足」
  *   { status:'unavailable' }     云端没配/不可用
  *   { status:'invalid' }         载荷净化失败
  *   { status:'offline' }         网络/超时错误
@@ -282,7 +307,7 @@ export async function resolveCloudSense(input, opts = {}) {
   const versions = await fetchCloudVersions(opts)
   const storage = opts.storage || (typeof localStorage !== 'undefined' ? localStorage : null)
   const cached = readCloudCache(storage, payload, versions)
-  if (cached !== undefined) return { status: 'cloud', rank: cached, cached: true }
+  if (cached !== undefined) return { status: 'cloud', rank: cached, source: 'cache', cached: true }
 
   const fetchImpl = opts.fetchImpl || globalThis.fetch
   if (typeof fetchImpl !== 'function') return { status: 'offline', rank: null }
@@ -307,10 +332,15 @@ export async function resolveCloudSense(input, opts = {}) {
       return { status: 'error', rank: null }
     }
     const data = await res.json()
-    const rank = cloudRankFromResponse(data, payload.senses)
-    if (rank === null) return { status: 'uncertain', rank: null }
-    writeCloudCache(storage, payload, rank, versions)
-    return { status: 'cloud', rank }
+    const answer = cloudAnswerFromResponse(data, payload.senses)
+    if (!answer) {
+      const reason = data && data.status === 'uncertain' && data.confidence === 'insufficient_context'
+        ? 'insufficient_context'
+        : ''
+      return { status: 'uncertain', rank: null, reason }
+    }
+    writeCloudCache(storage, payload, answer.rank, versions)
+    return { status: 'cloud', rank: answer.rank, source: answer.source }
   } catch {
     return { status: 'offline', rank: null }
   } finally {

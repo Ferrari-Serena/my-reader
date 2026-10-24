@@ -14,6 +14,7 @@ const DAY_MS = 86_400_000
 
 export const DEFAULT_PHRASE_PER_MIN = 6
 export const DEFAULT_PHRASE_DAILY = 300
+export const DEFAULT_PHRASE_USER_DAILY = 60
 
 function threshold(raw, dflt) {
   const n = Number.parseInt(raw, 10)
@@ -27,32 +28,50 @@ function storageDown() {
 /**
  * 判定并记账。返回：
  *   { allowed: true }
- *   { allowed: false, scope: 'ip' | 'quota' | 'storage', retryAfter? }
+ *   { allowed: false, scope: 'ip' | 'user' | 'quota' | 'storage', retryAfter? }
+ *
+ * `userId` 只对 BYO 书（登录用户）有值；公开书传空串，落库为 NULL。
+ * BYO 按用户滑窗 + 用户日额，公开书按 IP 滑窗；全局日额两边都兜。
+ * 这样学校 NAT 下几十人共享一个 IP 不会互相挤占，登录用户换 IP 也绕不过额度。
  */
-export async function takePhraseToken(env, { ip, now = Date.now() } = {}) {
+export async function takePhraseToken(env, { ip, userId = '', now = Date.now() } = {}) {
   if (!env || !env.DB) return storageDown()
 
   const perMin = threshold(env.PHRASE_RATE_PER_MIN, DEFAULT_PHRASE_PER_MIN)
   const dailyCap = threshold(env.PHRASE_DAILY_LIMIT, DEFAULT_PHRASE_DAILY)
+  const userDailyCap = threshold(env.PHRASE_USER_DAILY_LIMIT, DEFAULT_PHRASE_USER_DAILY)
   const dayStart = utcDayStart(now)
   const winStart = now - WINDOW_MS
 
   let ipN = 0
   let dayN = 0
+  let userMinN = 0
+  let userDayN = 0
   try {
     const row = await env.DB.prepare(
       'SELECT (SELECT COUNT(*) FROM phrase_rate_events WHERE ip = ? AND ts > ?) AS ip_n,' +
-      ' (SELECT COUNT(*) FROM phrase_rate_events WHERE ts > ?) AS day_n'
-    ).bind(ip, winStart, dayStart).first()
+      ' (SELECT COUNT(*) FROM phrase_rate_events WHERE ts > ?) AS day_n,' +
+      ' (SELECT COUNT(*) FROM phrase_rate_events WHERE user_id = ? AND ts > ?) AS user_min_n,' +
+      ' (SELECT COUNT(*) FROM phrase_rate_events WHERE user_id = ? AND ts > ?) AS user_day_n'
+    ).bind(ip, winStart, dayStart, userId, winStart, userId, dayStart).first()
     ipN = (row && row.ip_n) || 0
     dayN = (row && row.day_n) || 0
+    userMinN = (row && row.user_min_n) || 0
+    userDayN = (row && row.user_day_n) || 0
   } catch (e) {
     console.error('phrase rate_limit read failed (fail-closed):', e && e.message)
     return storageDown()
   }
 
-  if (ipN >= perMin) {
-    return { allowed: false, scope: 'ip', retryAfter: Math.ceil(WINDOW_MS / 1000) }
+  if (userId ? userMinN >= perMin : ipN >= perMin) {
+    return {
+      allowed: false,
+      scope: userId ? 'user' : 'ip',
+      retryAfter: Math.ceil(WINDOW_MS / 1000),
+    }
+  }
+  if (userId && userDayN >= userDailyCap) {
+    return { allowed: false, scope: 'user', retryAfter: Math.ceil((dayStart + DAY_MS - now) / 1000) }
   }
   if (dayN >= dailyCap) {
     return { allowed: false, scope: 'quota', retryAfter: Math.ceil((dayStart + DAY_MS - now) / 1000) }
@@ -69,8 +88,8 @@ export async function takePhraseToken(env, { ip, now = Date.now() } = {}) {
   }
 
   try {
-    await env.DB.prepare('INSERT INTO phrase_rate_events (ip, ts) VALUES (?, ?)')
-      .bind(ip, now).run()
+    await env.DB.prepare('INSERT INTO phrase_rate_events (ip, user_id, ts) VALUES (?, ?, ?)')
+      .bind(ip, userId || null, now).run()
   } catch (e) {
     console.error('phrase rate_limit insert failed (fail-closed):', e && e.message)
     return storageDown()

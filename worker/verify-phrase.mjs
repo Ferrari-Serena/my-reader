@@ -18,6 +18,8 @@ import {
   CACHE_SCHEMA_VERSION,
   PROMPT_VERSION,
   LEXICON_VERSION,
+  SYSTEM_PROMPT,
+  USER_PROMPT_TEMPLATE,
   phraseLlmConfig,
   phraseConfigPayload,
   parseModelDecision,
@@ -26,6 +28,7 @@ import {
   handlePhraseResolve,
   handlePhraseConfig,
 } from './src/phrase.js'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
@@ -35,6 +38,20 @@ function t(name, cond) {
 }
 
 const BASE = 'https://my-reader.ferrari11.com'
+const sha256 = (text) => createHash('sha256').update(text).digest('hex')
+const sha256Text = (text) => sha256(String(text).replace(/\r\n/g, '\n'))
+
+// 版本号 → 内容哈希。改 prompt / 词表却没升版本，或升了版本却没登记新哈希，
+// 这里都会红。哈希不是「给测试看的」，是防止旧缓存按旧口径继续命中。
+const PROMPT_HASHES = {
+  'p2-abstain': '0066503ff24262cd585e9e8b2bb565652fb847e79681c1288127fb8c01a095ad',
+}
+const USER_PROMPT_HASHES = {
+  'p2-abstain': 'ae24e30d46f0f697e0db640bd9e98d41d807f82a14ffee53d8ce294b263d3408',
+}
+const LEXICON_HASHES = {
+  l1: '9d33b61fff7758ba11bf667dfc0b1c3dc4bc9128be60f9d315fa18d4dc1e2ffc',
+}
 
 const GOOD_SENSES = [
   { id: 'account for#account_for.v.01', rank: 1, zh: '解释；说明（原因）' },
@@ -50,6 +67,7 @@ const GOOD_BODY = {
   sentence: 'This does not account for the delay.',
   senses: GOOD_SENSES,
 }
+const MODERN_BODY = { ...GOOD_BODY, clientVersion: 2 }
 
 console.log('\n[parsePhrasePayload — 白名单净化]')
 {
@@ -58,6 +76,9 @@ console.log('\n[parsePhrasePayload — 白名单净化]')
   t('多余字段被丢弃（不出现在载荷）', r.payload && !('extra' in r.payload) && !('zh' in r.payload))
   t('start/end 原样保留', r.payload && r.payload.start === 3 && r.payload.end === 4)
   t('字符串字段被 trim 并限长', parsePhrasePayload({ ...GOOD_BODY, phrase: '  abc  ' }).payload.phrase === 'abc')
+  t('缺 clientVersion 视为旧客户端', parsePhrasePayload(GOOD_BODY).clientVersion === 0)
+  t('clientVersion:2 被识别', parsePhrasePayload(MODERN_BODY).clientVersion === 2)
+  t('clientVersion 不进入净化载荷', !('clientVersion' in parsePhrasePayload(MODERN_BODY).payload))
 }
 
 console.log('\n[parsePhrasePayload — 非法形状]')
@@ -66,7 +87,13 @@ console.log('\n[parsePhrasePayload — 非法形状]')
   t('少 senses 拒', parsePhrasePayload({ ...GOOD_BODY, senses: [] }).error)
   t('单义项拒', parsePhrasePayload({ ...GOOD_BODY, senses: [GOOD_SENSES[0]] }).error)
   t('重复 rank 拒', parsePhrasePayload({ ...GOOD_BODY, senses: [GOOD_SENSES[0], GOOD_SENSES[0]] }).error)
-  t('缺 id 拒', parsePhrasePayload({ ...GOOD_BODY, senses: [{ rank: 1, zh: 'x' }, GOOD_SENSES[1]] }).error)
+  const noIdPayload = parsePhrasePayload({
+    ...GOOD_BODY,
+    senses: [{ rank: 1, zh: 'x' }, { rank: 2, zh: 'y' }],
+  }).payload
+  t('缺 id 放行（旧客户端兼容）', noIdPayload !== undefined)
+  t('缺 id 用确定性 r<rank> 兜底且不串号',
+    noIdPayload && noIdPayload.senses[0].id === 'r1' && noIdPayload.senses[1].id === 'r2')
   t('重复 id 拒', parsePhrasePayload({ ...GOOD_BODY, senses: [GOOD_SENSES[0], { ...GOOD_SENSES[1], id: GOOD_SENSES[0].id }] }).error)
   t('rank 非整数拒', parsePhrasePayload({ ...GOOD_BODY, senses: [{ id: 'a', rank: '1', zh: 'x' }, { id: 'b', rank: 2, zh: 'y' }] }).error)
   t('zh 非字符串拒', parsePhrasePayload({ ...GOOD_BODY, senses: [{ id: 'a', rank: 1, zh: 1 }, { id: 'b', rank: 2, zh: 'y' }] }).error)
@@ -106,6 +133,9 @@ console.log('\n[canonicalPhrasePayload / phraseCacheKey — 摘要不落可读�
   t('prompt 版本进入缓存键', withModel !== await phraseCacheKey(p, { ...base, prompt: 'p3' }))
   t('词表版本进入缓存键', withModel !== await phraseCacheKey(p, { ...base, lexicon: 'l2' }))
   t('schema 版本进入缓存键', withModel !== await phraseCacheKey(p, { ...base, schema: 'v3' }))
+  t('默认 schema 版本与常量同源', phraseCacheVersions({}, 'model-a').schema === CACHE_SCHEMA_VERSION)
+  t('clientVersion 不进入缓存键',
+    await phraseCacheKey(parsePhrasePayload(MODERN_BODY).payload, base) === await phraseCacheKey(p, base))
   const senseChanged = parsePhrasePayload({
     ...GOOD_BODY,
     senses: [{ ...GOOD_SENSES[0], id: 'account for#account_for.v.99' }, GOOD_SENSES[1]],
@@ -174,6 +204,11 @@ console.log('\n[parseModelDecision — 只认精确输出]')
   t('ABSTAIN 不带 rank', parseModelDecision('ABSTAIN', senses).rank === null)
   t('INSUFFICIENT_CONTEXT 不带 rank', parseModelDecision('INSUFFICIENT_CONTEXT', senses).rank === null)
   t('版本常量已定义', CACHE_SCHEMA_VERSION === 'v2' && PROMPT_VERSION === 'p2-abstain' && LEXICON_VERSION === 'l1')
+  t('prompt 内容与 PROMPT_VERSION 同源', PROMPT_HASHES[PROMPT_VERSION] === sha256(SYSTEM_PROMPT))
+  t('user prompt 内容与 PROMPT_VERSION 同源', USER_PROMPT_HASHES[PROMPT_VERSION] === sha256(USER_PROMPT_TEMPLATE))
+  t('词表内容与 LEXICON_VERSION 同源',
+    LEXICON_HASHES[LEXICON_VERSION] ===
+    sha256Text(readFileSync(new URL('../reader/public/data/phrases.json', import.meta.url), 'utf8')))
 }
 
 console.log('\n[callPhraseLlm — 用替身 fetch 走 OpenAI-compatible 协议]')
@@ -191,7 +226,8 @@ console.log('\n[callPhraseLlm — 用替身 fetch 走 OpenAI-compatible 协议]'
     return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '2' } }] }) }
   }
   const good = await callPhraseLlm({ PHRASE_LLM_BASE_URL: 'https://x/v1/chat/completions', PHRASE_LLM_API_KEY: 'k', PHRASE_LLM_MODEL: 'm' }, payload, { fetchImpl: okFetch })
-  t('模型输出被解析成确定 rank', good.ok === true && good.status === 'cloud' && good.rank === 2 && good.confidence === 'certain')
+  t('模型输出被解析成已选 rank',
+    good.ok === true && good.status === 'cloud' && good.rank === 2 && good.confidence === 'selected')
   t('请求打到 base URL', seenUrl === 'https://x/v1/chat/completions')
   t('system 提示词允许 ABSTAIN', seenBody.messages[0].content.includes('ABSTAIN'))
   t('system 提示词声明句子只是数据', seenBody.messages[0].content.includes('quoted data'))
@@ -206,7 +242,7 @@ console.log('\n[callPhraseLlm — 用替身 fetch 走 OpenAI-compatible 协议]'
 
 console.log('\n[handlePhraseResolve — 路由闸]')
 {
-  const fakeDb = ({ cacheRow = null, cacheError = false, rateRow = { ip_n: 0, day_n: 0 }, rateError = false, insertError = false } = {}) => ({
+  const fakeDb = ({ cacheRow = null, cacheError = false, rateRow = { ip_n: 0, day_n: 0, user_n: 0 }, rateError = false, insertError = false } = {}) => ({
     prepare(sql) {
       let args = []
       const stmt = {
@@ -273,13 +309,31 @@ console.log('\n[handlePhraseResolve — 路由闸]')
       DB: fakeDb({ cacheRow: { rank: 2 } }),
     })
     const hitBody = await hit.json()
-    t('公开书缓存命中 → certain + cache', hit.status === 200 && hitBody.rank === 2 && hitBody.confidence === 'certain' && hitBody.source === 'cache')
+    t('旧客户端缓存命中 → certain + cache',
+      hit.status === 200 && hitBody.rank === 2 && hitBody.confidence === 'certain' && hitBody.source === 'cache')
     t('缓存命中不调模型', modelCalls === 0)
+
+    const modernHit = await handlePhraseResolve(req(ROUTE_PATH, 'POST', MODERN_BODY), {
+      ...authEnv,
+      DB: fakeDb({ cacheRow: { rank: 2 } }),
+    })
+    const modernHitBody = await modernHit.json()
+    t('新客户端缓存命中 → selected + cache',
+      modernHit.status === 200 && modernHitBody.rank === 2 &&
+      modernHitBody.confidence === 'selected' && modernHitBody.source === 'cache')
 
     const fresh = await handlePhraseResolve(req(ROUTE_PATH), authEnv)
     const freshBody = await fresh.json()
-    t('公开书模型命中 → certain + model', fresh.status === 200 && freshBody.rank === 1 && freshBody.confidence === 'certain' && freshBody.source === 'model')
+    t('旧客户端模型命中 → certain + model',
+      fresh.status === 200 && freshBody.rank === 1 && freshBody.confidence === 'certain' && freshBody.source === 'model')
     t('真正调模型一次', modelCalls === 1)
+
+    const modernFresh = await handlePhraseResolve(req(ROUTE_PATH, 'POST', MODERN_BODY), authEnv)
+    const modernFreshBody = await modernFresh.json()
+    t('新客户端模型命中 → selected + model',
+      modernFresh.status === 200 && modernFreshBody.rank === 1 &&
+      modernFreshBody.confidence === 'selected' && modernFreshBody.source === 'model')
+    t('新旧客户端各调模型一次', modelCalls === 2)
 
     const hitDespiteLimits = await handlePhraseResolve(req(ROUTE_PATH), {
       ...authEnv,
@@ -298,7 +352,7 @@ console.log('\n[handlePhraseResolve — 路由闸]')
     const limitedBody = await limited.json()
     t('超过每 IP 窗口 → 429', limited.status === 429 && limitedBody.status === 'rate_limited' && limitedBody.scope === 'ip')
     t('429 带 Retry-After', limited.headers.get('Retry-After') === '60')
-    t('429 不调模型', modelCalls === 1)
+    t('429 不调模型', modelCalls === 2)
 
     const dailyLimited = await handlePhraseResolve(req(ROUTE_PATH), {
       ...authEnv,
@@ -310,7 +364,7 @@ console.log('\n[handlePhraseResolve — 路由闸]')
     t('超过全局日配额 → 429 quota',
       dailyLimited.status === 429 && dailyBody.status === 'rate_limited' && dailyBody.scope === 'quota')
     t('日配额 429 也带 Retry-After', Number(dailyLimited.headers.get('Retry-After')) > 0)
-    t('日配额拦截不调模型', modelCalls === 1)
+    t('日配额拦截不调模型', modelCalls === 2)
 
     const cacheDown = await handlePhraseResolve(req(ROUTE_PATH), { ...authEnv, DB: fakeDb({ cacheError: true }) })
     t('D1 缓存读失败 → fail-closed 503', cacheDown.status === 503 && (await cacheDown.json()).status === 'unavailable')
@@ -320,6 +374,23 @@ console.log('\n[handlePhraseResolve — 路由闸]')
 
     const insertDown = await handlePhraseResolve(req(ROUTE_PATH), { ...authEnv, DB: fakeDb({ insertError: true }) })
     t('限流写失败 → fail-closed 503', insertDown.status === 503 && (await insertDown.json()).status === 'unavailable')
+
+    const legacyBody = {
+      ...GOOD_BODY,
+      senses: GOOD_SENSES.map(({ id, ...sense }) => sense),
+    }
+    const legacy = await handlePhraseResolve(req(ROUTE_PATH, 'POST', legacyBody), authEnv)
+    const legacyJson = await legacy.json()
+    t('旧客户端载荷缺 id → 200 + certain + model（不是 400）',
+      legacy.status === 200 && legacyJson.rank === 1 &&
+      legacyJson.confidence === 'certain' && legacyJson.source === 'model')
+
+    const modernLegacy = await handlePhraseResolve(req(ROUTE_PATH, 'POST', { ...legacyBody, clientVersion: 2 }), authEnv)
+    const modernLegacyJson = await modernLegacy.json()
+    t('新客户端载荷缺 id → 200 + selected + model',
+      modernLegacy.status === 200 && modernLegacyJson.rank === 1 &&
+      modernLegacyJson.confidence === 'selected' && modernLegacyJson.source === 'model')
+    t('旧/新客户端各调模型一次', modelCalls === 4)
   } finally {
     globalThis.fetch = origFetch
   }

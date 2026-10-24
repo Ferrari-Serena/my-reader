@@ -12,6 +12,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { SQL_ALIVE_UPSERT, SQL_TOMB_UPSERT } from './src/sync.js'
 import * as rlMod from './src/ratelimit.js'
+import { takePhraseToken } from './src/phraseRateLimit.js'
 
 let pass = 0, fail = 0
 function t(name, cond) {
@@ -429,6 +430,8 @@ console.log('\n[0009 迁移 — 词组模型调用独立限流（第 0 步止血
   const hasIndex = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index' AND name=?").get(n).n === 1
 
   t('phrase_rate_events 建出', hasTable('phrase_rate_events'))
+  t('0009 初形没有 user_id 列（留给 0010 追加）',
+    db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('phrase_rate_events') WHERE name = 'user_id'").get().n === 0)
   t('有 (ip, ts) 复合索引（每 IP 滑窗）', hasIndex('idx_phrase_rate_events_ip_ts'))
   t('有 ts 索引（全局日配额与清理）', hasIndex('idx_phrase_rate_events_ts'))
   t('0009 幂等：重复执行不报错', (() => {
@@ -445,16 +448,106 @@ console.log('\n[0009 迁移 — 词组模型调用独立限流（第 0 步止血
     db.prepare('SELECT COUNT(*) AS n FROM phrase_rate_events WHERE ts > ?').get(500).n === 2)
 }
 
-console.log('\n[0009 与 schema.sql 同形：phrase_rate_events 的列**与顺序**逐字一致]')
+console.log('\n[0010 迁移 — 词组限流账本增加 user_id（一次性 ALTER）]')
+{
+  const hasIndex = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index' AND name=?").get(n).n === 1
+  db.exec(readFileSync(new URL('./migrations/0010_phrase_rate_user.sql', import.meta.url), 'utf8'))
+
+  t('0010 加出 user_id 列（BYO 按登录用户计数）',
+    db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('phrase_rate_events') WHERE name = 'user_id'").get().n === 1)
+  t('0010 建出 (user_id, ts) 复合索引（每用户日额）', hasIndex('idx_phrase_rate_events_user_ts'))
+  t('0010 不幂等：重复执行报 duplicate column', (() => {
+    try { db.exec(readFileSync(new URL('./migrations/0010_phrase_rate_user.sql', import.meta.url), 'utf8')); return false }
+    catch (e) { return /duplicate column/i.test(String(e.message)) }
+  })())
+}
+
+console.log('\n[0010 集成 — per-user 日额：换 IP 也绕不过]')
+{
+  const asyncDb = {
+    prepare(sql) {
+      const stmt = db.prepare(sql)
+      return {
+        bind(...args) {
+          return {
+            first: async () => stmt.get(...args),
+            run: async () => stmt.run(...args),
+          }
+        },
+        first: async () => stmt.get(),
+        run: async () => stmt.run(),
+      }
+    },
+  }
+  const env = {
+    DB: asyncDb,
+    PHRASE_RATE_PER_MIN: '99',
+    PHRASE_DAILY_LIMIT: '999',
+    PHRASE_USER_DAILY_LIMIT: '1',
+  }
+  const now = Date.UTC(2026, 9, 24, 12)
+  const first = await takePhraseToken(env, { ip: '198.51.100.1', userId: 'u_same', now })
+  const second = await takePhraseToken(env, { ip: '198.51.100.2', userId: 'u_same', now })
+  const otherUser = await takePhraseToken(env, { ip: '198.51.100.3', userId: 'u_other', now })
+  const publicBook = await takePhraseToken(env, { ip: '198.51.100.4', now })
+
+  t('同一用户第一条放行', first.allowed === true)
+  t('同一用户换 IP 仍被 per-user 日额拦下', second.allowed === false && second.scope === 'user')
+  t('另一用户不受影响', otherUser.allowed === true)
+  t('公开书不按用户计数（user_id 落 NULL）', publicBook.allowed === true &&
+    db.prepare("SELECT COUNT(*) AS n FROM phrase_rate_events WHERE user_id IS NULL").get().n >= 1)
+}
+
+console.log('\n[0010 集成 — BYO 按用户滑窗：NAT 共享 IP 不互相挤占，换 IP 仍被拦]')
+{
+  db.exec('DELETE FROM phrase_rate_events')
+  const asyncDb = {
+    prepare(sql) {
+      const stmt = db.prepare(sql)
+      return {
+        bind(...args) {
+          return {
+            first: async () => stmt.get(...args),
+            run: async () => stmt.run(...args),
+          }
+        },
+        first: async () => stmt.get(),
+        run: async () => stmt.run(),
+      }
+    },
+  }
+  const env = {
+    DB: asyncDb,
+    PHRASE_RATE_PER_MIN: '1',
+    PHRASE_DAILY_LIMIT: '999',
+    PHRASE_USER_DAILY_LIMIT: '999',
+  }
+  const now = Date.UTC(2026, 9, 24, 12)
+  const natIp = '203.0.113.10'
+  const first = await takePhraseToken(env, { ip: natIp, userId: 'u_nat_a', now })
+  const second = await takePhraseToken(env, { ip: natIp, userId: 'u_nat_b', now })
+  const sameUserOtherIp = await takePhraseToken(env, { ip: '203.0.113.11', userId: 'u_nat_a', now })
+  const publicSameIp = await takePhraseToken(env, { ip: natIp, now })
+  const publicOtherIp = await takePhraseToken(env, { ip: '203.0.113.12', now })
+
+  t('同一 NAT 下两个登录用户互不影响', first.allowed === true && second.allowed === true)
+  t('同一用户换 IP 仍被用户滑窗拦下', sameUserOtherIp.allowed === false && sameUserOtherIp.scope === 'user')
+  t('公开书仍按 IP 滑窗，不被 BYO 用户额度串号', publicSameIp.allowed === false && publicSameIp.scope === 'ip')
+  t('公开书换 IP 正常放行', publicOtherIp.allowed === true)
+}
+
+console.log('\n[0009 + 0010 与 schema.sql 同形：phrase_rate_events 的列**与顺序**逐字一致]')
 {
   const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
   t('schema.sql 含表 phrase_rate_events', /CREATE TABLE IF NOT EXISTS phrase_rate_events\b/.test(schemaSql))
-  t('schema.sql 含两个限流索引',
-    schemaSql.includes('idx_phrase_rate_events_ip_ts') && schemaSql.includes('idx_phrase_rate_events_ts'))
+  t('schema.sql 含三个限流索引',
+    schemaSql.includes('idx_phrase_rate_events_ip_ts') &&
+    schemaSql.includes('idx_phrase_rate_events_user_ts') &&
+    schemaSql.includes('idx_phrase_rate_events_ts'))
   const fresh = new DatabaseSync(':memory:')
   fresh.exec(schemaSql)
   const cols = (d) => d.prepare("SELECT name FROM pragma_table_info('phrase_rate_events')").all().map(r => r.name).join(',')
-  t('迁移链（0009）与 schema.sql 的 phrase_rate_events 列同序', cols(db) === cols(fresh))
+  t('迁移链（0009 + 0010）与 schema.sql 的 phrase_rate_events 列同序', cols(db) === cols(fresh))
 }
 
 console.log('\n[schema.sql 与 0004 一致（新建库直接建出 kind 列）]')

@@ -19,6 +19,7 @@ bucket_name = "my-reader-audio"
 #   secret：npx wrangler secret put PHRASE_LLM_API_KEY
 #   vars：  PHRASE_LLM_BASE_URL（完整 /chat/completions 地址）、PHRASE_LLM_MODEL
 #   限流：  PHRASE_RATE_PER_MIN（默认 6）、PHRASE_DAILY_LIMIT（默认 300，UTC 日）
+#           PHRASE_USER_DAILY_LIMIT（默认 60，BYO 登录用户）
 #   缓存代际：PHRASE_CACHE_SCHEMA_VERSION / PHRASE_PROMPT_VERSION / PHRASE_LEXICON_VERSION
 #   公开书：PHRASE_PUBLIC_BOOK_IDS（逗号分隔；默认与 reader/public/books/book-index.json 一致）
 

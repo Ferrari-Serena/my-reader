@@ -12,6 +12,7 @@ import {
   readCloudCache,
   writeCloudCache,
   pruneCloudCache,
+  cloudAnswerFromResponse,
   cloudRankFromResponse,
   resolveCloudSense,
   fetchCloudVersions,
@@ -24,6 +25,7 @@ import {
   CLOUD_CACHE_MODEL_VERSION,
   CLOUD_CACHE_PROMPT_VERSION,
   CLOUD_CACHE_LEXICON_VERSION,
+  CLOUD_CLIENT_VERSION,
 } from './src/utils/phraseCloud.js'
 
 let pass = 0, fail = 0
@@ -74,6 +76,7 @@ console.log('\n[buildCloudPayload — 前端净化]')
 {
   const p = buildCloudPayload(INPUT)
   t('合法载荷被收下', p && p.phrase === 'account for')
+  t('载荷带当前客户端版本', p && p.clientVersion === CLOUD_CLIENT_VERSION)
   t('senses 只保留 id + rank + zh（cue 被剪掉）', p.senses.every(s => Object.keys(s).join(',') === 'id,rank,zh'))
   t('多余字段不出现', p && !('sentenceRaw' in p) && !('extra' in p))
   t('缺 start/end 拒', buildCloudPayload({ ...INPUT, start: undefined }) === null)
@@ -120,13 +123,21 @@ console.log('\n[pruneCloudCache — 容量只留最近 MAX 条]')
   t('写入 205 条后被裁到 200', Object.keys(storage._dump()).length === 200)
 }
 
-console.log('\n[cloudRankFromResponse — 响应 rank 必须在义项表里]')
+console.log('\n[cloudAnswerFromResponse — 三代 Worker 兼容]')
 {
-  t('合法 status + confidence + rank', cloudRankFromResponse({ status: 'cloud', confidence: 'certain', rank: 2 }, SENSES) === 2)
-  t('缺 status 不认', cloudRankFromResponse({ confidence: 'certain', rank: 2 }, SENSES) === null)
-  t('confidence 不是 certain 不认', cloudRankFromResponse({ status: 'cloud', confidence: 'uncertain', rank: 2 }, SENSES) === null)
-  t('表外 rank 不认', cloudRankFromResponse({ status: 'cloud', confidence: 'certain', rank: 9 }, SENSES) === null)
-  t('非整数不认', cloudRankFromResponse({ status: 'cloud', confidence: 'certain', rank: '2' }, SENSES) === null)
+  const selected = cloudAnswerFromResponse({ status: 'cloud', confidence: 'selected', rank: 2, source: 'model' }, SENSES)
+  t('新响应 selected + model', selected && selected.rank === 2 && selected.source === 'model')
+  const cached = cloudAnswerFromResponse({ status: 'cloud', confidence: 'selected', rank: 2, source: 'cache' }, SENSES)
+  t('新响应 selected + cache', cached && cached.rank === 2 && cached.source === 'cache')
+  const certain = cloudAnswerFromResponse({ status: 'cloud', confidence: 'certain', rank: 2, source: 'model' }, SENSES)
+  t('第 0 步首版 certain 仍认', certain && certain.rank === 2 && certain.source === 'model')
+  const legacy = cloudAnswerFromResponse({ status: 'cloud', rank: 2 }, SENSES)
+  t('旧 Worker 缺 confidence → legacy，不当确定', legacy && legacy.rank === 2 && legacy.source === 'legacy')
+  t('旧接口仍能取 rank', cloudRankFromResponse({ status: 'cloud', confidence: 'selected', rank: 2 }, SENSES) === 2)
+  t('缺 status 不认', cloudAnswerFromResponse({ confidence: 'selected', rank: 2 }, SENSES) === null)
+  t('uncertain 不认', cloudAnswerFromResponse({ status: 'cloud', confidence: 'uncertain', rank: 2 }, SENSES) === null)
+  t('表外 rank 不认', cloudAnswerFromResponse({ status: 'cloud', confidence: 'selected', rank: 9 }, SENSES) === null)
+  t('非整数不认', cloudAnswerFromResponse({ status: 'cloud', confidence: 'selected', rank: '2' }, SENSES) === null)
   t('非对象不认', cloudRankFromResponse(null, SENSES) === null)
 }
 
@@ -181,26 +192,50 @@ console.log('\n[resolveCloudSense — 判定与降级]')
     versions: DEFAULT_CLOUD_VERSIONS,
     fetchImpl: async () => { fetchCalls++; return { ok: true, status: 200, json: async () => ({ rank: 1 }) } }
   })
-  t('本地缓存命中不发请求', cached.status === 'cloud' && cached.rank === 2 && fetchCalls === 0)
+  t('本地缓存命中不发请求，来源标 cache',
+    cached.status === 'cloud' && cached.rank === 2 && cached.source === 'cache' && fetchCalls === 0)
 
+  let seenRequest = null
   const ok = await resolveCloudSense(INPUT, {
     storage: fakeStorage(),
     versions: DEFAULT_CLOUD_VERSIONS,
-    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'certain', rank: 2 }) })
+    fetchImpl: async (url, init) => {
+      seenRequest = JSON.parse(init.body)
+      return { ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'selected', rank: 2, source: 'model' }) }
+    }
   })
-  t('云端确认 → cloud rank', ok.status === 'cloud' && ok.rank === 2)
+  t('云端已选 → cloud rank + model', ok.status === 'cloud' && ok.rank === 2 && ok.source === 'model')
+  t('请求体带 clientVersion:2', seenRequest && seenRequest.clientVersion === CLOUD_CLIENT_VERSION)
+
+  const legacy = await resolveCloudSense(INPUT, {
+    storage: fakeStorage(),
+    versions: DEFAULT_CLOUD_VERSIONS,
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: 'cloud', rank: 2 }) })
+  })
+  t('旧 Worker 缺 confidence → legacy', legacy.status === 'cloud' && legacy.rank === 2 && legacy.source === 'legacy')
 
   const uncertainConfidence = await resolveCloudSense(INPUT, {
     storage: fakeStorage(),
     versions: DEFAULT_CLOUD_VERSIONS,
     fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'uncertain', rank: 2 }) })
   })
-  t('rank 合法但 confidence 不是 certain → uncertain', uncertainConfidence.status === 'uncertain')
+  t('rank 合法但 confidence 不是 selected/certain → uncertain', uncertainConfidence.status === 'uncertain')
+
+  const insufficient = await resolveCloudSense(INPUT, {
+    storage: fakeStorage(),
+    versions: DEFAULT_CLOUD_VERSIONS,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'uncertain', confidence: 'insufficient_context', rank: null }),
+    })
+  })
+  t('上下文不足原因透传到 UI', insufficient.status === 'uncertain' && insufficient.reason === 'insufficient_context')
 
   const uncertain = await resolveCloudSense(INPUT, {
     storage: fakeStorage(),
     versions: DEFAULT_CLOUD_VERSIONS,
-    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'certain', rank: 99 }) })
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'selected', rank: 99 }) })
   })
   t('模型给了表外 rank → uncertain', uncertain.status === 'uncertain')
 
@@ -250,7 +285,7 @@ console.log('\n[resolveCloudSense — 判定与降级]')
       if (url === CLOUD_CONFIG_PATH) {
         return { ok: true, status: 200, json: async () => ({ versions: serverVersions }) }
       }
-      return { ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'certain', rank: 2 }) }
+      return { ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'selected', rank: 2, source: 'model' }) }
     },
   })
   t('解析前先取服务端版本', calls[0] === CLOUD_CONFIG_PATH && live.status === 'cloud')

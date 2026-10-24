@@ -1110,9 +1110,20 @@ async function runPhraseCloud(payloadInput) {
   if (seq !== phraseCloudSeq || !selectedPhrase.value) return
   const prev = selectedPhrase.value.resolution || { state: 'zero', rank: null, hits: [] }
   if (result.status === 'cloud') {
-    selectedPhrase.value.resolution = { ...prev, state: 'cloud', rank: result.rank, cloudStatus: 'cloud' }
+    selectedPhrase.value.resolution = {
+      ...prev,
+      state: 'cloud',
+      rank: result.rank,
+      cloudStatus: 'cloud',
+      cloudSource: result.source || 'model',
+      cloudReason: '',
+    }
   } else {
-    selectedPhrase.value.resolution = { ...prev, cloudStatus: result.status }
+    selectedPhrase.value.resolution = {
+      ...prev,
+      cloudStatus: result.status,
+      cloudReason: result.reason || '',
+    }
   }
 }
 

@@ -55,10 +55,12 @@ CREATE INDEX IF NOT EXISTS idx_rate_limit_events_ts ON rate_limit_events (ts);
 -- 与 rate_limit_events（M-W 查词额度）分开，逻辑见 src/phraseRateLimit.js。
 CREATE TABLE IF NOT EXISTS phrase_rate_events (
   ip TEXT NOT NULL,
-  ts INTEGER NOT NULL
+  ts INTEGER NOT NULL,
+  user_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_phrase_rate_events_ip_ts ON phrase_rate_events (ip, ts);
+CREATE INDEX IF NOT EXISTS idx_phrase_rate_events_user_ts ON phrase_rate_events (user_id, ts);
 CREATE INDEX IF NOT EXISTS idx_phrase_rate_events_ts ON phrase_rate_events (ts);
 
 -- ── 账号与会话（第 2 步「开门」；增量迁移：migrations/0003_users_sessions.sql）──

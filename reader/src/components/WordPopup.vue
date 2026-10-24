@@ -14,6 +14,7 @@
               <h4 class="sense-label">本句义</h4>
               <p v-if="currentSense" class="sense-current">{{ currentSense.zh }}</p>
               <p v-else class="sense-unresolved">{{ unresolvedText }}</p>
+              <p v-if="currentSense && cloudSourceText" class="sense-source">{{ cloudSourceText }}</p>
             </section>
 
             <section class="sense-block">
@@ -157,6 +158,16 @@ const hitRanks = computed(() => (resolution.value.hits || []).map(hit => hit.ran
 const isHitSense = (sense) => hitRanks.value.includes(sense.rank)
 const isCurrentSense = (sense) => currentSense.value?.rank === sense.rank
 
+/** 来源标签：说「这话从哪来」，不说「有多确定」。 */
+const cloudSourceText = computed(() => {
+  if (resolution.value.cloudStatus !== 'cloud') return ''
+  const source = resolution.value.cloudSource
+  if (source === 'cache') return '缓存判断'
+  if (source === 'legacy') return '旧版判断'
+  if (source === 'model') return '模型判断'
+  return ''
+})
+
 const unresolvedText = computed(() => {
   if (resolution.value.cloudStatus === 'loading') return '云端判断中…'
   if (resolution.value.cloudStatus === 'unavailable') return '云端暂不可用'
@@ -164,6 +175,9 @@ const unresolvedText = computed(() => {
   if (resolution.value.cloudStatus === 'unauthorized') return '登录后可判断这本书'
   if (resolution.value.cloudStatus === 'invalid') return '这本书暂不支持云端判断'
   if (resolution.value.cloudStatus === 'error') return '云端判断失败'
+  if (resolution.value.cloudStatus === 'uncertain' && resolution.value.cloudReason === 'insufficient_context') {
+    return '上下文不足，云端判断不了'
+  }
   if (resolution.value.cloudStatus === 'uncertain') return '云端未能确定'
   if (resolution.value.cloudStatus === 'offline') return '离线未确定'
   return '未确定'
@@ -301,6 +315,13 @@ export default { inheritAttrs: false }
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-secondary, #6e6e73);
+}
+
+.sense-source {
+  margin: 4px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary, #8a8a8e);
 }
 
 .sense-list {
