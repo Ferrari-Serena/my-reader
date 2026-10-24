@@ -13,16 +13,16 @@
 
 ## 当前有 2 本书
 
-- **The Giver**（25章，含 23 章 Kokoro 音频 ~95MB）
+- **Dr Jekyll and Mr Hyde**（10 章，公版；10 章 Kokoro 音频）
 - **SAT Practice**（4,437 词，5,988 真实例句）
 
 ## 测试
 
-`reader` 16 套 ＋ `worker` 9 套，合计 2,738 条纯逻辑测试；CI 在部署前跑；本地也可单跑：
+`reader` 与 `worker` 各有一套 `verify-*.mjs` 纯逻辑测试（`reader` 另含 `smoke-test.mjs`）；CI 在部署前跑，具体数量以 `npm test` 输出为准；本地也可单跑：
 
 ```bash
-cd reader && npm test   # 16 套（verify-*.mjs ＋ smoke-test.mjs）
-cd worker && npm test   # 9 套（verify-*.mjs）
+cd reader && npm test
+cd worker && npm test
 ```
 
 - `reader/verify-core.mjs` — 词典 / 分词 / 词组 / 存储核心
