@@ -14,7 +14,16 @@ import {
   pruneCloudCache,
   cloudRankFromResponse,
   resolveCloudSense,
+  fetchCloudVersions,
+  resetCloudVersionsCache,
+  DEFAULT_CLOUD_VERSIONS,
   CLOUD_CACHE_PREFIX,
+  CLOUD_CONFIG_PATH,
+  CLOUD_VERSIONS_STORAGE_KEY,
+  CLOUD_CACHE_SCHEMA_VERSION,
+  CLOUD_CACHE_MODEL_VERSION,
+  CLOUD_CACHE_PROMPT_VERSION,
+  CLOUD_CACHE_LEXICON_VERSION,
 } from './src/utils/phraseCloud.js'
 
 let pass = 0, fail = 0
@@ -24,8 +33,8 @@ function t(name, cond) {
 }
 
 const SENSES = [
-  { rank: 1, zh: '解释；说明（原因）', cue: 'should-not-be-sent' },
-  { rank: 2, zh: '占（比例）；构成' },
+  { id: 'account for#account_for.v.01', rank: 1, zh: '解释；说明（原因）', cue: 'should-not-be-sent' },
+  { id: 'account for#account_for.v.02', rank: 2, zh: '占（比例）；构成' },
 ]
 const INPUT = {
   bookId: 'divergent',
@@ -65,11 +74,12 @@ console.log('\n[buildCloudPayload — 前端净化]')
 {
   const p = buildCloudPayload(INPUT)
   t('合法载荷被收下', p && p.phrase === 'account for')
-  t('senses 只保留 rank + zh（cue 被剪掉）', p.senses.every(s => Object.keys(s).join(',') === 'rank,zh'))
+  t('senses 只保留 id + rank + zh（cue 被剪掉）', p.senses.every(s => Object.keys(s).join(',') === 'id,rank,zh'))
   t('多余字段不出现', p && !('sentenceRaw' in p) && !('extra' in p))
   t('缺 start/end 拒', buildCloudPayload({ ...INPUT, start: undefined }) === null)
   t('单义项拒', buildCloudPayload({ ...INPUT, senses: [SENSES[0]] }) === null)
   t('重复 rank 拒', buildCloudPayload({ ...INPUT, senses: [SENSES[0], SENSES[0]] }) === null)
+  t('重复 sense id 拒', buildCloudPayload({ ...INPUT, senses: [SENSES[0], { ...SENSES[1], id: SENSES[0].id }] }) === null)
   t('sentence 超长被截断', buildCloudPayload({ ...INPUT, sentence: 'a'.repeat(2000) }).sentence.length === 1200)
 }
 
@@ -77,6 +87,12 @@ console.log('\n[cloudCacheKey / readCloudCache / writeCloudCache]')
 {
   const p = buildCloudPayload(INPUT)
   const storage = fakeStorage()
+  const key = cloudCacheKey(p)
+  t('缓存键含 schema / model / prompt / lexicon 版本',
+    key.includes(CLOUD_CACHE_SCHEMA_VERSION) &&
+    key.includes(CLOUD_CACHE_MODEL_VERSION) &&
+    key.includes(CLOUD_CACHE_PROMPT_VERSION) &&
+    key.includes(CLOUD_CACHE_LEXICON_VERSION))
   t('空缓存未命中回 undefined', readCloudCache(storage, p) === undefined)
   writeCloudCache(storage, p, 2)
   t('写后命中 rank', readCloudCache(storage, p) === 2)
@@ -86,6 +102,12 @@ console.log('\n[cloudCacheKey / readCloudCache / writeCloudCache]')
   t('不同句子不是同一条缓存', readCloudCache(storage, other) === undefined)
   writeCloudCache(storage, other, 1)
   t('两条并存', Object.keys(storage._dump()).length === 2)
+
+  const legacyKey = 'mr.phrase.cloud.' + 'legacy-answer'
+  storage.setItem(legacyKey, JSON.stringify({ rank: 1, at: 1 }))
+  t('旧前缀缓存不会被当作新缓存命中', readCloudCache(storage, p) === 2)
+  pruneCloudCache(storage)
+  t('prune 会清掉旧前缀缓存', !Object.keys(storage._dump()).includes(legacyKey))
 }
 
 console.log('\n[pruneCloudCache — 容量只留最近 MAX 条]')
@@ -100,10 +122,50 @@ console.log('\n[pruneCloudCache — 容量只留最近 MAX 条]')
 
 console.log('\n[cloudRankFromResponse — 响应 rank 必须在义项表里]')
 {
-  t('合法 rank', cloudRankFromResponse({ rank: 2 }, SENSES) === 2)
-  t('表外 rank 不认', cloudRankFromResponse({ rank: 9 }, SENSES) === null)
-  t('非整数不认', cloudRankFromResponse({ rank: '2' }, SENSES) === null)
+  t('合法 status + confidence + rank', cloudRankFromResponse({ status: 'cloud', confidence: 'certain', rank: 2 }, SENSES) === 2)
+  t('缺 status 不认', cloudRankFromResponse({ confidence: 'certain', rank: 2 }, SENSES) === null)
+  t('confidence 不是 certain 不认', cloudRankFromResponse({ status: 'cloud', confidence: 'uncertain', rank: 2 }, SENSES) === null)
+  t('表外 rank 不认', cloudRankFromResponse({ status: 'cloud', confidence: 'certain', rank: 9 }, SENSES) === null)
+  t('非整数不认', cloudRankFromResponse({ status: 'cloud', confidence: 'certain', rank: '2' }, SENSES) === null)
   t('非对象不认', cloudRankFromResponse(null, SENSES) === null)
+}
+
+console.log('\n[fetchCloudVersions — 本地缓存跟随服务端模型代际]')
+{
+  resetCloudVersionsCache()
+  const storage = fakeStorage()
+  const serverVersions = { schema: 'v3', model: 'm2', prompt: 'p3', lexicon: 'l2' }
+  let configCalls = 0
+  let seenUrl = ''
+  const fetchImpl = async (url) => {
+    configCalls++
+    seenUrl = url
+    return { ok: true, status: 200, json: async () => ({ versions: serverVersions }) }
+  }
+  const got = await fetchCloudVersions({ storage, fetchImpl })
+  t('从配置端读到版本元组', JSON.stringify(got) === JSON.stringify(serverVersions))
+  t('配置请求打 /api/phrase/config', seenUrl === CLOUD_CONFIG_PATH)
+  t('版本写入 localStorage', !!storage.getItem(CLOUD_VERSIONS_STORAGE_KEY))
+
+  resetCloudVersionsCache()
+  const again = await fetchCloudVersions({
+    storage,
+    fetchImpl: async () => { configCalls++; throw new Error('should not fetch') },
+  })
+  t('TTL 内复用本机记录、不再请求', configCalls === 1 && again.model === 'm2')
+
+  const p = buildCloudPayload(INPUT)
+  t('模型代际进入本地缓存键', cloudCacheKey(p, serverVersions) !== cloudCacheKey(p, DEFAULT_CLOUD_VERSIONS))
+  const stale = fakeStorage()
+  writeCloudCache(stale, p, 2, DEFAULT_CLOUD_VERSIONS)
+  t('换模型后旧本地缓存不命中', readCloudCache(stale, p, serverVersions) === undefined)
+
+  resetCloudVersionsCache()
+  const fallback = await fetchCloudVersions({
+    storage: fakeStorage(),
+    fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+  })
+  t('配置端不可用时退回内置版本', fallback.model === DEFAULT_CLOUD_VERSIONS.model)
 }
 
 console.log('\n[resolveCloudSense — 判定与降级]')
@@ -112,37 +174,88 @@ console.log('\n[resolveCloudSense — 判定与降级]')
   t('载荷非法 → invalid', (await resolveCloudSense({ ...INPUT, senses: [] })).status === 'invalid')
 
   const hitStorage = fakeStorage()
-  writeCloudCache(hitStorage, p, 2)
+  writeCloudCache(hitStorage, p, 2, DEFAULT_CLOUD_VERSIONS)
   let fetchCalls = 0
   const cached = await resolveCloudSense(INPUT, {
     storage: hitStorage,
+    versions: DEFAULT_CLOUD_VERSIONS,
     fetchImpl: async () => { fetchCalls++; return { ok: true, status: 200, json: async () => ({ rank: 1 }) } }
   })
   t('本地缓存命中不发请求', cached.status === 'cloud' && cached.rank === 2 && fetchCalls === 0)
 
   const ok = await resolveCloudSense(INPUT, {
     storage: fakeStorage(),
-    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ rank: 2 }) })
+    versions: DEFAULT_CLOUD_VERSIONS,
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'certain', rank: 2 }) })
   })
   t('云端确认 → cloud rank', ok.status === 'cloud' && ok.rank === 2)
 
+  const uncertainConfidence = await resolveCloudSense(INPUT, {
+    storage: fakeStorage(),
+    versions: DEFAULT_CLOUD_VERSIONS,
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'uncertain', rank: 2 }) })
+  })
+  t('rank 合法但 confidence 不是 certain → uncertain', uncertainConfidence.status === 'uncertain')
+
   const uncertain = await resolveCloudSense(INPUT, {
     storage: fakeStorage(),
-    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ rank: 99 }) })
+    versions: DEFAULT_CLOUD_VERSIONS,
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'certain', rank: 99 }) })
   })
   t('模型给了表外 rank → uncertain', uncertain.status === 'uncertain')
 
   const unavailable = await resolveCloudSense(INPUT, {
     storage: fakeStorage(),
+    versions: DEFAULT_CLOUD_VERSIONS,
     fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) })
   })
   t('503 → unavailable', unavailable.status === 'unavailable')
 
+  const rateLimited = await resolveCloudSense(INPUT, {
+    storage: fakeStorage(),
+    versions: DEFAULT_CLOUD_VERSIONS,
+    fetchImpl: async () => ({ ok: false, status: 429, json: async () => ({}) })
+  })
+  t('429 → rate_limited', rateLimited.status === 'rate_limited')
+
+  const unauthorized = await resolveCloudSense(INPUT, {
+    storage: fakeStorage(),
+    versions: DEFAULT_CLOUD_VERSIONS,
+    fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}) })
+  })
+  t('401 → unauthorized', unauthorized.status === 'unauthorized')
+
+  const invalid = await resolveCloudSense(INPUT, {
+    storage: fakeStorage(),
+    versions: DEFAULT_CLOUD_VERSIONS,
+    fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({}) })
+  })
+  t('400 → invalid', invalid.status === 'invalid')
+
   const offline = await resolveCloudSense(INPUT, {
     storage: fakeStorage(),
+    versions: DEFAULT_CLOUD_VERSIONS,
     fetchImpl: async () => { throw new Error('net down') }
   })
   t('网络错误 → offline（不抛）', offline.status === 'offline')
+
+  resetCloudVersionsCache()
+  const serverVersions = { schema: 'v3', model: 'm2', prompt: 'p3', lexicon: 'l2' }
+  const calls = []
+  const liveStorage = fakeStorage()
+  const live = await resolveCloudSense(INPUT, {
+    storage: liveStorage,
+    fetchImpl: async (url) => {
+      calls.push(url)
+      if (url === CLOUD_CONFIG_PATH) {
+        return { ok: true, status: 200, json: async () => ({ versions: serverVersions }) }
+      }
+      return { ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'certain', rank: 2 }) }
+    },
+  })
+  t('解析前先取服务端版本', calls[0] === CLOUD_CONFIG_PATH && live.status === 'cloud')
+  t('答案写进服务端代际的键', readCloudCache(liveStorage, p, serverVersions) === 2)
+  t('默认代际读不到这条答案', readCloudCache(liveStorage, p, DEFAULT_CLOUD_VERSIONS) === undefined)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

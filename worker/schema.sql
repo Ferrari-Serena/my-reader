@@ -51,6 +51,16 @@ CREATE TABLE IF NOT EXISTS rate_limit_events (
 CREATE INDEX IF NOT EXISTS idx_rate_limit_events_ip_ts ON rate_limit_events (ip, ts);
 CREATE INDEX IF NOT EXISTS idx_rate_limit_events_ts ON rate_limit_events (ts);
 
+-- 词组模型调用的独立限流账本（第 0 步止血）：只记「D1 缓存未命中、即将真的调模型」的请求。
+-- 与 rate_limit_events（M-W 查词额度）分开，逻辑见 src/phraseRateLimit.js。
+CREATE TABLE IF NOT EXISTS phrase_rate_events (
+  ip TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_phrase_rate_events_ip_ts ON phrase_rate_events (ip, ts);
+CREATE INDEX IF NOT EXISTS idx_phrase_rate_events_ts ON phrase_rate_events (ts);
+
 -- ── 账号与会话（第 2 步「开门」；增量迁移：migrations/0003_users_sessions.sql）──
 -- 时间列一律 INTEGER = epoch 毫秒。详细口径写在 0003 的注释里，这里只放最终形态。
 

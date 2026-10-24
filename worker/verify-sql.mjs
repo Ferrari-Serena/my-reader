@@ -40,6 +40,8 @@ db.exec(readFileSync(new URL('./migrations/0006_audio_tasks_purged.sql', import.
 db.exec(readFileSync(new URL('./migrations/0007_feedback.sql', import.meta.url), 'utf8'))
 // 0008 词组云端终判缓存表（幂等，见 migrations/0008_phrase_cloud.sql）
 db.exec(readFileSync(new URL('./migrations/0008_phrase_cloud.sql', import.meta.url), 'utf8'))
+// 0009 词组模型调用独立限流表（幂等，见 migrations/0009_phrase_rate_limit.sql）
+db.exec(readFileSync(new URL('./migrations/0009_phrase_rate_limit.sql', import.meta.url), 'utf8'))
 
 const CODE = 'TESTCODE'
 const alive = db.prepare(SQL_ALIVE_UPSERT)
@@ -421,6 +423,40 @@ console.log('\n[0008 与 schema.sql 同形：phrase_cloud_cache 的列**与顺�
   t('迁移链（0008）与 schema.sql 的 phrase_cloud_cache 列同序', cols(db) === cols(fresh))
 }
 
+console.log('\n[0009 迁移 — 词组模型调用独立限流（第 0 步止血）]')
+{
+  const hasTable = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name=?").get(n).n === 1
+  const hasIndex = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index' AND name=?").get(n).n === 1
+
+  t('phrase_rate_events 建出', hasTable('phrase_rate_events'))
+  t('有 (ip, ts) 复合索引（每 IP 滑窗）', hasIndex('idx_phrase_rate_events_ip_ts'))
+  t('有 ts 索引（全局日配额与清理）', hasIndex('idx_phrase_rate_events_ts'))
+  t('0009 幂等：重复执行不报错', (() => {
+    try { db.exec(readFileSync(new URL('./migrations/0009_phrase_rate_limit.sql', import.meta.url), 'utf8')); return true }
+    catch { return false }
+  })())
+
+  const ins = db.prepare('INSERT INTO phrase_rate_events (ip, ts) VALUES (?, ?)')
+  t('事件行可写', ins.run('203.0.113.10', 1000).changes === 1)
+  t('同一 IP 可留多条（逐条日志计数）', ins.run('203.0.113.10', 2000).changes === 1)
+  t('可按 IP + 时间窗口计数',
+    db.prepare('SELECT COUNT(*) AS n FROM phrase_rate_events WHERE ip = ? AND ts > ?').get('203.0.113.10', 1500).n === 1)
+  t('可按 UTC 日计数',
+    db.prepare('SELECT COUNT(*) AS n FROM phrase_rate_events WHERE ts > ?').get(500).n === 2)
+}
+
+console.log('\n[0009 与 schema.sql 同形：phrase_rate_events 的列**与顺序**逐字一致]')
+{
+  const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
+  t('schema.sql 含表 phrase_rate_events', /CREATE TABLE IF NOT EXISTS phrase_rate_events\b/.test(schemaSql))
+  t('schema.sql 含两个限流索引',
+    schemaSql.includes('idx_phrase_rate_events_ip_ts') && schemaSql.includes('idx_phrase_rate_events_ts'))
+  const fresh = new DatabaseSync(':memory:')
+  fresh.exec(schemaSql)
+  const cols = (d) => d.prepare("SELECT name FROM pragma_table_info('phrase_rate_events')").all().map(r => r.name).join(',')
+  t('迁移链（0009）与 schema.sql 的 phrase_rate_events 列同序', cols(db) === cols(fresh))
+}
+
 console.log('\n[schema.sql 与 0004 一致（新建库直接建出 kind 列）]')
 {
   const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
@@ -434,8 +470,8 @@ console.log('\n[schema.sql 单独建库（权威源：空库直接建出最终�
   let ok = true
   try { fresh.exec(schemaSql) } catch (e) { ok = false; console.log('   ', e.message) }
   t('schema.sql 能在空库上跑通', ok)
-  t('schema.sql 建出 11 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表 + audio_tasks + feedback + phrase_cloud_cache）',
-    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 11)
+  t('schema.sql 建出 12 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表 + audio_tasks + feedback + phrase_cloud_cache + phrase_rate_events）',
+    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 12)
   t('schema.sql 幂等：重复执行不报错', ok && (() => {
     try { fresh.exec(schemaSql); return true } catch { return false }
   })())

@@ -31,7 +31,7 @@ import { handleBookAudio } from './bookaudio.js'
 import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
 import { handleFeedback } from './feedback.js'
 import { handleAudioGen, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
-import { handlePhraseResolve } from './phrase.js'
+import { handlePhraseConfig, handlePhraseResolve } from './phrase.js'
 import { parseRange } from './range.js'
 import { audioRequestPlan } from './audioalias.js'
 import { corsFor } from './cors.js'
@@ -136,6 +136,10 @@ async function handleRequest(request, env, url) {
     // 反馈端点分发（第 13 步 · D11）：/api/feedback（提交免登录；列表／改状态用 METRICS_TOKEN）
     const feedbackRes = await handleFeedback(request, env)
     if (feedbackRes !== null) return feedbackRes
+
+    // 词组缓存版本：/api/phrase/config（公开，只回版本号，不含密钥）
+    const phraseConfigRes = await handlePhraseConfig(request, env)
+    if (phraseConfigRes !== null) return phraseConfigRes
 
     // 词组运行时云端终判：/api/phrase/resolve（有模型配置才可用；见 phrase.js）
     const phraseRes = await handlePhraseResolve(request, env)

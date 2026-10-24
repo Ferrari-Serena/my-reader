@@ -160,6 +160,10 @@ const isCurrentSense = (sense) => currentSense.value?.rank === sense.rank
 const unresolvedText = computed(() => {
   if (resolution.value.cloudStatus === 'loading') return '云端判断中…'
   if (resolution.value.cloudStatus === 'unavailable') return '云端暂不可用'
+  if (resolution.value.cloudStatus === 'rate_limited') return '请求太频繁，稍后再试'
+  if (resolution.value.cloudStatus === 'unauthorized') return '登录后可判断这本书'
+  if (resolution.value.cloudStatus === 'invalid') return '这本书暂不支持云端判断'
+  if (resolution.value.cloudStatus === 'error') return '云端判断失败'
   if (resolution.value.cloudStatus === 'uncertain') return '云端未能确定'
   if (resolution.value.cloudStatus === 'offline') return '离线未确定'
   return '未确定'
