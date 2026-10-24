@@ -2,7 +2,7 @@
 
 ## 入口
 
-- 先读 `docs/00-CURRENT.md`，再读 `README.md`。
+- 先读 `docs/00-ENTRY.md`，再读 `README.md`。
 - 内部状态不放在公开仓；唯一指针如下（相对 Obsidian vault）：
 
 ```text
