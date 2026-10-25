@@ -18,6 +18,7 @@ export const CLOUD_CACHE_PROMPT_VERSION = 'p2-abstain'
 export const CLOUD_CACHE_LEXICON_VERSION = 'l1'
 export const CLOUD_VERSIONS_STORAGE_KEY = 'mr.phrase.cloudVersions.v1'
 export const CLOUD_VERSIONS_TTL_MS = 60 * 60 * 1000
+export const CLOUD_READY_TTL_MS = 60 * 1000
 export const CLOUD_CLIENT_VERSION = 2
 
 const LEGACY_CLOUD_CACHE_PREFIX = 'mr.phrase.cloud.'
@@ -31,6 +32,7 @@ export const DEFAULT_CLOUD_VERSIONS = Object.freeze({
 })
 
 let memoryVersions = null
+let memoryReady = null
 
 const MAX_ID = 128
 const MAX_PHRASE = 80
@@ -122,12 +124,41 @@ function normalizeVersions(raw) {
 /** 测试用：清掉模块内的版本记忆，避免跨用例串味。 */
 export function resetCloudVersionsCache() {
   memoryVersions = null
+  memoryReady = null
+}
+
+/**
+ * 取一次配置端。返回 `{ versions, ready }`；失败回 null（调用方各自决定降级）。
+ * `ready` 缺省按可用处理：回滚到还没有该字段的旧 Worker 时，前端不该把云端判死。
+ */
+async function requestCloudConfig(fetchImpl, configPath) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), CLOUD_CONFIG_TIMEOUT_MS)
+  try {
+    const res = await fetchImpl(configPath || CLOUD_CONFIG_PATH, {
+      method: 'GET',
+      credentials: 'same-origin',
+      signal: ctrl.signal,
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return {
+      versions: normalizeVersions(data && data.versions),
+      ready: data && data.ready === false ? false : true,
+    }
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /**
  * 取当前缓存代际。优先顺序：
  *   调用方注入 → 本次页面已取过 → localStorage 未过期 → /api/phrase/config → 内置常量。
  * 配置端失败时退回常量，不把「取不到版本」变成「不能判断」。
+ *
+ * 顺带记住配置端的 `ready`，供 `fetchCloudReady` 复用同一次请求。
  */
 export async function fetchCloudVersions(opts = {}) {
   const injected = normalizeVersions(opts.versions)
@@ -151,28 +182,36 @@ export async function fetchCloudVersions(opts = {}) {
   const fetchImpl = opts.fetchImpl || globalThis.fetch
   if (typeof fetchImpl !== 'function') return { ...DEFAULT_CLOUD_VERSIONS }
 
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), CLOUD_CONFIG_TIMEOUT_MS)
+  const got = await requestCloudConfig(fetchImpl, opts.configPath)
+  if (!got) return { ...DEFAULT_CLOUD_VERSIONS }
+  memoryReady = { value: got.ready, at: Date.now() }
+  if (!got.versions) return { ...DEFAULT_CLOUD_VERSIONS }
+  memoryVersions = got.versions
   try {
-    const res = await fetchImpl(opts.configPath || CLOUD_CONFIG_PATH, {
-      method: 'GET',
-      credentials: 'same-origin',
-      signal: ctrl.signal,
-    })
-    if (!res.ok) return { ...DEFAULT_CLOUD_VERSIONS }
-    const data = await res.json()
-    const next = normalizeVersions(data && data.versions)
-    if (!next) return { ...DEFAULT_CLOUD_VERSIONS }
-    memoryVersions = next
-    try {
-      storage && storage.setItem(CLOUD_VERSIONS_STORAGE_KEY, JSON.stringify({ versions: next, at: Date.now() }))
-    } catch { /* 存不下只影响下次启动，不影响本次 */ }
-    return { ...next }
-  } catch {
-    return { ...DEFAULT_CLOUD_VERSIONS }
-  } finally {
-    clearTimeout(timer)
-  }
+    storage && storage.setItem(CLOUD_VERSIONS_STORAGE_KEY, JSON.stringify({ versions: got.versions, at: Date.now() }))
+  } catch { /* 存不下只影响下次启动，不影响本次 */ }
+  return { ...got.versions }
+}
+
+/**
+ * 云端词组是否开着。用途是「关闸时不发 POST」，服务端 503 仍是兜底。
+ *
+ * 优先顺序：调用方注入 → 注入版本（视为可用）→ 60s 内的配置记忆 → 配置端。
+ * 配置端失败按可用处理：宁可多一次请求拿到 503，也不把可用的云端判死。
+ */
+export async function fetchCloudReady(opts = {}) {
+  if (typeof opts.ready === 'boolean') return opts.ready
+  if (normalizeVersions(opts.versions)) return true
+  if (memoryReady && Date.now() - memoryReady.at < CLOUD_READY_TTL_MS) return memoryReady.value
+
+  const fetchImpl = opts.fetchImpl || globalThis.fetch
+  if (typeof fetchImpl !== 'function') return true
+
+  const got = await requestCloudConfig(fetchImpl, opts.configPath)
+  if (!got) return true
+  memoryReady = { value: got.ready, at: Date.now() }
+  if (got.versions) memoryVersions = got.versions
+  return got.ready
 }
 
 /** 本地缓存键。句子只存在本机 localStorage，不上送、不出设备。 */
@@ -294,6 +333,7 @@ export function cloudRankFromResponse(data, senses) {
  * 发一次云端终判。恒不抛：
  *   { status:'cloud', rank, source }  拿到一条（source: model|cache|legacy）
  *   { status:'uncertain', reason }    服务端判断不了；reason 区分「不确定 / 上下文不足」
+ *   { status:'disabled' }        云端词组已关闸，没发请求
  *   { status:'unavailable' }     云端没配/不可用
  *   { status:'invalid' }         载荷净化失败
  *   { status:'offline' }         网络/超时错误
@@ -308,6 +348,8 @@ export async function resolveCloudSense(input, opts = {}) {
   const storage = opts.storage || (typeof localStorage !== 'undefined' ? localStorage : null)
   const cached = readCloudCache(storage, payload, versions)
   if (cached !== undefined) return { status: 'cloud', rank: cached, source: 'cache', cached: true }
+
+  if (!(await fetchCloudReady(opts))) return { status: 'disabled', rank: null }
 
   const fetchImpl = opts.fetchImpl || globalThis.fetch
   if (typeof fetchImpl !== 'function') return { status: 'offline', rank: null }

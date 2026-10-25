@@ -16,6 +16,7 @@ import {
   cloudRankFromResponse,
   resolveCloudSense,
   fetchCloudVersions,
+  fetchCloudReady,
   resetCloudVersionsCache,
   DEFAULT_CLOUD_VERSIONS,
   CLOUD_CACHE_PREFIX,
@@ -291,6 +292,85 @@ console.log('\n[resolveCloudSense — 判定与降级]')
   t('解析前先取服务端版本', calls[0] === CLOUD_CONFIG_PATH && live.status === 'cloud')
   t('答案写进服务端代际的键', readCloudCache(liveStorage, p, serverVersions) === 2)
   t('默认代际读不到这条答案', readCloudCache(liveStorage, p, DEFAULT_CLOUD_VERSIONS) === undefined)
+}
+
+console.log('\n[fetchCloudReady / resolveCloudSense — 关闸短路]')
+{
+  resetCloudVersionsCache()
+  let configCalls = 0
+  const disabledFetch = async (url) => {
+    if (url === CLOUD_CONFIG_PATH) {
+      configCalls++
+      return { ok: true, status: 200, json: async () => ({ ready: false, versions: DEFAULT_CLOUD_VERSIONS }) }
+    }
+    throw new Error('关闸时不应发 resolve POST')
+  }
+  t('配置 ready:false → false', (await fetchCloudReady({ fetchImpl: disabledFetch })) === false)
+  t('60s 内复用关闸判断、不再请求', (await fetchCloudReady({ fetchImpl: disabledFetch })) === false && configCalls === 1)
+
+  resetCloudVersionsCache()
+  let gets = 0
+  let posts = 0
+  const out = await resolveCloudSense(INPUT, {
+    storage: fakeStorage(),
+    fetchImpl: async (url) => {
+      if (url === CLOUD_CONFIG_PATH) {
+        gets++
+        return { ok: true, status: 200, json: async () => ({ ready: false, versions: DEFAULT_CLOUD_VERSIONS }) }
+      }
+      posts++
+      return { ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'selected', rank: 2 }) }
+    },
+  })
+  t('关闸 → disabled', out.status === 'disabled' && out.rank === null)
+  t('关闸不发 resolve POST', posts === 0)
+  t('关闸只查一次配置', gets === 1)
+
+  resetCloudVersionsCache()
+  let injectedCalls = 0
+  const injected = await resolveCloudSense(INPUT, {
+    ready: false,
+    versions: DEFAULT_CLOUD_VERSIONS,
+    storage: fakeStorage(),
+    fetchImpl: async () => { injectedCalls++; throw new Error('不应请求') },
+  })
+  t('显式 ready:false 直接短路、零请求', injected.status === 'disabled' && injectedCalls === 0)
+
+  resetCloudVersionsCache()
+  const cacheStorage = fakeStorage()
+  writeCloudCache(cacheStorage, buildCloudPayload(INPUT), 2, DEFAULT_CLOUD_VERSIONS)
+  const cachedWhileDisabled = await resolveCloudSense(INPUT, {
+    ready: false,
+    versions: DEFAULT_CLOUD_VERSIONS,
+    storage: cacheStorage,
+    fetchImpl: async () => { throw new Error('不应请求') },
+  })
+  t('关闸时本地缓存仍可用（不上传）',
+    cachedWhileDisabled.status === 'cloud' && cachedWhileDisabled.rank === 2 && cachedWhileDisabled.source === 'cache')
+
+  resetCloudVersionsCache()
+  const oldWorker = await resolveCloudSense(INPUT, {
+    storage: fakeStorage(),
+    fetchImpl: async (url) => {
+      if (url === CLOUD_CONFIG_PATH) {
+        return { ok: true, status: 200, json: async () => ({ versions: DEFAULT_CLOUD_VERSIONS }) }
+      }
+      return { ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'selected', rank: 2 }) }
+    },
+  })
+  t('配置缺 ready → 按可用处理（旧 Worker）', oldWorker.status === 'cloud' && oldWorker.rank === 2)
+
+  resetCloudVersionsCache()
+  let postsAfterConfigFail = 0
+  const configDown = await resolveCloudSense(INPUT, {
+    storage: fakeStorage(),
+    fetchImpl: async (url) => {
+      if (url === CLOUD_CONFIG_PATH) throw new Error('config down')
+      postsAfterConfigFail++
+      return { ok: true, status: 200, json: async () => ({ status: 'cloud', confidence: 'selected', rank: 2 }) }
+    },
+  })
+  t('配置端失败 → fail-open，由服务端 503 兜底', configDown.status === 'cloud' && postsAfterConfigFail === 1)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

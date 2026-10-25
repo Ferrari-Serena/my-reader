@@ -170,6 +170,7 @@ const cloudSourceText = computed(() => {
 
 const unresolvedText = computed(() => {
   if (resolution.value.cloudStatus === 'loading') return '云端判断中…'
+  if (resolution.value.cloudStatus === 'disabled') return '云端已关闭'
   if (resolution.value.cloudStatus === 'unavailable') return '云端暂不可用'
   if (resolution.value.cloudStatus === 'rate_limited') return '请求太频繁，稍后再试'
   if (resolution.value.cloudStatus === 'unauthorized') return '登录后可判断这本书'
