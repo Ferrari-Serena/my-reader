@@ -19,7 +19,7 @@
 
 ## 当前公开接口与版本信息
 
-- `GET /api/phrase/config`：返回词组消歧的版本信息；不返回 provider 地址或密钥。
+- `GET /api/phrase/config`：返回词组消歧的版本信息与 `ready` 开关（`false` 表示云端已关闸）；不返回 provider 地址或密钥。
 - `POST /api/phrase/resolve`：词组语境消歧。`bk_` 开头的私有书需要有效会话；公开书按服务端白名单放行。
 - 词组云端判断会把用户选中的句子送到 Worker 和模型 provider；涉及新增字段或解释输出时，必须同时检查告知、授权和输入注入边界。
 - D1 迁移按编号追加；已执行的一次性 `ALTER` 迁移不得重跑。
@@ -34,6 +34,7 @@
 ### Worker 部署核对单
 
 - [ ] `git status` 只含本批文件；第 11 步等未完成改动未 stage。
+- [ ] 部署机有私有 `worker/wrangler.toml`（从 `worker/wrangler.example.toml` 复制并填真实值）；clean worktree 部署前先从私有位置复制进来。
 - [ ] 需要迁移时，先执行对应 D1 迁移；一次性 `ALTER` 不重跑。
 - [ ] 云端词组关闸状态下，部署命令带 `--keep-vars --var PHRASE_CLOUD_DISABLED:1`；漏带会静默重开。
 - [ ] 记录新 Worker version 与上一版回滚目标。
