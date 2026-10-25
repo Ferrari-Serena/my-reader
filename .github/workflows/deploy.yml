@@ -15,7 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 二十五套测试全部通过才允许部署（reader 1750 ＋ worker 988 ＝ 2738 条）。都是纯逻辑测试，不依赖浏览器 / 网络 / 线上环境。
+  # reader／worker 的 npm test 全部通过才允许部署。测试集合以各自 package.json 为准，
+  # 不在本文件维护套数或条数，避免数字漂移。都是纯逻辑测试，不依赖浏览器 / 网络 / 线上环境。
   test:
     runs-on: ubuntu-latest
 
@@ -33,12 +34,12 @@ jobs:
         run: npm ci
         working-directory: reader
 
-      - name: Reader tests (verify-core / verify-vueimports / verify-sync / verify-booksync / verify-import / verify-books / verify-importui / smoke / verify-authui / verify-audio / verify-genui / verify-generate / verify-hotswitch / verify-feedbackui / verify-sw)
+      - name: Reader tests (npm test — all verify-* / smoke suites)
         run: npm test
         working-directory: reader
 
-      # worker 的九套测试只用 node 内置模块（node:sqlite 等），零依赖，不必 npm ci
-      - name: Worker tests (verify-worker / verify-auth / verify-authapi / verify-sql / verify-audioalias / verify-booksync / verify-bookaudio / verify-audiogen)
+      # worker 的测试只用 node 内置模块（node:sqlite 等），零依赖，不必 npm ci
+      - name: Worker tests (npm test — all verify-* suites)
         run: npm test
         working-directory: worker
 
