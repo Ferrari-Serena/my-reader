@@ -157,6 +157,12 @@ console.log('\n[公开书白名单 — 与 book-index.json 同口径]')
 console.log('\n[phraseLlmConfig — 三要素齐备才算可用]')
 {
   t('三要素齐备 ready', phraseLlmConfig({ PHRASE_LLM_BASE_URL: 'https://x/v1/chat/completions', PHRASE_LLM_API_KEY: 'k', PHRASE_LLM_MODEL: 'm' }).ready === true)
+  t('总开关为 1 时不可用', phraseLlmConfig({
+    PHRASE_LLM_BASE_URL: 'https://x/v1/chat/completions',
+    PHRASE_LLM_API_KEY: 'k',
+    PHRASE_LLM_MODEL: 'm',
+    PHRASE_CLOUD_DISABLED: '1',
+  }).ready === false)
   t('缺 key 不可用', phraseLlmConfig({ PHRASE_LLM_BASE_URL: 'https://x', PHRASE_LLM_MODEL: 'm' }).ready === false)
   t('缺 model 不可用', phraseLlmConfig({ PHRASE_LLM_BASE_URL: 'https://x', PHRASE_LLM_API_KEY: 'k' }).ready === false)
   t('base 末尾斜杠被裁掉', phraseLlmConfig({ PHRASE_LLM_BASE_URL: 'https://x/', PHRASE_LLM_API_KEY: 'k', PHRASE_LLM_MODEL: 'm' }).base === 'https://x')
@@ -297,6 +303,15 @@ console.log('\n[handlePhraseResolve — 路由闸]')
     return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '1' } }] }) }
   }
   try {
+    const disabled = await handlePhraseResolve(req(ROUTE_PATH, 'POST', { senses: [] }), {
+      ...authEnv,
+      PHRASE_CLOUD_DISABLED: '1',
+    })
+    const disabledBody = await disabled.json()
+    t('总开关关闭 → 503 disabled（先于载荷校验）',
+      disabled.status === 503 && disabledBody.status === 'unavailable' && disabledBody.error === 'phrase LLM disabled')
+    t('总开关关闭不调模型', modelCalls === 0)
+
     const fakeBook = await handlePhraseResolve(req(ROUTE_PATH, 'POST', { ...GOOD_BODY, bookId: 'x' }), authEnv)
     t('伪造公开书 id → 400，不是 429', fakeBook.status === 400 && (await fakeBook.json()).error === 'unknown book')
     t('伪造书 id 不触发模型', modelCalls === 0)

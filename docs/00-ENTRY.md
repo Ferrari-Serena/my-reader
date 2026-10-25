@@ -31,6 +31,14 @@
 - 变更顺序固定为：**D1 迁移 → Worker → 线上验证 → 前端**。
 - Worker 部署前先确认提交只含本批文件；第 11 步等未完成改动不得混入。
 
+### Worker 部署核对单
+
+- [ ] `git status` 只含本批文件；第 11 步等未完成改动未 stage。
+- [ ] 需要迁移时，先执行对应 D1 迁移；一次性 `ALTER` 不重跑。
+- [ ] 云端词组关闸状态下，部署命令带 `--keep-vars --var PHRASE_CLOUD_DISABLED:1`；漏带会静默重开。
+- [ ] 记录新 Worker version 与上一版回滚目标。
+- [ ] 线上复核：`GET /api/phrase/config` 的 `ready` 与 `POST /api/phrase/resolve` 的 503／正常口径。
+
 ## 文档边界
 
 - 本文件与 `README.md` 面向公开仓。

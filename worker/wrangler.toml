@@ -18,6 +18,10 @@ bucket_name = "my-reader-audio"
 # 词组云端终判（第 0 步止血）：
 #   secret：npx wrangler secret put PHRASE_LLM_API_KEY
 #   vars：  PHRASE_LLM_BASE_URL（完整 /chat/completions 地址）、PHRASE_LLM_MODEL
+#   总开关：PHRASE_CLOUD_DISABLED=1 关闭云端词组终判（resolve 503 / config ready:false）。
+#           关闸状态下部署必须带 `--keep-vars --var PHRASE_CLOUD_DISABLED:1`；
+#           漏带会静默重开。重新开门时省略该开关或设为非 1，不删 secret。
+#           核对单见 docs/00-ENTRY.md「Worker 部署核对单」。
 #   限流：  PHRASE_RATE_PER_MIN（默认 6）、PHRASE_DAILY_LIMIT（默认 300，UTC 日）
 #           PHRASE_USER_DAILY_LIMIT（默认 60，BYO 登录用户）
 #   缓存代际：PHRASE_CACHE_SCHEMA_VERSION / PHRASE_PROMPT_VERSION / PHRASE_LEXICON_VERSION
