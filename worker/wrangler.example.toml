@@ -1,23 +1,24 @@
-name = "my-reader-tts"
+# 公开模板：复制为 worker/wrangler.toml 后填入真实值。
+# worker/wrangler.toml 已被 .gitignore 忽略，只留在部署机／私有位置，绝不提交。
+
+name = "REPLACE_WITH_WORKER_NAME"
 main = "src/index.js"
 compatibility_date = "2025-07-01"
 
-# 词典缓存（database_id 由 `wrangler d1 create my-reader-dict` 输出后填入）
 [[d1_databases]]
 binding = "DB"
-database_name = "my-reader-dict"
-database_id = "f533d074-ddc9-4117-b560-45d904358b10"
+database_name = "REPLACE_WITH_D1_DATABASE_NAME"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
 
 [[r2_buckets]]
 binding = "AUDIO"
-bucket_name = "my-reader-audio"
+bucket_name = "REPLACE_WITH_R2_BUCKET_NAME"
 
-# M-W API Key 用 secret，不进代码：npx wrangler secret put MW_API_KEY
-# DeepInfra（服务端合成，块 C）同样走 secret：npx wrangler secret put DEEPINFRA_API_KEY
+# 所需 secret 在 Cloudflare 控制台（或 `wrangler secret put`）配置。
+# 具体名称见 worker/src 中读取的 env.*；本模板不列真实 secret 名。
 #
-# 词组云端终判（第 0 步止血）：
-#   secret：npx wrangler secret put PHRASE_LLM_API_KEY
-#   vars：  PHRASE_LLM_BASE_URL（完整 /chat/completions 地址）、PHRASE_LLM_MODEL
+# 词组云端终判：
+#   vars：PHRASE_LLM_BASE_URL（完整 /chat/completions 地址）、PHRASE_LLM_MODEL
 #   总开关：PHRASE_CLOUD_DISABLED=1 关闭云端词组终判（resolve 503 / config ready:false）。
 #           关闸状态下部署必须带 `--keep-vars --var PHRASE_CLOUD_DISABLED:1`；
 #           漏带会静默重开。重新开门时省略该开关或设为非 1，不删 secret。
@@ -27,15 +28,13 @@ bucket_name = "my-reader-audio"
 #   缓存代际：PHRASE_CACHE_SCHEMA_VERSION / PHRASE_PROMPT_VERSION / PHRASE_LEXICON_VERSION
 #   公开书：PHRASE_PUBLIC_BOOK_IDS（逗号分隔；默认与 reader/public/books/book-index.json 一致）
 
-# 最小监控（第 4 步 4.8）：打开 Workers Logs，让 index.js 记的结构化请求日志
-# （一行 JSON，5xx 走 console.error）可在 Dashboard 里检索、按状态码/路由过滤与告警。
 [observability]
 enabled = true
 
 # Cron 触发器（`scheduled()` 里按 `event.cron` 分派 —— 两条语义不同，**不合流**，见 src/index.js）：
 #   · 17 3 * * *  → 注销冷静期到期真删 purgeDeletedAccounts（第 2 步 F 块，每天 03:17 UTC 一次）
 #   · * * * * *   → 服务端合成巡检 runAudioGenTick（第 17 步 块 C，每分钟，D24-b）
-# ⚠️ 每分钟这条**必须挂在本就存在的 my-reader-tts 上、不新建 worker** —— 新建 worker 的
+# ⚠️ 每分钟这条**必须挂在本就存在的 Worker 上、不新建 worker** —— 新建 worker 的
 #    cron 冷启动实测 ≈80 min（老 worker ≈10 min），首跑会晚约一小时（Phase1 §13.10 d）。
 # Free 允许 5 个触发器/账号，这里用 2 个；每分钟一 tick ≈ 1,440 次/天 ＝ 日限 100,000 的 1.4%。
 # 改这里要重新 `wrangler deploy` 才生效。

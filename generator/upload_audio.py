@@ -51,11 +51,17 @@ CONTENT_TYPES = {'.mp3': 'audio/mpeg', '.json': 'application/json'}
 
 def _bucket_name() -> str:
     """从 worker/wrangler.toml 读桶名，避免和 Worker 绑定写岔。"""
-    with open(os.path.join(WORKER_DIR, 'wrangler.toml'), encoding='utf-8') as f:
+    path = os.path.join(WORKER_DIR, 'wrangler.toml')
+    if not os.path.exists(path):
+        sys.exit('❌ 找不到 worker/wrangler.toml；请从 worker/wrangler.example.toml 复制并填真实值（该文件不入库）')
+    with open(path, encoding='utf-8') as f:
         match = re.search(r'bucket_name\s*=\s*"([^"]+)"', f.read())
     if not match:
-        sys.exit('wrangler.toml 里找不到 r2 bucket_name')
-    return match.group(1)
+        sys.exit('worker/wrangler.toml 里找不到 r2 bucket_name；请从 worker/wrangler.example.toml 复制并填真实值')
+    bucket = match.group(1)
+    if 'REPLACE_WITH' in bucket:
+        sys.exit('worker/wrangler.toml 的 bucket_name 仍是占位符；请填真实值')
+    return bucket
 
 
 def _npx() -> str:

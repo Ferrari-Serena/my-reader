@@ -24,7 +24,7 @@
  * 任何共享缓存命中都可能把 A 账号的书体发给 B 账号 —— 音频那套
  * `public, max-age=31536000, immutable` **不能**照搬到这里。
  *
- * 绑定的桶：复用 env.AUDIO（worker/wrangler.toml，桶 my-reader-audio），
+ * 绑定的桶：复用 env.AUDIO（worker/wrangler.toml 的 r2_buckets 绑定），
  * `books/` 前缀与内置书音频（`<bookId>/<ch>.mp3`）天然不撞。
  */
 

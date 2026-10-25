@@ -45,7 +45,7 @@ import { audioObjectKey, INDEX_FILE, storageState } from './bookaudio.js'
 
 export const ROUTE_PREFIX = '/api/gen/'
 
-/** 每分钟一 tick（D24-b）—— 必须挂在**本就存在**的 my-reader-tts 上（新 worker 的 cron 冷启动实测 ≈80 min） */
+/** 每分钟一 tick（D24-b）—— 必须挂在**本就存在**的 Worker 上（新 worker 的 cron 冷启动实测 ≈80 min） */
 export const TICK_CRON = '* * * * *'
 /** 注销冷静期真删的既有触发器（wrangler.toml 里那条）；scheduled() 按 event.cron 分派，别合流 */
 export const PURGE_CRON = '17 3 * * *'

@@ -20,7 +20,7 @@
  * **判定只有一份**（syncgate.js 的 sessionTenant），这里只负责把判定成形为本路由的响应。
  * R2 键里的 `<code>` 一律由会话反推 `users.sync_code`，客户端永不传码。
  *
- * **R2 键（复用 env.AUDIO 桶 my-reader-audio）**：
+ * **R2 键（复用 env.AUDIO 桶）**：
  *   user/<code>/<bookId>/<ch>.mp3
  *   user/<code>/<bookId>/<ch>.timings.json
  *   user/<code>/<bookId>/audio-index.json

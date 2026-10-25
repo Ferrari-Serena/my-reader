@@ -24,3 +24,6 @@ generator/corpus/
 
 # 本机免问白名单（个人授权，不进仓库）
 .claude/settings.local.json
+
+# Worker 私有部署配置（含真实资源标识；模板见 worker/wrangler.example.toml）
+worker/wrangler.toml
