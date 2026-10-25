@@ -189,11 +189,15 @@ export async function phraseCacheKey(payload, opts = {}) {
 }
 
 /** 模型配置：地址 + 密钥 + 模型名三者齐备才算可用。 */
+export function phraseCloudDisabled(env) {
+  return String((env && env.PHRASE_CLOUD_DISABLED) || '').trim() === '1'
+}
+
 export function phraseLlmConfig(env) {
   const base = String((env && env.PHRASE_LLM_BASE_URL) || '').trim().replace(/\/+$/, '')
   const key = String((env && env.PHRASE_LLM_API_KEY) || '').trim()
   const model = String((env && env.PHRASE_LLM_MODEL) || '').trim()
-  return { base, key, model, ready: !!(base && key && model) }
+  return { base, key, model, ready: !phraseCloudDisabled(env) && !!(base && key && model) }
 }
 
 /**
@@ -337,6 +341,10 @@ export async function handlePhraseResolve(request, env) {
   const cors = corsFor(request, env)
   if (request.method !== 'POST') {
     return json(cors, { status: 'invalid', error: 'method not allowed' }, 405, { Allow: 'POST' })
+  }
+
+  if (phraseCloudDisabled(env)) {
+    return json(cors, { status: 'unavailable', error: 'phrase LLM disabled' }, 503)
   }
 
   let text
