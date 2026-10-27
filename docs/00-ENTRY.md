@@ -34,7 +34,7 @@
 ### Worker 部署核对单
 
 - [ ] `git status` 只含本批文件；第 11 步等未完成改动未 stage。
-- [ ] 部署机有私有 `worker/wrangler.toml`（从 `worker/wrangler.example.toml` 复制并填真实值）；clean worktree 部署前先从私有位置复制进来。
+- [ ] 部署机有私有 `wrangler.toml`（放在 worker 目录下；从模板 `wrangler.example.toml` 复制并填真实值）；clean worktree 部署前先从私有位置复制进来。
 - [ ] 需要迁移时，先执行对应 D1 迁移；一次性 `ALTER` 不重跑。
 - [ ] 云端词组关闸状态下，部署命令带 `--keep-vars --var PHRASE_CLOUD_DISABLED:1`；漏带会静默重开。
 - [ ] 记录新 Worker version 与上一版回滚目标。
