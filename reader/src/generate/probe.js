@@ -24,10 +24,10 @@ import {
   hasWebGPU, describeGpu, deviceOptions, dtypeOptions,
   loadModel as loadKokoro, currentTts, generateChapter, mb,
 } from './engine.js'
+import { PROBE_FIXTURE } from './probeFixture.js'
 
 const FALLBACK_BOOKS = [
-  { id: 'dr-jekyll-and-mr-hyde', title: 'The Strange Case of Dr Jekyll and Mr Hyde' },
-  { id: 'sat-practice', title: 'SAT Vocabulary Practice' },
+  { id: 'probe-fixture', title: 'Probe fixture (local)' },
 ]
 
 const $ = (id) => document.getElementById(id)
@@ -148,6 +148,7 @@ async function loadByoBooks() {
 }
 
 async function fetchBuiltinBookData(bookId) {
+  if (bookId === 'probe-fixture') return PROBE_FIXTURE
   const r = await fetch(`/books/${bookId}/chapters.json`)
   if (!r.ok) throw new Error(`chapters.json ${r.status}`)
   const j = await r.json()
