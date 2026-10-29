@@ -155,11 +155,17 @@ import { useVocabulary } from '../composables/useVocabulary'
 import { generateQuestions, generatePhraseQuestions } from '../quizGen.js'
 import { checkSpelling } from '../utils/spelling.js'
 import { usePhrases } from '../composables/usePhrases.js'
+import { createCard } from '../fsrs.js'
+import { phraseCardId, normalizePhraseKey, phraseDueTomorrowIso } from '../review.js'
+import { putRecord } from '../sync/recordStore.js'
+import { nowIso } from '../sync/clock.js'
+import { useSync } from '../composables/useSync.js'
 
 const vocab = useVocabulary()
 vocab.init()
 
 const phrases = usePhrases()
+const sync = useSync()
 
 // ─── setup state ───
 
@@ -348,8 +354,34 @@ async function recordAnswer(correct) {
   }
 
   const word = current.value.word
-  // 词组题（两种题型都算）不入生词本统计；SAT 词答错自动加入生词本
-  if (!current.value.type.startsWith('phrase')) {
+  if (current.value.type.startsWith('phrase')) {
+    // 第 11 步最小闭环：词组答错落一张 card（次日 00:00 到期）+ 一条 wrong 记录；
+    // 答对不落卡，也不进生词本。
+    if (!correct) {
+      const refKey = normalizePhraseKey(word)
+      const due = phraseDueTomorrowIso(new Date())
+      if (refKey && due) {
+        const now = nowIso()
+        const srs = { ...createCard(), due }
+        putRecord('card', {
+          refKind: 'phrase',
+          refKey,
+          srs,
+          createdAt: now,
+          updatedAt: now
+        }, { id: phraseCardId(refKey) })
+        putRecord('wrong', {
+          type: current.value.type,
+          refKey,
+          yourAnswer: selectedIdx.value >= 0 && current.value.options ? current.value.options[selectedIdx.value] : '',
+          rightAnswer: current.value.options ? current.value.options[current.value.answerIndex] : (current.value.answer || ''),
+          createdAt: now,
+          updatedAt: now
+        })
+        sync.pushSoon()
+      }
+    }
+  } else {
     if (vocab.has(word)) {
       await vocab.recordQuizAnswer(word, correct, current.value.type)
     } else if (!correct && source.value === 'sat') {

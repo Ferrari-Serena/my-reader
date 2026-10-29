@@ -9,8 +9,8 @@
     <!-- empty -->
     <div v-else-if="phase === 'empty'" class="placeholder-view">
       <div class="placeholder-icon">🔄</div>
-      <h2>No words to review</h2>
-      <p>Save words while reading to start reviewing.</p>
+      <h2>No cards to review</h2>
+      <p>Save words while reading or miss a phrase in the quiz to start reviewing.</p>
       <router-link to="/books" class="action-btn primary">Go to Books</router-link>
     </div>
 
@@ -19,9 +19,9 @@
       <div class="placeholder-icon">⏳</div>
       <h2>All caught up!</h2>
       <p v-if="nextDue">Next review: {{ nextDueStr }}</p>
-      <p v-else>No cards scheduled yet — add words and rate them once.</p>
+      <p v-else>No cards scheduled yet — save words or miss a phrase to start reviewing.</p>
       <button v-if="freshCount" class="action-btn primary" @click="startSession('fresh')">
-        Learn {{ freshCount }} new word{{ freshCount > 1 ? 's' : '' }}
+        Learn {{ freshCount }} new card{{ freshCount > 1 ? 's' : '' }}
       </button>
       <button v-if="dueAheadCount" class="action-btn" @click="startSession('ahead')">
         Review {{ dueAheadCount }} card{{ dueAheadCount > 1 ? 's' : '' }} ahead of schedule
@@ -44,24 +44,24 @@
         <div :class="['flash-card-inner', { flipped }]">
           <!-- front -->
           <div class="flash-card-front">
-            <h2 class="flash-word">{{ currentWord?.word }}</h2>
-            <p v-if="currentWord?.snapshot?.phonetic" class="flash-phonetic">
-              {{ currentWord.snapshot.phonetic }}
+            <h2 class="flash-word">{{ currentItem?.content?.text }}</h2>
+            <p v-if="currentItem?.content?.phonetic" class="flash-phonetic">
+              {{ currentItem.content.phonetic }}
             </p>
-            <button class="speak-btn" @click.stop="speakWord" title="Pronounce">🔊</button>
+            <button v-if="!isPhraseCard" class="speak-btn" @click.stop="speakWord" title="Pronounce">🔊</button>
             <p class="flip-hint">Tap card to flip</p>
           </div>
 
           <!-- back -->
           <div class="flash-card-back" @click.stop>
-            <h3 class="back-word">{{ currentWord?.word }}</h3>
+            <h3 class="back-word">{{ currentItem?.content?.text }}</h3>
 
-            <ol v-if="currentWord?.snapshot?.definitions?.length" class="def-list">
-              <li v-for="(def, i) in currentWord.snapshot.definitions" :key="i">{{ def }}</li>
+            <ol v-if="currentItem?.content?.definitions?.length" class="def-list">
+              <li v-for="(def, i) in currentItem.content.definitions" :key="i">{{ def }}</li>
             </ol>
 
             <!-- spelling input -->
-            <div class="spelling-section">
+            <div v-if="!isPhraseCard" class="spelling-section">
               <label class="spelling-label">Type the word from memory:</label>
               <input
                 ref="spellingInputEl"
@@ -78,7 +78,7 @@
                 ✅ Correct!
               </div>
               <div v-else-if="spellingResult === 'wrong'" class="spelling-feedback wrong-fb">
-                ❌ Correct answer: <strong>{{ currentWord?.word }}</strong>
+                ❌ Correct answer: <strong>{{ currentItem?.content?.text }}</strong>
                 <span v-if="spellingDiffHtml" class="diff-display" v-html="spellingDiffHtml"></span>
               </div>
               <div v-else-if="spellingResult === 'close'" class="spelling-feedback close-fb">
@@ -109,26 +109,43 @@
       <p>{{ sessionReviewed }} card{{ sessionReviewed > 1 ? 's' : '' }} reviewed.</p>
       <button class="action-btn primary" @click="resetToSetup">Done</button>
     </div>
+
+    <p v-if="phase === 'empty' || phase === 'nothing-due'" class="fsrs-note">
+      Cards use FSRS spaced repetition: your Again / Hard / Good / Easy rating schedules when the card comes back.
+    </p>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useVocabulary } from '../composables/useVocabulary'
-import { createCard, rate, Rating, buildQueue, nextDueAt } from '../fsrs.js'
+import { usePhrases } from '../composables/usePhrases.js'
+import { useSync } from '../composables/useSync.js'
+import { createCard, rate, buildQueueFromItems, nextDueFromItems } from '../fsrs.js'
 import { checkSpelling as spellCheck, diffHtml } from '../utils/spelling.js'
 import { useTTS } from '../composables/useTTS.js'
+import * as recordStore from '../sync/recordStore.js'
+import { nowIso } from '../sync/clock.js'
+import {
+  collectReviewItems,
+  normalizePhraseKey,
+  phraseCardId,
+  REF_KIND_PHRASE
+} from '../review.js'
 
 const tts = useTTS()
 const vocab = useVocabulary()
+const phrases = usePhrases()
+const sync = useSync()
 vocab.init()
 
 // ---- utility ----
 
 function speakWord() {
-  const word = currentWord.value?.word
-  if (!word) return
-  tts.speak(word)
+  if (isPhraseCard.value) return
+  const text = currentItem.value?.content?.text
+  if (!text) return
+  tts.speak(text)
 }
 
 // ---- state machine ----
@@ -144,6 +161,23 @@ const sessionReviewed = ref(0)
 // ---- build queue ----
 
 let allNew = [] // new cards (srs===null) that were initialized this session
+const localRecordRev = ref(0) // 本地 recordStore 写入不是响应式，用它触发队列重算
+
+const phraseEntries = computed(() => {
+  const map = {}
+  for (const entry of phrases.all.value || []) {
+    const key = normalizePhraseKey(entry.phrase)
+    if (key) map[key] = entry
+  }
+  return map
+})
+
+const reviewItems = computed(() => {
+  // 建立响应式依赖：本地落卡（localRecordRev）与远端记录写回（sync.recordRevision）
+  localRecordRev.value
+  sync.recordRevision.value
+  return collectReviewItems(vocab.words.value, recordStore.loadRecordsMap(), phraseEntries.value)
+})
 
 function resetToSetup() {
   flipped.value = false
@@ -154,17 +188,17 @@ function resetToSetup() {
   freshDone.value = 0
   allNew = []
 
-  const { due, fresh } = buildQueue(vocab.words.value, { newLimit: 20 })
+  const { due, fresh } = buildQueueFromItems(reviewItems.value, { newLimit: 20 })
   if (due.length === 0 && fresh.length === 0) {
-    if (vocab.count.value === 0) { phase.value = 'empty'; return }
+    if (reviewItems.value.length === 0) { phase.value = 'empty'; return }
     phase.value = 'nothing-due'
     return
   }
 
   // 初始化新卡
-  const freshCards = fresh.map(entry => {
-    if (!entry.srs) allNew.push(entry.word)
-    return { ...entry, srs: entry.srs || createCard() }
+  const freshCards = fresh.map(item => {
+    if (!item.srs) allNew.push(item.key)
+    return { ...item, srs: item.srs || createCard() }
   })
 
   sessionCards.value = [...due, ...freshCards]
@@ -180,17 +214,16 @@ function resetToSetup() {
 
 function startSession(mode) {
   if (mode === 'fresh') {
-    const { fresh } = buildQueue(vocab.words.value, { newLimit: 20 })
-    const freshCards = fresh.map(entry => {
-      if (!entry.srs) allNew.push(entry.word)
-      return { ...entry, srs: entry.srs || createCard() }
+    const { fresh } = buildQueueFromItems(reviewItems.value, { newLimit: 20 })
+    const freshCards = fresh.map(item => {
+      if (!item.srs) allNew.push(item.key)
+      return { ...item, srs: item.srs || createCard() }
     })
     sessionCards.value = freshCards
     dueReviewCount.value = 0
   } else {
-    // ahead: include non-due words too
-    const all = Object.values(vocab.words.value)
-      .filter(e => e.snapshot?.definitions?.length && e.srs)
+    // ahead: include non-due cards too
+    const all = reviewItems.value.filter(item => item.srs)
     sessionCards.value = all
     dueReviewCount.value = sessionCards.value.length
   }
@@ -205,9 +238,10 @@ function startSession(mode) {
 
 // ---- computed helpers ----
 
-const currentWord = computed(() => sessionCards.value[currentIdx.value] || null)
+const currentItem = computed(() => sessionCards.value[currentIdx.value] || null)
+const isPhraseCard = computed(() => currentItem.value?.refKind === REF_KIND_PHRASE)
 
-const nextDue = computed(() => nextDueAt(vocab.words.value))
+const nextDue = computed(() => nextDueFromItems(reviewItems.value))
 const nextDueStr = computed(() => {
   const d = nextDue.value
   if (!d) return ''
@@ -223,13 +257,11 @@ const nextDueStr = computed(() => {
 })
 
 const freshCount = computed(() => {
-  return Object.values(vocab.words.value)
-    .filter(e => !e.srs && e.snapshot?.definitions?.length).length
+  return reviewItems.value.filter(item => !item.srs).length
 })
 
 const dueAheadCount = computed(() => {
-  return Object.values(vocab.words.value)
-    .filter(e => e.srs && e.snapshot?.definitions?.length).length
+  return reviewItems.value.filter(item => item.srs).length
 })
 
 // ---- flip ----
@@ -242,7 +274,7 @@ function flipIfFront() {
   if (flipped.value) return
   flipped.value = true
   // focus spelling input after flip animation
-  setTimeout(() => spellingInputEl.value?.focus(), 600)
+  if (!isPhraseCard.value) setTimeout(() => spellingInputEl.value?.focus(), 600)
 }
 
 const spellingInputEl = ref(null)
@@ -250,34 +282,47 @@ const spellingInputEl = ref(null)
 function checkSpelling() {
   const input = spellingInput.value
   if (!input.trim()) return
-  const result = spellCheck(input, currentWord.value?.word || '')
+  const result = spellCheck(input, currentItem.value?.content?.text || '')
   if (result.correct) {
     spellingResult.value = 'correct'
     spellingDiffHtml.value = ''
   } else if (result.distance === 1) {
     spellingResult.value = 'close'
-    spellingDiffHtml.value = diffHtml(input, currentWord.value?.word || '')
+    spellingDiffHtml.value = diffHtml(input, currentItem.value?.content?.text || '')
   } else {
     spellingResult.value = 'wrong'
-    spellingDiffHtml.value = diffHtml(input, currentWord.value?.word || '')
+    spellingDiffHtml.value = diffHtml(input, currentItem.value?.content?.text || '')
   }
 }
 
 // 评级（提醒模式：拼写结果不影响评级，用户自主决定）
 async function rateCard(rating) {
-  const entry = currentWord.value
-  if (!entry) return
+  const item = currentItem.value
+  if (!item) return
 
-  const srs = rate(entry.srs || createCard(), rating)
-  await vocab.updateSRS(entry.word, srs)
-
-  // 新卡计数
-  if (allNew.includes(entry.word)) {
-    freshDone.value++
-    allNew = allNew.filter(w => w !== entry.word)
+  const srs = rate(item.srs || createCard(), rating)
+  if (item.refKind === REF_KIND_PHRASE) {
+    const now = nowIso()
+    recordStore.putRecord('card', {
+      refKind: REF_KIND_PHRASE,
+      refKey: item.refKey,
+      srs,
+      createdAt: item.addedAt || now,
+      updatedAt: now
+    }, { id: phraseCardId(item.refKey) })
+    localRecordRev.value++
+    sync.pushSoon()
+  } else {
+    await vocab.updateSRS(item.refKey, srs)
   }
 
-  if (entry.srs) dueReviewCount.value = Math.max(0, dueReviewCount.value - 1)
+  // 新卡计数
+  if (allNew.includes(item.key)) {
+    freshDone.value++
+    allNew = allNew.filter(key => key !== item.key)
+  }
+
+  if (item.srs) dueReviewCount.value = Math.max(0, dueReviewCount.value - 1)
   sessionReviewed.value++
   advanceCard()
 }
@@ -305,7 +350,7 @@ function onKeyDown(e) {
     e.preventDefault()
     if (flipped.value) return
     flipped.value = true
-    setTimeout(() => spellingInputEl.value?.focus(), 600)
+    if (!isPhraseCard.value) setTimeout(() => spellingInputEl.value?.focus(), 600)
     return
   }
 
@@ -321,10 +366,12 @@ function onKeyDown(e) {
 
 onMounted(() => {
   document.addEventListener('keydown', onKeyDown)
-  if (vocab.count.value === 0) { phase.value = 'empty'; return }
-  const { due, fresh } = buildQueue(vocab.words.value, { newLimit: 20 })
-  if (due.length === 0 && fresh.length === 0) { phase.value = 'nothing-due'; return }
-  resetToSetup()
+  Promise.all([vocab.init(), phrases.init().catch(() => {})]).then(() => {
+    if (reviewItems.value.length === 0) { phase.value = 'empty'; return }
+    const { due, fresh } = buildQueueFromItems(reviewItems.value, { newLimit: 20 })
+    if (due.length === 0 && fresh.length === 0) { phase.value = 'nothing-due'; return }
+    resetToSetup()
+  })
 })
 
 onUnmounted(() => {
@@ -355,6 +402,17 @@ onUnmounted(() => {
 }
 
 .placeholder-view p { margin-bottom: 12px; }
+
+.fsrs-note {
+  max-width: 520px;
+  margin: 24px auto 0;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--surface-secondary, #f5f5f7);
+  color: var(--text-secondary, #6e6e73);
+  font-size: 13px;
+  line-height: 1.5;
+}
 
 .spinner {
   width: 32px; height: 32px;

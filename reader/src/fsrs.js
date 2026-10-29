@@ -52,12 +52,45 @@ export function buildQueue(words, { newLimit = 20 } = {}) {
   return { due, fresh: fresh.slice(0, newLimit) }
 }
 
+/**
+ * 统一复习队列（单词与词组都归一化成 review item 后使用）。
+ * item 形状由 review.js 产出：{ refKind, refKey, srs, addedAt, content }。
+ * 到期卡按 due 升序在前，新卡按 addedAt 升序在后，新卡每次最多 newLimit 张。
+ */
+export function buildQueueFromItems(items, { newLimit = 20 } = {}) {
+  const now = new Date()
+  const due = []
+  const fresh = []
+  for (const item of items || []) {
+    if (!item || !item.refKey) continue
+    if (item.srs) {
+      if (isDue(item.srs, now)) due.push(item)
+    } else {
+      fresh.push(item)
+    }
+  }
+  due.sort((a, b) => new Date(a.srs.due) - new Date(b.srs.due))
+  fresh.sort((a, b) => (a.addedAt || '').localeCompare(b.addedAt || ''))
+  return { due, fresh: fresh.slice(0, newLimit) }
+}
+
 /** 下一张到期卡的时间（用于 nothing-due 状态展示）；无卡返回 null */
 export function nextDueAt(words) {
   let min = null
   for (const entry of Object.values(words)) {
     if (!entry.srs?.due) continue
     const d = new Date(entry.srs.due)
+    if (!min || d < min) min = d
+  }
+  return min
+}
+
+/** 统一 review item 的下一次到期时间；无到期卡返回 null */
+export function nextDueFromItems(items) {
+  let min = null
+  for (const item of items || []) {
+    if (!item?.srs?.due) continue
+    const d = new Date(item.srs.due)
     if (!min || d < min) min = d
   }
   return min
