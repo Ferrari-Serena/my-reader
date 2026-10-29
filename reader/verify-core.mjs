@@ -66,12 +66,22 @@ t('levenshtein 对称', levenshtein('abc', 'abd') === 1)
 
 // ═══ 3. quizGen ═══
 console.log('\n[quizGen.js]')
-const satDict = JSON.parse(readFileSync(join(__dirname, 'public/books/sat-practice/dictionary.json'), 'utf8'))
-const satChapters = JSON.parse(readFileSync(join(__dirname, 'public/books/sat-practice/chapters.json'), 'utf8'))
+const satDict = JSON.parse(readFileSync(join(__dirname, 'verify-fixtures/sat-dictionary.json'), 'utf8'))
+// 章节数据不是词汇测试的对象，用合成件即可（不把整本书的数据当夹具）。
+const satChapters = { chapters: [] }
 const entries = Object.entries(satDict.words).slice(0, 300).map(([w, d]) => ({
   word: w,
   snapshot: { lemma: d.lemma, partOfSpeech: d.partOfSpeech, definitions: d.definitions, level: d.level }
 }))
+// 每段含一个词表里的词：既能喂出 sentenceCloze，又不必依赖整本书的 chapters.json。
+satChapters.chapters = [{
+  id: 'synth-ch1',
+  title: 'Synthetic',
+  paragraphs: entries.slice(0, 160).map((e, n) => ({
+    id: `p-${String(n).padStart(3, '0')}`,
+    text: `In this line the word ${e.word} appears between ordinary words.`,
+  })),
+}]
 
 const qs = generateQuestions(entries.slice(0, 40), entries, satChapters.chapters, 20)
 t('生成了题目', qs.length > 0)
@@ -182,7 +192,7 @@ t('一次测验里两种题型各半（语境 5 ＋ 释义 5）',
 
 // ═══ 4. 词典表面形索引 ═══
 console.log('\n[dictIndex.js]')
-const jekyll = JSON.parse(readFileSync(join(__dirname, 'public/books/dr-jekyll-and-mr-hyde/dictionary.json'), 'utf8'))
+const jekyll = JSON.parse(readFileSync(join(__dirname, 'verify-fixtures/jekyll-dictionary.json'), 'utf8'))
 const jw = jekyll.words || {}
 const alias = buildDictAlias(jw)
 
