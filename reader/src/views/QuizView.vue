@@ -39,7 +39,7 @@
         Start Quiz
       </button>
       <p v-if="!canStart" class="start-hint">
-        {{ vocab.count.value === 0 ? 'Save words while reading first, or choose SAT Practice.' : 'Selected source has no words.' }}
+        {{ vocab.count.value === 0 ? 'Save words while reading first.' : 'Selected source has no words.' }}
       </p>
     </div>
 
@@ -174,15 +174,10 @@ const source = ref('all')
 const count = ref(20)
 const errorMsg = ref('')
 
-// SAT 数据缓存（首次选择 SAT 来源时 fetch）
-const satDict = ref(null)     // entry[] （适配为 {word, snapshot} 形状）
-const satChapters = ref(null)
-
 const sourceOptions = computed(() => {
   const opts = [
     { value: 'all', label: 'All Words', count: vocab.count.value, disabled: vocab.count.value === 0 },
     { value: 'error-pool', label: 'Error Pool', count: vocab.errorPool.value.length, disabled: vocab.errorPool.value.length === 0 },
-    { value: 'sat', label: 'SAT Practice', count: satDict.value ? satDict.value.length : '4400+', disabled: false },
     { value: 'phrases', label: 'Phrases', count: phrases.count.value || '—', disabled: !phrases.loaded.value || phrases.count.value === 0 },
   ]
   return opts
@@ -226,38 +221,6 @@ const current = computed(() => questions.value[currentIdx.value] || {})
 
 // ─── data loading ───
 
-/** SAT dictionary.json 词条 → quizGen 期望的 entry 形状 */
-function satEntryAdapter(word, d) {
-  return {
-    word,
-    bookId: 'sat-practice',
-    chapterId: (d.chapters || [])[0] || null,
-    snapshot: {
-      lemma: d.lemma || word,
-      phonetic: d.phonetic || '',
-      partOfSpeech: d.partOfSpeech || '',
-      definitions: d.definitions || [],
-      audioUrl: d.audioUrl || '',
-      level: d.level ?? null,
-      chapters: d.chapters || []
-    }
-  }
-}
-
-async function loadSatData() {
-  if (satDict.value) return
-  const base = import.meta.env.BASE_URL
-  const [dictRes, chapRes] = await Promise.all([
-    fetch(`${base}books/sat-practice/dictionary.json`),
-    fetch(`${base}books/sat-practice/chapters.json`)
-  ])
-  if (!dictRes.ok || !chapRes.ok) throw new Error('Failed to load SAT practice data')
-  const dictData = await dictRes.json()
-  const chapData = await chapRes.json()
-  satDict.value = Object.entries(dictData.words || {}).map(([w, d]) => satEntryAdapter(w, d))
-  satChapters.value = chapData.chapters || []
-}
-
 /** 生词本词的 chapters：取候选词最多的 bookId 的书 */
 async function loadVocabChapters(candidates) {
   const byBook = {}
@@ -285,15 +248,6 @@ async function startQuiz() {
     if (source.value === 'phrases') {
       await phrases.init()
       qs = generatePhraseQuestions(phrases.all.value, maxCount === Infinity ? 30 : maxCount)
-    } else if (source.value === 'sat') {
-      await loadSatData()
-      const candidates = satDict.value
-      qs = generateQuestions(
-        candidates,
-        satDict.value,
-        satChapters.value,
-        maxCount === Infinity ? 30 : maxCount
-      )
     } else {
       // all | error-pool
       const candidates = source.value === 'error-pool'
@@ -306,11 +260,8 @@ async function startQuiz() {
       const sorted = [...candidates].sort((a, b) => (errorSet.has(b.word) ? 1 : 0) - (errorSet.has(a.word) ? 1 : 0))
 
       const chapters = await loadVocabChapters(candidates)
-      // 干扰项池：生词本 + SAT 词典（若已加载）保证质量
-      let distractorPool = candidates
-      if (candidates.length < 8) {
-        try { await loadSatData(); distractorPool = candidates.concat(satDict.value) } catch { /* SAT 数据可选 */ }
-      }
+      // 干扰项池：生词本
+      const distractorPool = candidates
       qs = generateQuestions(sorted, distractorPool, chapters, maxCount === Infinity ? candidates.length : maxCount)
     }
 
@@ -384,17 +335,6 @@ async function recordAnswer(correct) {
   } else {
     if (vocab.has(word)) {
       await vocab.recordQuizAnswer(word, correct, current.value.type)
-    } else if (!correct && source.value === 'sat') {
-      const entry = satDict.value?.find(e => e.word === word)
-      if (entry) {
-        await vocab.add({
-          word,
-          dictEntry: { ...entry.snapshot },
-          bookId: 'sat-practice',
-          chapterId: entry.chapterId
-        })
-        await vocab.recordQuizAnswer(word, false, current.value.type)
-      }
     }
   }
 
