@@ -51,10 +51,9 @@ export const CLIENT_VERSION = 2
  * verify-phrase.mjs 会逐字比对，新增公开书时测试会先红，避免服务端悄悄漂移。
  * 可用 env.PHRASE_PUBLIC_BOOK_IDS 覆盖（逗号分隔）。
  */
-export const DEFAULT_PUBLIC_BOOK_IDS = Object.freeze([
-  'sat-practice',
-  'dr-jekyll-and-mr-hyde',
-])
+// PD-13（2026-10-29 已拍板）：不留公开书库，两本遗留书已从书单下架并归档。
+// 白名单随之清空；权威源仍是 book-index.json，verify-phrase.mjs 逐字比对。
+export const DEFAULT_PUBLIC_BOOK_IDS = Object.freeze([])
 
 export const CACHE_SCHEMA_VERSION = 'v2'
 export const PROMPT_VERSION = 'p2-abstain'

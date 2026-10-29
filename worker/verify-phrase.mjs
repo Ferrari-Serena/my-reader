@@ -149,7 +149,7 @@ console.log('\n[公开书白名单 — 与 book-index.json 同口径]')
   const fromIndex = index.books.filter(b => b.visibility === 'public').map(b => b.id)
   t('代码默认白名单与公开书单逐项一致',
     JSON.stringify([...DEFAULT_PUBLIC_BOOK_IDS].sort()) === JSON.stringify(fromIndex.sort()))
-  t('公开书可识别', phrasePublicBookIds({}).has('dr-jekyll-and-mr-hyde') === true)
+  t('两本遗留书不再可识别', phrasePublicBookIds({}).has('dr-jekyll-and-mr-hyde') === false)
   t('未在书单的 slug 不可识别', phrasePublicBookIds({}).has('divergent') === false)
   t('环境变量可覆盖白名单', phrasePublicBookIds({ PHRASE_PUBLIC_BOOK_IDS: 'a, b' }).has('b') === true)
 }
@@ -276,6 +276,9 @@ console.log('\n[handlePhraseResolve — 路由闸]')
     PHRASE_LLM_BASE_URL: 'https://llm.example/v1/chat/completions',
     PHRASE_LLM_API_KEY: 'k',
     PHRASE_LLM_MODEL: 'm',
+    // PD-13 之后产品默认白名单为空；本套用例要继续走「公开书匿名」这条路径，
+    // 就用既有的 env 覆盖显式声明一本，而不是靠产品默认值兜着。
+    PHRASE_PUBLIC_BOOK_IDS: 'dr-jekyll-and-mr-hyde',
   }
   const authEnv = { ...cfg, DB: fakeDb() }
   const req = (path, method = 'POST', body = GOOD_BODY) => new Request(`https://my-reader.ferrari11.com${path}`, {
@@ -290,7 +293,7 @@ console.log('\n[handlePhraseResolve — 路由闸]')
   const miss = await handlePhraseResolve(req('/api/dict/word'), authEnv)
   t('不匹配路径回 null（路由继续 fallthrough）', miss === null)
 
-  const noConfig = await handlePhraseResolve(req(ROUTE_PATH), { DB: null })
+  const noConfig = await handlePhraseResolve(req(ROUTE_PATH), { DB: null, PHRASE_PUBLIC_BOOK_IDS: 'dr-jekyll-and-mr-hyde' })
   t('未配模型回 503 unavailable', noConfig.status === 503 && (await noConfig.json()).status === 'unavailable')
 
   const bad = await handlePhraseResolve(req(ROUTE_PATH, 'POST', { senses: [] }), { DB: null })
@@ -422,7 +425,7 @@ console.log('\n[index.js 接线 — 真入口分发到 /api/phrase/resolve]')
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: BASE },
     body,
-  }), {})
+  }), { PHRASE_PUBLIC_BOOK_IDS: 'dr-jekyll-and-mr-hyde' })
   const noModel = await worker.fetch(new Request(`${BASE}/api/phrase/resolve`), {})
   const config = await worker.fetch(new Request(`${BASE}/api/phrase/config`), {})
   console.log = prevLog
