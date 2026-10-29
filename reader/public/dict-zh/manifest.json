@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "tools/build-zh-dict.mjs",
+  "builtAt": "2026-10-29T12:27:29+08:00",
+  "record": {
+    "p": "phonetic (IPA, may be empty)",
+    "t": "definitions, POS-prefixed strings"
+  },
+  "source": {
+    "repo": "https://github.com/ChanMo/LexiBridge",
+    "commit": "0cfc04662876ed715c7a748e9d1f276f54544ae1",
+    "path": "packs/en-zh-Hans/dict.json",
+    "eol": "LF",
+    "bytes": 2262190,
+    "sha1": "2cba44a6e3945b77aadd5839d702e50eb70200ba",
+    "words": 34730,
+    "ecdict": {
+      "repo": "https://github.com/skywind3000/ECDICT",
+      "commit": "bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b",
+      "license": "MIT"
+    }
+  },
+  "irregular": {
+    "file": "irregular.json",
+    "entries": 1650,
+    "bytes": 30038,
+    "sha1": "a50cc9fa0f5d9aa6cb60f0391f6f274cbea59c1d"
+  },
+  "shards": [
+    {
+      "letter": "a",
+      "file": "a.json",
+      "words": 2195,
+      "bytes": 159831,
+      "sha1": "f60d4656c6eb096e3cbbbd8b36cb2ba64975eb0b"
+    },
+    {
+      "letter": "b",
+      "file": "b.json",
+      "words": 2017,
+      "bytes": 141629,
+      "sha1": "28615a1c28e814854e386211990e41906a7a9a50"
+    },
+    {
+      "letter": "c",
+      "file": "c.json",
+      "words": 3235,
+      "bytes": 244256,
+      "sha1": "c36b7d3c2846316ea137fb33435a24ff81298f9a"
+    },
+    {
+      "letter": "d",
+      "file": "d.json",
+      "words": 2018,
+      "bytes": 146581,
+      "sha1": "4f65b0354efab12ee75a655672af82746b849525"
+    },
+    {
+      "letter": "e",
+      "file": "e.json",
+      "words": 1445,
+      "bytes": 107976,
+      "sha1": "0c899894f138af9248ef8f1addae0f54f46ad329"
+    },
+    {
+      "letter": "f",
+      "file": "f.json",
+      "words": 1418,
+      "bytes": 113152,
+      "sha1": "e38672d50e6071d71bd7c3532b0a880b499f9674"
+    },
+    {
+      "letter": "g",
+      "file": "g.json",
+      "words": 1189,
+      "bytes": 88728,
+      "sha1": "b019fcefbacaee2af778045ab662e3da5b1a6113"
+    },
+    {
+      "letter": "h",
+      "file": "h.json",
+      "words": 1442,
+      "bytes": 107579,
+      "sha1": "e8843b77845217562470ecbba7458ffd499936e8"
+    },
+    {
+      "letter": "i",
+      "file": "i.json",
+      "words": 1515,
+      "bytes": 120758,
+      "sha1": "2df65c3cc4cf8b038a6a4ead0768bee766899159"
+    },
+    {
+      "letter": "j",
+      "file": "j.json",
+      "words": 391,
+      "bytes": 29338,
+      "sha1": "4cf25fa83a946a3a8653b7fb485269bb4dfc8004"
+    },
+    {
+      "letter": "k",
+      "file": "k.json",
+      "words": 349,
+      "bytes": 24019,
+      "sha1": "f2cc8bad06b8749f491e3a359de14a9876acdf02"
+    },
+    {
+      "letter": "l",
+      "file": "l.json",
+      "words": 1205,
+      "bytes": 90318,
+      "sha1": "827f5f0eabba44a3c97d0bfe5cc084368e7b4548"
+    },
+    {
+      "letter": "m",
+      "file": "m.json",
+      "words": 2083,
+      "bytes": 155637,
+      "sha1": "1e7a67370d99708d52a19be85f33df0082f5ca08"
+    },
+    {
+      "letter": "n",
+      "file": "n.json",
+      "words": 792,
+      "bytes": 58759,
+      "sha1": "f9a6cdd74693043bcdbe0f4d17d962344ec83b3e"
+    },
+    {
+      "letter": "o",
+      "file": "o.json",
+      "words": 850,
+      "bytes": 68374,
+      "sha1": "8a3f1eb5e39c736bea22c6b81068a8d05f38188b"
+    },
+    {
+      "letter": "p",
+      "file": "p.json",
+      "words": 2606,
+      "bytes": 220951,
+      "sha1": "c9b3850a7f42973540a70901c1b61c004ac3e1a5"
+    },
+    {
+      "letter": "q",
+      "file": "q.json",
+      "words": 145,
+      "bytes": 11630,
+      "sha1": "90c7298226c66f2355eea04ae80fe28f0a74fadd"
+    },
+    {
+      "letter": "r",
+      "file": "r.json",
+      "words": 1843,
+      "bytes": 149197,
+      "sha1": "71f77b0b8f7989d8e5a20195482b3a679997337e"
+    },
+    {
+      "letter": "s",
+      "file": "s.json",
+      "words": 3640,
+      "bytes": 303932,
+      "sha1": "c7ef2fac86be3f5150c846e4fa5dec91b537ed6b"
+    },
+    {
+      "letter": "t",
+      "file": "t.json",
+      "words": 1631,
+      "bytes": 130538,
+      "sha1": "f05a92eeb80b273dccf0f8cea81f48a64febaad6"
+    },
+    {
+      "letter": "u",
+      "file": "u.json",
+      "words": 995,
+      "bytes": 84601,
+      "sha1": "145c92eaff0cfcd3eb1c59d59ae2a931558545bd"
+    },
+    {
+      "letter": "v",
+      "file": "v.json",
+      "words": 549,
+      "bytes": 42741,
+      "sha1": "2e608860b6c485a3c0bc00d31fa17c7e6dd9c53f"
+    },
+    {
+      "letter": "w",
+      "file": "w.json",
+      "words": 958,
+      "bytes": 75100,
+      "sha1": "b22087c4128277232f299683c7da13607407af59"
+    },
+    {
+      "letter": "x",
+      "file": "x.json",
+      "words": 20,
+      "bytes": 1258,
+      "sha1": "03fa0b18b19ae3caadc08bb64833cc39f13f63b6"
+    },
+    {
+      "letter": "y",
+      "file": "y.json",
+      "words": 129,
+      "bytes": 9346,
+      "sha1": "b1b9af46ea8cec0182e7078afe5b419e2651341c"
+    },
+    {
+      "letter": "z",
+      "file": "z.json",
+      "words": 70,
+      "bytes": 5282,
+      "sha1": "4cfa495d4b55d324d47466ea61f8d3f0539f14a0"
+    }
+  ],
+  "totals": {
+    "words": 34730,
+    "shards": 26,
+    "shardBytes": 2691511,
+    "irregularBytes": 30038,
+    "bytes": 2721549
+  }
+}

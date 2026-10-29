@@ -231,6 +231,7 @@ import { usePhraseAnnotations } from '../composables/usePhraseAnnotations.js'
 import { resolvePhraseSenseWithAnnotation } from '../utils/phraseSolve.js'
 import { cloudNeeded, resolveCloudSense } from '../utils/phraseCloud.js'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
+import { lookup as lookupZh } from '../utils/zhDict.js'
 import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { chapterAudioPath, chapterTimingsUrl, fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
 import { GEN_POLL_MS, fetchGenStatus, isChapterPending, chapterGenState, CH_STATE } from '../utils/genApi.js'
@@ -1067,6 +1068,17 @@ async function onWordClick(event) {
   if (entry?.definitions?.length || entry?.notFound) {
     dictEntry.value = entry
     dictLoading.value = false
+    return
+  }
+
+  // 本地中文词典（ECDICT 30k）：命中即返回，不再请求 /api/dict
+  const zh = await lookupZh(word)
+  if (selectedWord.value !== word) return
+  if (zh) {
+    const merged = { ...(entry || {}), ...zh }
+    dictEntry.value = merged
+    dictLoading.value = false
+    if (merged.definitions?.length) vocab.refreshSnapshot(word, merged)
     return
   }
 
