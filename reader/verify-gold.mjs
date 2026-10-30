@@ -16,7 +16,7 @@
  * 不触网、不挂组件、不改任何文件。
  */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { generateQuestions, generatePhraseQuestions } from './src/quizGen.js'
@@ -29,6 +29,7 @@ function argOf(name) {
   return i > -1 ? process.argv[i + 1] : ''
 }
 const goldPath = argOf('--gold') || process.env.GOLD_PATH || ''
+const dumpPath = argOf('--dump')
 if (!goldPath) {
   console.error('用法: node verify-gold.mjs --gold <gold-100.json>')
   process.exit(2)
@@ -121,6 +122,26 @@ const KIND_TO_TYPE = {
   phrase: null, // 词组题有两种 type，按 word/phrase 键找
 }
 
+const PHRASE_TYPES = ['phraseCloze', 'phraseDefChoice', 'phraseDefinition', 'phraseChoice']
+
+/**
+ * 按金标条目的 kind 取对应题型的那道题。
+ * 2026-10-31 修：原先按词取「首个」匹配题——dump 会把 definitionChoice 取成 wordChoice，
+ * 于是 QA 拿到的题与 kind 不符（54 条存疑全部由此而来）。现在严格按 kind → type 取。
+ */
+function pickQuestion(it) {
+  const key = String(it.input ?? '').toLowerCase()
+  if (it.kind === 'phrase') {
+    for (const type of PHRASE_TYPES) {
+      const q = byKey.get(`${type}::${key}`)
+      if (q) return q
+    }
+    return null
+  }
+  const type = KIND_TO_TYPE[it.kind]
+  return type ? (byKey.get(`${type}::${key}`) || null) : null
+}
+
 const failed = []
 const noQuestion = []
 const synonymSuspects = []
@@ -132,18 +153,7 @@ for (const it of items) {
   const acceptAll = [answer, ...accept].filter(Boolean)
   const key = String(it.input ?? '').toLowerCase()
 
-  let q = null
-  if (it.kind === 'phrase') {
-    q = byKey.get(`phraseCloze::${key}`) || byKey.get(`phraseDefChoice::${key}`) ||
-        byKey.get(`phraseDefinition::${key}`) || byKey.get(`phraseChoice::${key}`) || null
-    if (!q) {
-      for (const [k, v] of byKey) {
-        if (String(v.word || v.phrase || '').toLowerCase() === key) { q = v; break }
-      }
-    }
-  } else {
-    q = byKey.get(`${KIND_TO_TYPE[it.kind]}::${key}`) || null
-  }
+  const q = pickQuestion(it)
 
   if (!q) { noQuestion.push(it); continue }
   checked++
@@ -207,6 +217,16 @@ if (synonymSuspects.length) {
 if (noQuestion.length) {
   console.log('\n--- 覆盖不足（前 10）---')
   for (const n of noQuestion.slice(0, 10)) console.log(`  ${n.id} [${n.kind}] ${n.input}`)
+}
+
+if (dumpPath) {
+  const dump = []
+  for (const it of items) {
+    dump.push({ id: it.id, kind: it.kind, input: it.input, gold: it.answer, accept: it.accept || [], q: pickQuestion(it) })
+  }
+  writeFileSync(dumpPath, JSON.stringify(dump, null, 1), 'utf8')
+  console.log('')
+  console.log('已把 100 条的生成结果写到: ' + dumpPath)
 }
 
 console.log('')
