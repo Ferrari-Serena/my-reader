@@ -2,7 +2,7 @@
   <div class="import-view">
     <!-- 选文件 ＋ 版权勾选。完成/失败后这一块也留着，方便接着再来一本 -->
     <section class="card" v-if="step !== IMPORT_STEP.DONE">
-      <h2>Add your own book</h2>
+      <h2>导入自己的书</h2>
       <p class="lead">
         {{ copy.lead }}
       </p>
@@ -33,7 +33,7 @@
         <p class="hint" v-if="preflightError">{{ preflightError.hint }}</p>
 
         <div class="row" v-if="!preflightError && !busy">
-          <button class="btn primary" :disabled="!startable" @click="start">Import</button>
+          <button class="btn primary" :disabled="!startable" @click="start">导入</button>
         </div>
       </div>
 
@@ -44,7 +44,7 @@
         </div>
         <p class="pct" v-if="percent !== null">{{ Math.round(percent) }}%</p>
         <div class="row">
-          <button class="btn ghost" @click="cancel">Cancel</button>
+          <button class="btn ghost" @click="cancel">取消</button>
         </div>
       </div>
     </section>
@@ -55,20 +55,20 @@
       <p class="outcome-title">{{ result.title }}</p>
       <p class="outcome-meta">{{ result.chapterCount }} chapters</p>
       <div class="row">
-        <router-link class="btn primary" :to="`/reader/${result.id}`">Read it</router-link>
-        <button class="btn ghost" @click="resetAll">Add another</button>
+        <router-link class="btn primary" :to="`/reader/${result.id}`">开始读</router-link>
+        <button class="btn ghost" @click="resetAll">再导入一本</button>
       </div>
       <p class="hint">{{ copy.outcomeHint }}</p>
     </section>
 
     <!-- 失败 -->
     <section class="card outcome error-state" v-if="step === IMPORT_STEP.ERROR">
-      <h2>Could not import this file</h2>
+      <h2>这个文件没能导入</h2>
       <p class="outcome-title">{{ error.message }}</p>
       <p class="hint">{{ error.hint }}</p>
       <p class="code" v-if="error.code">{{ error.code }}</p>
       <div class="row">
-        <button class="btn primary" @click="resetOutcome">Try another file</button>
+        <button class="btn primary" @click="resetOutcome">换个文件试试</button>
       </div>
     </section>
   </div>

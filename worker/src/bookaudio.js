@@ -80,8 +80,8 @@ export { USER_PREFIX, audioObjectKey }
 export const INDEX_FILE = 'audio-index.json'
 /** 单个上传文件大小上限：一章 48 kbps mp3 ≈ 5 MB；8 MB 留余量，同时挡住当网盘用（手抄 MAX_BOOK_BYTES） */
 export const MAX_AUDIO_FILE_BYTES = 8 * 1024 * 1024
-/** 单账号音频总量上限（§13.7 R9；**D23 由 500 MiB 上调到 1 GiB**；可 env.AUDIO_MAX_ACCOUNT_BYTES 覆盖） */
-export const DEFAULT_MAX_ACCOUNT_BYTES = 1024 * 1024 * 1024
+/** 单账号音频总量上限（§13.7 R9；D23 由 500 MiB → 1 GiB；**W-14（2026-10-31）1 → 5 GiB**；可 env.AUDIO_MAX_ACCOUNT_BYTES 覆盖） */
+export const DEFAULT_MAX_ACCOUNT_BYTES = 5 * 1024 * 1024 * 1024
 /** 单账号「有音频的书」本数上限（§13.7 R9；可 env.AUDIO_MAX_BOOKS 覆盖）—— 「有音频」＝至少有 mp3／timings，只有空索引不算（D25-b 裁 A） */
 export const DEFAULT_MAX_BOOKS = 20
 /** 上传端点每账号滑动窗口（次／分钟；可 env.AUDIO_UPLOAD_PER_MIN 覆盖） */

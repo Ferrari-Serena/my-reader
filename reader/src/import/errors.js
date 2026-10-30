@@ -4,7 +4,7 @@
  * 「每种失败给可读原因 + 建议动作」是 5.4 的硬要求，所以错误文本集中放这里，
  * 不让各解析器自己拼字符串 —— 否则同一类失败会冒出好几种说法。
  *
- * 消息一律英文：App 的界面语言是英文（VocabularyView / AccountView 同此）。
+ * 消息自 2026-10-31（#35 中文 UI 第一刀）起改为中文；本文件是导入错误的唯一文案来源。
  */
 
 /** 导入的硬限制（方案 D5：单本 50–100 MB）。book.js 从这里取，避免两处漂移。 */
@@ -19,44 +19,44 @@ export const IMPORT_LIMITS = {
  */
 export const IMPORT_ERRORS = {
   UNSUPPORTED_FORMAT: {
-    message: "This file type isn't supported.",
-    hint: 'Use EPUB, PDF (with a text layer), or TXT.',
+    message: '不支持这个文件类型。',
+    hint: '用 EPUB、有文字层的 PDF，或 TXT。',
   },
   FILE_TOO_BIG: {
-    message: 'This file is larger than the {max} MB limit.',
-    hint: 'Split the book into smaller files, or use a copy under the limit.',
+    message: '这个文件超过了 {max} MB 的上限。',
+    hint: '把书拆成更小的文件，或换一份小于上限的。',
   },
   EPUB_ENCRYPTED: {
-    message: "This EPUB is encrypted (DRM), so its text can't be read.",
-    hint: 'Use a DRM-free copy. We neither can nor will break DRM.',
+    message: '这本 EPUB 有加密（DRM），读不到里面的文字。',
+    hint: '换一份无 DRM 的版本。我们不破解、也不会破解 DRM。',
   },
   EPUB_INVALID: {
-    message: "This file isn't a valid EPUB.",
-    hint: 'Re-export it as EPUB 2/3, or try a TXT or PDF copy instead.',
+    message: '这个文件不是有效的 EPUB。',
+    hint: '重新导出成 EPUB 2／3，或改用 TXT、PDF。',
   },
   PDF_PASSWORD: {
-    message: 'This PDF is password-protected.',
-    hint: 'Open it in a PDF reader, remove the password, and save a copy — then import that.',
+    message: '这个 PDF 有密码。',
+    hint: '在 PDF 阅读器里去掉密码、另存一份，再导入那份。',
   },
   PDF_NO_TEXT: {
-    message: "This PDF has no text layer — it's most likely a scan.",
-    hint: 'Scan recognition is coming in M2. For now, run OCR on it yourself or import a copy that has a text layer.',
+    message: '这个 PDF 没有文字层——多半是扫描件。',
+    hint: '扫描件识别在 M2。现在请先自行 OCR，或导入一份有文字层的版本。',
   },
   PDF_INVALID: {
-    message: "This file isn't a readable PDF.",
-    hint: 'Re-export it as PDF, or try an EPUB or TXT copy instead.',
+    message: '这个文件不是能读的 PDF。',
+    hint: '重新导出成 PDF，或改用 EPUB、TXT。',
   },
   ENCODING_UNKNOWN: {
-    message: "Couldn't work out this text file's encoding.",
-    hint: 'Save it as UTF-8 (or UTF-16 / GBK) and try again.',
+    message: '认不出这个文本文件的编码。',
+    hint: '另存为 UTF-8（或 UTF-16／GBK）再试。',
   },
   CANCELLED: {
-    message: 'Import cancelled.',
-    hint: 'Start the import again when you are ready.',
+    message: '导入已取消。',
+    hint: '准备好了再导入一次。',
   },
   EMPTY_CONTENT: {
-    message: 'No readable text was found in this file.',
-    hint: "Check that the file isn't empty, or that its text isn't inside images.",
+    message: '这个文件里没有可读的文字。',
+    hint: '确认文件不是空的，或文字不在图片里。',
   },
 }
 

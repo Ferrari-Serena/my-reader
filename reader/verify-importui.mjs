@@ -94,14 +94,14 @@ console.log('\n[importFlow — 错误码文案]')
 {
   const enc = F.errorText(new ImportError('EPUB_ENCRYPTED'))
   tEq('加密 EPUB：码保住', enc.code, 'EPUB_ENCRYPTED')
-  t('加密 EPUB：说 DRM、给退路', /DRM/.test(enc.message) && /DRM-free/.test(enc.hint))
+  t('加密 EPUB：说 DRM、给退路', /DRM/.test(enc.message) && /无 DRM/.test(enc.hint))
   t('文案里不留占位符', !enc.message.includes('{') && !enc.hint.includes('{'))
 
   const big = F.errorText(new ImportError('FILE_TOO_BIG'))
   t('超限：把 {max} 换成真上限', big.message.includes(String(IMPORT_LIMITS.MAX_FILE_MB)))
 
   const noText = F.errorText(new ImportError('PDF_NO_TEXT'))
-  t('无文本层：说扫描件、说 OCR', /scan/i.test(noText.message) && /OCR/.test(noText.hint))
+  t('无文本层：说扫描件、说 OCR', /扫描件/.test(noText.message) && /OCR/.test(noText.hint))
 
   const unavail = F.errorText(new BookStoreError('UNAVAILABLE'))
   t('书库不可用：说隐私模式', /Private browsing/i.test(unavail.hint))

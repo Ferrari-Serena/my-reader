@@ -29,23 +29,23 @@
     <nav class="app-tabbar" v-if="showTabbar">
       <router-link to="/books" class="tab-item">
         <span class="tab-icon">📚</span>
-        <span class="tab-label">Library</span>
+        <span class="tab-label">书架</span>
       </router-link>
       <router-link to="/vocabulary" class="tab-item">
         <span class="tab-icon">📝</span>
-        <span class="tab-label">Words</span>
+        <span class="tab-label">生词本</span>
       </router-link>
       <router-link to="/flashcards" class="tab-item">
         <span class="tab-icon">🔄</span>
-        <span class="tab-label">Review</span>
+        <span class="tab-label">复习</span>
       </router-link>
       <router-link to="/quiz" class="tab-item">
         <span class="tab-icon">✅</span>
-        <span class="tab-label">Quiz</span>
+        <span class="tab-label">测验</span>
       </router-link>
       <router-link to="/account" class="tab-item">
         <span class="tab-icon">👤</span>
-        <span class="tab-label">Account</span>
+        <span class="tab-label">我的</span>
       </router-link>
     </nav>
   </div>

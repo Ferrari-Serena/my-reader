@@ -177,8 +177,8 @@ t('不认识的文件名一律 null',
   && classifyFile('a/b.mp3') === null && classifyFile('') === null
   && classifyFile('.mp3') === null && classifyFile('ch-01.MP3') === null)
 t('单文件上限常量 = 8 MB（手抄 MAX_BOOK_BYTES）', MAX_AUDIO_FILE_BYTES === 8 * 1024 * 1024)
-t('默认配额常量：1 GiB（D23 由 500 MiB 上调）/ 20 本 / 120 次每分',
-  DEFAULT_MAX_ACCOUNT_BYTES === 1024 * 1024 * 1024 && DEFAULT_MAX_BOOKS === 20 && DEFAULT_UPLOAD_PER_MIN === 120)
+t('默认配额常量：5 GiB（W-14；D23 曾 500 MiB→1 GiB）/ 20 本 / 120 次每分',
+  DEFAULT_MAX_ACCOUNT_BYTES === 5 * 1024 * 1024 * 1024 && DEFAULT_MAX_BOOKS === 20 && DEFAULT_UPLOAD_PER_MIN === 120)
 
 // ═══ ② 会话闸 ════════════════════════════════════════════════════════════════
 

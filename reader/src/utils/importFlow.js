@@ -107,8 +107,8 @@ const STORE_ERROR_TEXT = {
 }
 
 const UNKNOWN_TEXT = {
-  message: 'Something went wrong while importing this file.',
-  hint: 'Try again, or use a different copy of the book.'
+  message: '导入这个文件时出了点问题。',
+  hint: '再试一次，或换一份书。'
 }
 
 /**

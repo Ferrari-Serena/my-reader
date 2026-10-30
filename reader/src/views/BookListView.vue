@@ -1,7 +1,7 @@
 <template>
   <div class="book-list-view">
     <div class="shelf-actions">
-      <router-link to="/import" class="add-book">Add a book</router-link>
+      <router-link to="/import" class="add-book">添加书</router-link>
     </div>
 
     <!-- 两个来源各自降级：一个坏掉，另一个照常显示，但要说清楚缺了什么 -->
@@ -16,7 +16,7 @@
 
     <div v-else-if="isEmpty" class="empty-state">
       <div class="empty-icon">📚</div>
-      <h2>No books yet</h2>
+      <h2>还没有书</h2>
       <p>Books you import will appear here.</p>
     </div>
 
@@ -38,7 +38,7 @@
           :class="{ active: activeShelf === 'mine' }"
           :aria-selected="activeShelf === 'mine'"
           @click="activeShelf = 'mine'"
-        >My Books <span class="shelf-count">{{ myBooks.length }}</span></button>
+        >我的书 <span class="shelf-count">{{ myBooks.length }}</span></button>
       </div>
 
       <section v-if="SHOW_PUBLIC_SHELF && activeShelf === 'public'" class="shelf-pane" role="tabpanel">

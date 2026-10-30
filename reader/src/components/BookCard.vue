@@ -13,7 +13,7 @@
         <h3 class="book-title">{{ book.title }}</h3>
         <p class="book-author" v-if="book.author">{{ book.author }}</p>
         <!-- 「我的书架」栏里自带书不给来源提示时，用户会以为它上了云 -->
-        <p class="book-kind" v-if="book.kind === 'byo'">Your book</p>
+        <p class="book-kind" v-if="book.kind === 'byo'">我导入的</p>
       </div>
     </router-link>
     <!-- 书级生成入口（第 17 步块 D-3 ／ D21-b・f）：只对自带书、且三态由父级算好传进来
