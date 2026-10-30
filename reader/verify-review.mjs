@@ -10,6 +10,7 @@ import {
   normalizePhraseKey,
   phraseCardId,
   phraseDueTomorrowIso,
+  makePhraseCard,
   wordReviewItem,
   phraseReviewItem,
   collectReviewItems
@@ -157,6 +158,19 @@ console.log('\n[recordStore — 词组首错落卡 / wrong 记录]')
     wrongRec && Object.keys(wrongRec).sort().join())
   t('wrong 记录同样标脏', recordStore.loadRecordDirty().includes('wrong:' + wrong.id))
   delete globalThis.localStorage
+}
+
+console.log('\n[makePhraseCard — W-08 D-1／D-2]')
+{
+  const srs = { ...createCard(), due: '2026-11-01T00:00:00.000Z' }
+  const card = makePhraseCard({ refKey: 'Break  Through', srs, now: '2026-10-31T00:00:00.000Z' })
+  t('卡里有 schemaVersion（正整数）', Number.isInteger(card.schemaVersion) && card.schemaVersion >= 1)
+  t('卡里有 bookId／chapterId 两格（默认 null，字段在）',
+    'bookId' in card && card.bookId === null && 'chapterId' in card && card.chapterId === null)
+  t('refKind／refKey 归一', card.refKind === REF_KIND_PHRASE && card.refKey === 'break through')
+  const anchored = makePhraseCard({ refKey: 'act up', srs, now: 't', bookId: 'bk_1', chapterId: 'c-2' })
+  t('来源锚能传进来', anchored.bookId === 'bk_1' && anchored.chapterId === 'c-2')
+  t('空 refKey → null（不产半张卡）', makePhraseCard({ refKey: '   ' }) === null)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

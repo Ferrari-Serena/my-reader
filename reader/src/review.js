@@ -7,6 +7,8 @@
  * 本模块把两者归一化成同一个 item 形状，fsrs.buildQueueFromItems 只认这个形状。
  */
 
+import { CARD_SCHEMA_VERSION } from './storage/schema.js'
+
 export const REF_KIND_WORD = 'word'
 export const REF_KIND_PHRASE = 'phrase'
 
@@ -29,6 +31,27 @@ export function phraseDueTomorrowIso(from = new Date()) {
   if (Number.isNaN(d.getTime())) return null
   d.setHours(24, 0, 0, 0)
   return d.toISOString()
+}
+
+/**
+ * 词组卡的记录工厂（W-08 D-1／D-2，2026-10-31）。
+ * 抽出这个纯函数是为了让「卡里有 schemaVersion 与来源锚」可被机器断言——
+ * 原先这段形状写在 QuizView 里，只能靠读源码断言。
+ * bookId／chapterId 默认 null：词组题目前没有书本来源（题干来自词典）。
+ */
+export function makePhraseCard({ refKey, srs, now, bookId = null, chapterId = null } = {}) {
+  const key = normalizePhraseKey(refKey)
+  if (!key) return null
+  return {
+    refKind: REF_KIND_PHRASE,
+    refKey: key,
+    schemaVersion: CARD_SCHEMA_VERSION,
+    bookId: bookId ?? null,
+    chapterId: chapterId ?? null,
+    srs: srs || null,
+    createdAt: now || '',
+    updatedAt: now || '',
+  }
 }
 
 /** 单词词条 -> review item；无释义（离线空快照）不进入复习队列 */

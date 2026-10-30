@@ -226,6 +226,12 @@ console.log('\n[schema.js — updatedAt 必须能落盘往返]')
   t('updatedAt 不是字符串 → 回退 addedAt（绝不留 null）', dirty.updatedAt === T1)
   const injected = sanitizeEntry({ word: 'kiwi', addedAt: T1, __evil: 'x', snapshot: { definitions: ['z'], evil: 1 } })
   t('未知字段被剪裁', !('__evil' in injected) && !('evil' in injected.snapshot))
+  // W-08 D-1（2026-10-31）：schemaVersion 必须在白名单里，否则落盘/导入时被静默剥掉
+  const carded = sanitizeEntry({ word: 'lime', schemaVersion: 1, bookId: 'bk_1', chapterId: 'ch-1', addedAt: T1, snapshot: { definitions: ['z'] } })
+  t('schemaVersion 不被白名单剥掉', carded.schemaVersion === 1)
+  t('词卡来源锚能保留', carded.bookId === 'bk_1' && carded.chapterId === 'ch-1')
+  const oldCard = sanitizeEntry({ word: 'plum', addedAt: T1, snapshot: { definitions: ['z'] } })
+  t('旧卡没有 schemaVersion → 读出来是 null（按 v0 处理）', oldCard.schemaVersion === null)
 }
 
 console.log('\n[localAdapter — 墓碑台账]')
