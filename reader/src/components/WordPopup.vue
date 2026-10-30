@@ -52,38 +52,54 @@
               <span class="phrase-defs">{{ phraseInfo.defs.join('；') }}</span>
             </div>
 
-            <div v-if="loadingDict" class="popup-loading">
-              <div class="spinner-sm"></div>
-              <span>查词中…</span>
-            </div>
-
-            <template v-else-if="dictEntry">
-              <div class="popup-meta">
-                <span v-if="dictEntry.phonetic" class="phonetic">{{ dictEntry.phonetic }}</span>
-                <span v-if="dictEntry.partOfSpeech" class="pos-tag">{{ dictEntry.partOfSpeech }}</span>
-                <span v-if="dictEntry.level" class="level-tag" :class="dictEntry.level.toLowerCase()">
-                  ★ {{ dictEntry.level }}
-                </span>
+            <!-- dict-zh 六态（D2）：loading／hit／english／miss／error／offline。
+                 词组走专用值 'phrase'，六态不参与（前置 guard）；hasSenses／hasSimpleDefs 两支在上方。 -->
+            <template v-if="lookupState !== 'phrase'">
+              <div v-if="lookupState === 'loading'" class="popup-loading">
+                <div class="spinner-sm"></div>
+                <span>查词中…</span>
               </div>
 
-              <ol v-if="dictEntry.definitions?.length" class="def-list">
-                <li v-for="(def, i) in dictEntry.definitions" :key="i" class="def-item">
-                  {{ def }}
-                </li>
-              </ol>
-              <p v-else-if="dictEntry.notFound" class="notfound-hint">
-                韦氏词典未收录。
-                <template v-if="dictEntry.suggestions?.length">
-                  你是不是想查：{{ dictEntry.suggestions.slice(0, 3).join('、') }}？
-                </template>
-              </p>
+              <template v-else-if="lookupState === 'hit' || lookupState === 'english'">
+                <div class="popup-meta">
+                  <span v-if="dictEntry?.phonetic" class="phonetic">{{ dictEntry.phonetic }}</span>
+                  <span v-if="dictEntry?.partOfSpeech" class="pos-tag">{{ dictEntry.partOfSpeech }}</span>
+                  <span v-if="dictEntry?.level" class="level-tag" :class="dictEntry.level.toLowerCase()">
+                    ★ {{ dictEntry.level }}
+                  </span>
+                </div>
 
-              <div class="popup-chapters" v-if="dictEntry.chapters?.length">
-                <span class="chapters-label">出现章节：</span>
-                <span v-for="ch in dictEntry.chapters" :key="ch" class="chapter-badge">{{ ch }}</span>
+                <ol v-if="dictEntry?.definitions?.length" class="def-list">
+                  <li v-for="(def, i) in dictEntry.definitions" :key="i" class="def-item">
+                    {{ def }}
+                  </li>
+                </ol>
+                <p v-else-if="dictEntry?.notFound" class="notfound-hint">
+                  韦氏词典未收录。
+                  <template v-if="dictEntry.suggestions?.length">
+                    你是不是想查：{{ dictEntry.suggestions.slice(0, 3).join('、') }}？
+                  </template>
+                </p>
+
+                <div class="popup-chapters" v-if="dictEntry?.chapters?.length">
+                  <span class="chapters-label">出现章节：</span>
+                  <span v-for="ch in dictEntry.chapters" :key="ch" class="chapter-badge">{{ ch }}</span>
+                </div>
+              </template>
+
+              <div v-else-if="lookupState === 'miss'" class="popup-state">
+                <p>{{ missCopy }}</p>
               </div>
 
-              <div class="popup-actions">
+              <div v-else-if="lookupState === 'error'" class="popup-state">
+                <p>网络或限额，请稍后重试。</p>
+              </div>
+
+              <div v-else-if="lookupState === 'offline'" class="popup-state">
+                <p>{{ OFFLINE_COPY }}</p>
+              </div>
+
+              <div v-if="showActions" class="popup-actions">
                 <button class="action-btn" @click="speakWord">
                   🔊 朗读
                 </button>
@@ -93,23 +109,15 @@
                 <button v-else class="action-btn primary" @click="addToVocab">
                   + 加入生词本
                 </button>
-              </div>
-            </template>
-
-            <div v-else class="popup-notfound">
-              <p>离线暂无法显示释义。</p>
-              <div class="popup-actions">
-                <button class="action-btn" @click="lookupOnline">
+                <button
+                  v-if="lookupState === 'miss' || lookupState === 'error'"
+                  class="action-btn"
+                  @click="lookupOnline"
+                >
                   🌐 在线查词
                 </button>
-                <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
-                  ✓ 已在生词本
-                </button>
-                <button v-else class="action-btn primary" @click="addToVocab">
-                  + 加入生词本
-                </button>
               </div>
-            </div>
+            </template>
           </template>
         </div>
       </div>
@@ -123,12 +131,19 @@ import { useTTS } from '../composables/useTTS.js'
 const props = defineProps({
   word: { type: String, default: '' },
   dictEntry: { type: Object, default: null },
-  loadingDict: { type: Boolean, default: false },
+  // 六态唯一来源（'idle'|'loading'|'hit'|'english'|'miss'|'error'|'offline'|'phrase'）
+  lookupState: { type: String, default: 'idle' },
+  zhReason: { type: String, default: '' }, // 'miss_dict'|'miss_empty'|'miss_shard'|'miss_net'|命中 result
   isSaved: { type: Boolean, default: false },
   phraseInfo: { type: Object, default: null } // { phrase, defs: [] }
 })
 
-const emit = defineEmits(['close', 'add-vocab', 'remove-vocab'])
+const emit = defineEmits(['close', 'add-vocab', 'remove-vocab', 'speak', 'online'])
+
+// 三句未收/离线文案（冻结包 §1⑥ 候选句，终稿归 PD）
+const MISS_DICT_COPY = '词典已加载，里面没有这个词。'
+const MISS_EMPTY_COPY = '词典里有这个词，但没有释义。'
+const OFFLINE_COPY = '这个词所在的字母分片还没到本机。'
 
 const tts = useTTS()
 const visible = computed(() => !!props.word)
@@ -158,6 +173,16 @@ const hitRanks = computed(() => (resolution.value.hits || []).map(hit => hit.ran
 const isHitSense = (sense) => hitRanks.value.includes(sense.rank)
 const isCurrentSense = (sense) => currentSense.value?.rank === sense.rank
 
+/** 未收态文案：miss_dict／miss_empty 各一句，别把「词不在词典」说成「没缓存」 */
+const missCopy = computed(() => (
+  props.zhReason === 'miss_empty' ? MISS_EMPTY_COPY : MISS_DICT_COPY
+))
+
+/** 动作条只在六态中的五个态出现（loading／idle 不出现） */
+const showActions = computed(() => (
+  ['hit', 'english', 'miss', 'error', 'offline'].includes(props.lookupState)
+))
+
 /** 来源标签：说「这话从哪来」，不说「有多确定」。 */
 const cloudSourceText = computed(() => {
   if (resolution.value.cloudStatus !== 'cloud') return ''
@@ -186,6 +211,7 @@ const unresolvedText = computed(() => {
 
 function speakWord() {
   tts.speak(props.word)
+  emit('speak')
 }
 
 function addToVocab() {
@@ -193,6 +219,7 @@ function addToVocab() {
 }
 
 function lookupOnline() {
+  emit('online')
   window.open(`https://www.merriam-webster.com/dictionary/${props.word}`, '_blank')
 }
 </script>
@@ -496,6 +523,18 @@ export default { inheritAttrs: false }
   text-align: center;
   padding: 16px 0;
   color: var(--text-secondary, #6e6e73);
+}
+
+/* 六态：未收／网络·限额／离线 */
+.popup-state {
+  padding: 12px 0;
+  color: var(--text-secondary, #6e6e73);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.popup-state p {
+  margin: 0 0 12px;
 }
 
 .popup-notfound .action-btn {

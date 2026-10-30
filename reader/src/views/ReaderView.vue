@@ -209,12 +209,15 @@
       v-if="selectedWord"
       :word="selectedWord"
       :dict-entry="dictEntry"
-      :loading-dict="dictLoading"
+      :lookup-state="lookupState"
+      :zh-reason="zhReason"
       :is-saved="isSelectedSaved"
       :phrase-info="selectedPhrase"
-      @close="selectedWord = null"
+      @close="closeWordPopup"
       @add-vocab="onAddVocab"
       @remove-vocab="onRemoveVocab"
+      @speak="onSpeakAction"
+      @online="onOnlineAction"
     />
   </div>
 </template>
@@ -231,7 +234,10 @@ import { usePhraseAnnotations } from '../composables/usePhraseAnnotations.js'
 import { resolvePhraseSenseWithAnnotation } from '../utils/phraseSolve.js'
 import { cloudNeeded, resolveCloudSense } from '../utils/phraseCloud.js'
 import { buildDictAlias, resolveDictKey, addEntryForms } from '../utils/dictIndex.js'
-import { lookup as lookupZh } from '../utils/zhDict.js'
+import { lookup as lookupZh, normalizeWord } from '../utils/zhDict.js'
+import { beginWordLookup, beginPhraseLookup, resolveZhOutcome, resolveOnlineOutcome, deadlineOutcome } from '../utils/zhState.js'
+import { setHashWord, zhEnter, zhLookup, zhShown, zhAction } from '../utils/zhEvents.js'
+import { isOffline } from '../utils/offline.js'
 import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { chapterAudioPath, chapterTimingsUrl, fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
 import { GEN_POLL_MS, fetchGenStatus, isChapterPending, chapterGenState, CH_STATE } from '../utils/genApi.js'
@@ -268,10 +274,33 @@ const currentChapterIndex = ref(0)
 const dictionary = ref({})
 const audioIndex = ref(null) // audio-index.json；null = 清单未知（按「有音频」兜底）
 
-// Word popup state
+// Word popup state — lookupState 是六态的唯一来源（dictLoading 布尔已并入枚举）
 const selectedWord = ref(null)
 const dictEntry = ref(null)
-const dictLoading = ref(false)
+const lookupState = ref('idle')
+const zhReason = ref('')
+// 动作事件（zh_action）的来源与停留起点；dwell 从 zh_enter 起算
+const dictSource = ref('mw')
+const popupOpenedAt = ref(0)
+
+// 裸 node 单测读取六态组合（不做组件挂载，见 utils/zhState.js 头注）
+defineExpose({ lookupState, dictEntry, zhReason, isOffline })
+
+// zhEvents 的哈希注入：§二·6 归一化在前、SHA-256 在后；原词不出设备。
+// crypto.subtle 不可用（非安全上下文）时返回空串，zhEvents 会单条丢弃而不是发原词。
+setHashWord(async (input) => {
+  try {
+    const subtle = globalThis.crypto?.subtle
+    if (!subtle) return ''
+    const bytes = new TextEncoder().encode(normalizeWord(input))
+    const digest = await subtle.digest('SHA-256', bytes)
+    let hex = ''
+    for (const byte of new Uint8Array(digest)) hex += byte.toString(16).padStart(2, '0')
+    return hex
+  } catch {
+    return ''
+  }
+})
 
 // 阅读设置（第 8 步 8.1）：字号 / 行距 / 页宽 / 字体。
 // 值 → .reader-view 的内联 CSS 变量；落盘与同步都在 useReaderSettings 里。
@@ -882,12 +911,40 @@ const isSelectedSaved = computed(() => {
   return vocab.has(selectedWord.value) || (dictEntry.value?.lemma ? vocab.has(dictEntry.value.lemma) : false)
 })
 
+// ── dict-zh 事件（zhEvents 只接线，服务端不在本包）────────────────────
+function emitEnter(word, via) {
+  popupOpenedAt.value = Date.now()
+  zhEnter({ word, via })
+}
+
+function emitAction(action) {
+  const word = selectedWord.value
+  if (!word) return
+  const opened = popupOpenedAt.value
+  zhAction({
+    word,
+    action,
+    source: dictSource.value,
+    dwellMs: opened ? Date.now() - opened : undefined,
+  })
+}
+
+function closeWordPopup() {
+  emitAction('close')
+  selectedWord.value = null
+}
+
+function onSpeakAction() { emitAction('speak') }
+function onOnlineAction() { emitAction('online') }
+
 async function onRemoveVocab(word) {
+  emitAction('remove')
   // 与 add 的 key 规则对称：优先按 lemma 移除
   await vocab.remove(dictEntry.value?.lemma && vocab.has(dictEntry.value.lemma) ? dictEntry.value.lemma : word)
 }
 
 async function onAddVocab(word) {
+  emitAction('save')
   await vocab.add({
     word,
     dictEntry: dictEntry.value ? JSON.parse(JSON.stringify(dictEntry.value)) : null,
@@ -1002,6 +1059,10 @@ function onImageLoad() {
   // Track natural dimensions for coordinate scaling
 }
 
+// 端到端预算（一次点词的总预算，不是每个 fetch）：manifest／direct／irregular／stems
+// 与 /api/dict 共用一个 AbortController；到点落「网络/超时」，不再等后续 fetch。
+const DICT_DEADLINE_MS = 8000
+
 async function onWordClick(event) {
   const word = event.target.dataset.word
   if (!word || word.length < 2) return
@@ -1010,9 +1071,15 @@ async function onWordClick(event) {
   const paraId = event.target.dataset.para
   const tokenIdx = Number(event.target.dataset.idx)
 
-  // 点到划过线的词 -> 开笔记（而不是弹单词框）
+  // 点到划过线的词 -> 开笔记（而不是弹单词框）。笔记分支不设 lookupState：
+  // selectedWord=null 关掉弹窗，旧值不可见；重置发生在下一次单词分支的 beginWordLookup。
   const marked = noteMarkOf(paraId, tokenIdx)
-  if (marked) { selectedWord.value = null; openNoteEditor(marked); return }
+  if (marked) {
+    emitEnter(word, 'note')
+    selectedWord.value = null
+    openNoteEditor(marked)
+    return
+  }
 
   const span = (paraPhraseSpans.value[paraId] || [])
     .find(s => tokenIdx >= s.start && tokenIdx <= s.end)
@@ -1051,61 +1118,121 @@ async function onWordClick(event) {
     selectedPhrase.value = null
   }
 
-  // 词组义项弹窗：有 senses 或 defs 时直接显示词组义，不再查单词义
+  // 词组义项弹窗：有 senses 或 defs 时直接显示词组义，不再查单词义。
+  // 'phrase' 是六态之外的专用值（词组没有中文词条，写成 hit 会让兜底分支拿到空 dictEntry）。
   if (selectedPhrase.value?.senses?.length || selectedPhrase.value?.defs?.length) {
-    selectedWord.value = selectedPhrase.value.phrase
-    dictEntry.value = null
-    dictLoading.value = false
+    emitEnter(word, 'phrase')
+    const plan = beginPhraseLookup(selectedPhrase.value.phrase)
+    selectedWord.value = plan.word
+    lookupState.value = plan.lookupState
+    zhReason.value = plan.zhReason
+    dictEntry.value = plan.dictEntry
+    dictSource.value = 'builtin'
     return
   }
 
-  selectedWord.value = word
-  dictLoading.value = true
+  // 单词级点击：via 按书来源判（note／phrase 已在上方早退）
+  emitEnter(word, isBookId(bookId.value) ? 'byo' : 'builtin')
 
-  // 词典以词头为键，点上来的可能是屈折形 → 先过别名表（离线也能命中）
+  // 词典以词头为键，点上来的可能是屈折形 → 先过别名表；entry 只为「中文未收后的回落」保留，
+  // B9 顺序：中文 → 英文缓存 → 在线，英文缓存不得短路中文。
   const dictKey = resolveKey(word)
   const entry = dictKey ? dictionary.value[dictKey] : undefined
-  if (entry?.definitions?.length || entry?.notFound) {
-    dictEntry.value = entry
-    dictLoading.value = false
-    return
-  }
 
-  // 本地中文词典（ECDICT 30k）：命中即返回，不再请求 /api/dict
-  const zh = await lookupZh(word)
-  if (selectedWord.value !== word) return
-  if (zh) {
-    const merged = { ...(entry || {}), ...zh }
-    dictEntry.value = merged
-    dictLoading.value = false
-    if (merged.definitions?.length) vocab.refreshSnapshot(word, merged)
-    return
-  }
+  const plan = beginWordLookup(word, entry)
+  selectedWord.value = word
+  lookupState.value = plan.lookupState
+  zhReason.value = plan.zhReason
+  dictEntry.value = plan.dictEntry
+  dictSource.value = entry ? 'builtin' : 'mw'
 
-  // 本地词典无释义 → Worker 在线查词兜底（M-W 代理 + D1 边缘缓存）
-  dictEntry.value = entry || null
-  const ctrl = new AbortController()
-  const timeoutId = setTimeout(() => ctrl.abort(), 8000)
+  const startedAt = Date.now()
+  const deadline = new AbortController()
+  const deadlineTimer = setTimeout(() => {
+    // 用户已点了别的词：只管取消，不改当前弹窗的状态
+    if (selectedWord.value !== word) { deadline.abort(); return }
+    deadline.abort()
+    const out = deadlineOutcome()
+    lookupState.value = out.lookupState
+    zhReason.value = out.zhReason
+  }, DICT_DEADLINE_MS)
+
   try {
-    const res = await fetch(`${DICT_WORKER}/api/dict/${encodeURIComponent(word)}`, { signal: ctrl.signal })
+    // 本地中文词典（ECDICT 30k）：先于英文缓存与在线，命中即不再请求 /api/dict
+    const zh = await lookupZh(word, { offline: isOffline.value, signal: deadline.signal })
+    // zh_lookup 在 await 返回后立即发（先于 selectedWord 守卫）
+    zhLookup({
+      word,
+      result: zh.status === 'hit' ? zh.result : zh.reason,
+      ms: Date.now() - startedAt,
+    })
+    if (selectedWord.value !== word) return
+    if (deadline.signal.aborted) {
+      const out = deadlineOutcome()
+      lookupState.value = out.lookupState
+      zhReason.value = out.zhReason
+      return
+    }
+
+    const out = resolveZhOutcome({ zh, entry, offline: isOffline.value })
+    zhReason.value = out.zhReason
+    if (out.next === 'done') {
+      dictEntry.value = out.dictEntry
+      lookupState.value = out.lookupState
+      if (out.lookupState === 'hit') {
+        dictSource.value = 'zh'
+        const defs = out.dictEntry?.definitions?.length || 0
+        if (defs > 0 && selectedWord.value === word) {
+          zhShown({ word, result: out.zhReason, defsCount: defs })
+          vocab.refreshSnapshot(word, out.dictEntry)
+        }
+      }
+      return
+    }
+
+    // 中文未收且无英文缓存 → Worker 在线查词兜底（M-W 代理 + D1 边缘缓存）
+    dictEntry.value = out.dictEntry
+    lookupState.value = out.lookupState // 'loading'
+    const res = await fetch(`${DICT_WORKER}/api/dict/${encodeURIComponent(word)}`, { signal: deadline.signal })
     if (selectedWord.value !== word) return // 用户已点了别的词
-    if (res.ok || res.status === 404) {
-      const online = await res.json()
-      // 合并：在线释义 + 本地条目的考试标记/出现章节；notFound 也缓存避免重复请求
-      const merged = { ...(entry || {}), ...online }
-      // 写回别名的目标 key：下次点它的其它形态也能直接命中，不重复联网
-      dictionary.value[dictKey || word] = merged
-      dictEntry.value = merged
+
+    let online = null
+    let failed = !(res.ok || res.status === 404)
+    if (!failed) {
+      try { online = await res.json() } catch { failed = true }
+    }
+    if (failed) {
+      const outcome = resolveOnlineOutcome({ reason: out.zhReason, failed: true })
+      lookupState.value = outcome.lookupState
+      zhReason.value = outcome.zhReason
+      return
+    }
+
+    // 合并：在线释义 + 本地条目的考试标记/出现章节；notFound 也缓存避免重复请求
+    const merged = { ...(entry || {}), ...online }
+    // 写回别名的目标 key：下次点它的其它形态也能直接命中，不重复联网
+    dictionary.value[dictKey || word] = merged
+    dictEntry.value = merged
+    const outcome = resolveOnlineOutcome({
+      reason: out.zhReason,
+      online: { definitions: merged.definitions, notFound: merged.notFound },
+    })
+    lookupState.value = outcome.lookupState
+    zhReason.value = outcome.zhReason
+    if (outcome.lookupState === 'english') {
+      dictSource.value = 'mw'
       // 空快照自愈：离线时收藏的词，联网查到释义后自动补全生词本快照
-      if (merged.definitions?.length) vocab.refreshSnapshot(word, merged)
+      vocab.refreshSnapshot(word, merged)
     }
   } catch (e) {
-    // 离线/超时/网络错误 → 保持本地条目（可能无释义）
-    // 注意：不在此处改 dictLoading=false，由 finally 统一处理
-    console.warn(`Dict lookup failed for "${word}":`, e.name || 'Error', e.message || '')
+    if (selectedWord.value !== word) return
+    const outcome = resolveOnlineOutcome({ reason: zhReason.value, failed: true })
+    lookupState.value = outcome.lookupState
+    zhReason.value = outcome.zhReason
+    console.warn(`Dict lookup failed for "${word}":`, e?.name || 'Error', e?.message || '')
   } finally {
-    clearTimeout(timeoutId)
-    if (selectedWord.value === word) dictLoading.value = false
+    // finally 只清 timer，不改 lookupState（规格 §1⑦）
+    clearTimeout(deadlineTimer)
   }
 }
 
