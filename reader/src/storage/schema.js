@@ -5,6 +5,14 @@
 
 export const SCHEMA_VERSION = 1
 
+/**
+ * 单张卡片的 schema 版本（W-08 D-1，2026-10-31 裁「加」）。
+ * 与上面的文档级 SCHEMA_VERSION 不是一回事：那个管「生词本文档」，
+ * 这个管「卡片本身」——以后改卡片字段时，可以先按卡判版本，不必升整份文档。
+ * 旧卡没有这个字段（读出来是 null）⇒ 按 v0 处理。
+ */
+export const CARD_SCHEMA_VERSION = 1
+
 export function emptyVocab() {
   return {
     version: SCHEMA_VERSION,
@@ -19,7 +27,7 @@ export function emptyVocab() {
  * 于是 addWord 落盘时会把它剥掉、updateWord 却保留，两条写入路径口径不一致，
  * 重载后 mergeAndApply 只能退化成比 addedAt（创建时间，跨设备相同）。
  */
-const ENTRY_FIELDS = ['word', 'bookId', 'chapterId', 'addedAt', 'updatedAt', 'snapshot', 'srs', 'quiz']
+const ENTRY_FIELDS = ['word', 'schemaVersion', 'bookId', 'chapterId', 'addedAt', 'updatedAt', 'snapshot', 'srs', 'quiz']
 // surfaces（词条在正文里出现过的写法）必须在列：不在就会在 addWord / mergeAndApply 写盘时被剔掉，
 // 而收藏态高亮正好靠 entry.snapshot.surfaces 把屈折形也算进查找集合，
 // 于是重载/同步一次后就只剩词头能亮。

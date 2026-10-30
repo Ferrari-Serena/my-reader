@@ -5,7 +5,7 @@
 
 import { reactive, computed } from 'vue'
 import * as storage from '../storage/index.js'
-import { SCHEMA_VERSION, migrate } from '../storage/schema.js'
+import { SCHEMA_VERSION, CARD_SCHEMA_VERSION, migrate } from '../storage/schema.js'
 import { nowIso } from '../sync/clock.js'
 import { applyRemoteProgress } from '../sync/progress.js'
 import {
@@ -117,6 +117,8 @@ async function add({ word, dictEntry, bookId, chapterId }) {
   const snap = dictEntry || {}
   const entry = {
     word: key,
+    // W-08 D-1：卡片自带版本，旧卡读出来是 null ⇒ 按 v0 处理
+    schemaVersion: CARD_SCHEMA_VERSION,
     bookId: bookId || null,
     chapterId: chapterId || null,
     addedAt: nowIso(),

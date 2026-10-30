@@ -157,6 +157,7 @@ import { checkSpelling } from '../utils/spelling.js'
 import { usePhrases } from '../composables/usePhrases.js'
 import { createCard } from '../fsrs.js'
 import { phraseCardId, normalizePhraseKey, phraseDueTomorrowIso } from '../review.js'
+import { CARD_SCHEMA_VERSION } from '../storage/schema.js'
 import { putRecord } from '../sync/recordStore.js'
 import { nowIso } from '../sync/clock.js'
 import { useSync } from '../composables/useSync.js'
@@ -317,6 +318,11 @@ async function recordAnswer(correct) {
         putRecord('card', {
           refKind: 'phrase',
           refKey,
+          // W-08 D-1／D-2：卡片版本 ＋ 来源锚。词组题目前没有书本来源（题干来自词典），
+          // 两格一律 null —— 字段在，值不编；将来若从阅读页产卡，由调用方传进来。
+          schemaVersion: CARD_SCHEMA_VERSION,
+          bookId: null,
+          chapterId: null,
           srs,
           createdAt: now,
           updatedAt: now
