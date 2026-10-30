@@ -82,7 +82,7 @@ console.log('\n[auth.js — sessionState（C 块单一判据）]')
   t('刚好 180 天（未越）-> ok', A.sessionState(mk(180, 1), NOW) === 'ok')
   t('缺字段（坏数据）-> unknown', A.sessionState(null, NOW) === 'unknown'
     && A.sessionState({ created_at: 1 }, NOW) === 'unknown')
-  t('口径常量：滚动 30 天 / 绝对 180 天', A.SESSION_ROLLING_MS === 30 * 86400000
+  t('口径常量：滚动 90 天 / 绝对 180 天（W-15）', A.SESSION_ROLLING_MS === 90 * 86400000
     && A.SESSION_ABSOLUTE_MS === 180 * 86400000)
   t('令牌有效期：验证 24h / 重置 1h', A.VERIFY_TOKEN_MS === 86400000 && A.RESET_TOKEN_MS === 3600000)
 }

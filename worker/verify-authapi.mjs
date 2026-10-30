@@ -244,7 +244,7 @@ console.log('\n[authapi — 端到端：注册 / 登录 / 我是谁 / 登出]')
   const okRes = await handleAuth(post('/api/auth/login', { email: 'ferrari@qq.com', password: 'correct horse 1' }), env)
   const setCookie = okRes.headers.get('Set-Cookie') || ''
   t('登录成功 -> 200', okRes.status === 200 && (await bodyOf(okRes)).user.id === userId)
-  t('cookie 属性：httpOnly + Secure + SameSite=Lax + Path=/ + Max-Age', /HttpOnly/.test(setCookie) && /Secure/.test(setCookie) && /SameSite=Lax/.test(setCookie) && /Path=\//.test(setCookie) && /Max-Age=2592000/.test(setCookie))
+  t('cookie 属性：httpOnly + Secure + SameSite=Lax + Path=/ + Max-Age', /HttpOnly/.test(setCookie) && /Secure/.test(setCookie) && /SameSite=Lax/.test(setCookie) && /Path=\//.test(setCookie) && /Max-Age=7776000/.test(setCookie))
   t('cookie 不带 Domain（同源，host-only 更紧）', !/Domain=/i.test(setCookie))
   t('登录响应带 csrf（CSRF 第二层要前端拿得到这张通行证）', /^[0-9a-f]{64}$/.test(String((await bodyOf(await handleAuth(post('/api/auth/login', { email: 'ferrari@qq.com', password: 'correct horse 1' }), env))).csrf)))
   t('成功登录清掉该邮箱的失败行', db.prepare("SELECT COUNT(*) AS n FROM login_attempts WHERE scope='email' AND key='ferrari@qq.com'").get().n === 0)
@@ -677,7 +677,7 @@ console.log('\n[authapi — 端到章：注销 / 冷静期撤销 / 到期真删�
   // 冷静期内登录：不下发会话，只报告待注销
   const pl = await handleAuth(post('/api/auth/login', { email: 'del@qq.com', password: PW }), env)
   const plj = await bodyOf(pl)
-  t('冷静期内登录 -> 200 pendingDeletion 且**无**会话 cookie', pl.status === 200 && plj.pendingDeletion === true && !/Max-Age=2592000/.test(pl.headers.get('Set-Cookie') || ''))
+  t('冷静期内登录 -> 200 pendingDeletion 且**无**会话 cookie', pl.status === 200 && plj.pendingDeletion === true && !/Max-Age=7776000/.test(pl.headers.get('Set-Cookie') || ''))
   t('冷静期内登录 -> 带到期时刻与剩余天数', typeof plj.purgeAfter === 'number' && plj.daysLeft === 30)
   t('冷静期内登录：错的密码照样 401', (await handleAuth(post('/api/auth/login', { email: 'del@qq.com', password: 'nope nope' }), env)).status === 401)
 
@@ -685,7 +685,7 @@ console.log('\n[authapi — 端到章：注销 / 冷静期撤销 / 到期真删�
   t('撤销：密码不对 -> 401', (await handleAuth(post('/api/auth/restore', { email: 'del@qq.com', password: 'nope nope' }), env)).status === 401)
   const rs = await handleAuth(post('/api/auth/restore', { email: 'del@qq.com', password: PW }), env)
   const rsj = await bodyOf(rs)
-  t('撤销（密码对）-> 200 ＋ 直接给会话', rs.status === 200 && rsj.user && rsj.user.id === uid && /Max-Age=2592000/.test(rs.headers.get('Set-Cookie') || ''))
+  t('撤销（密码对）-> 200 ＋ 直接给会话', rs.status === 200 && rsj.user && rsj.user.id === uid && /Max-Age=7776000/.test(rs.headers.get('Set-Cookie') || ''))
   t('撤销后 deleted_at 清空', userOf('del@qq.com').deleted_at === null)
   const rcookie = 'mr_session=' + readCookie(rs.headers.get('Set-Cookie') || '', 'mr_session')
   t('撤销后新会话能用（me -> 200）', (await handleAuth(req('/api/auth/me', { cookie: rcookie }), env)).status === 200)

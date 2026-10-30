@@ -40,7 +40,7 @@ export const IMPORT_ERRORS = {
   },
   PDF_NO_TEXT: {
     message: "This PDF has no text layer — it's most likely a scan.",
-    hint: 'Run OCR on it first. Phase 1 does not include OCR.',
+    hint: 'Scan recognition is coming in M2. For now, run OCR on it yourself or import a copy that has a text layer.',
   },
   PDF_INVALID: {
     message: "This file isn't a readable PDF.",

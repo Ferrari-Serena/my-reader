@@ -24,7 +24,7 @@
          Public Books ｜ My Books。同一行、同一套按钮样式，一次只显示一栏 —— 窄屏不用长滚动。
          分类筛选（第 7 步 7.3）跟着 Public Books 那一栏走；顺序按现状，Public 在左。 -->
     <div v-else class="shelf-tabs">
-      <div class="shelf-tabbar" role="tablist">
+      <div v-if="SHOW_PUBLIC_SHELF" class="shelf-tabbar" role="tablist">
         <button
           role="tab"
           class="shelf-tab"
@@ -41,7 +41,7 @@
         >My Books <span class="shelf-count">{{ myBooks.length }}</span></button>
       </div>
 
-      <section v-if="activeShelf === 'public'" class="shelf-pane" role="tabpanel">
+      <section v-if="SHOW_PUBLIC_SHELF && activeShelf === 'public'" class="shelf-pane" role="tabpanel">
         <!-- 分类筛选（第 7 步 7.3）：只有一类时不摆一排只有一个的按钮 -->
         <div v-if="categories.length > 1" class="category-filters">
           <button
@@ -157,8 +157,11 @@ const {
 } = useBookShelf()
 
 const activeCategory = ref('')  // '' = 不筛
-// 两栏改成两个平级的标签（2026-10-06 Ferrari 裁 A）：'public' | 'mine'，默认按现状 Public 在左
-const activeShelf = ref('public')
+// 两栏改成两个平级的标签（2026-10-06 Ferrari 裁 A）：'public' | 'mine'
+// W-13 剩余（2026-10-31，PD-13 撤公开书库）：入口与栏位撤下，**代码保留**；
+// 要恢复就把 SHOW_PUBLIC_SHELF 改回 true，并把 activeShelf 的默认值改回 'public'。
+const SHOW_PUBLIC_SHELF = false
+const activeShelf = ref(SHOW_PUBLIC_SHELF ? 'public' : 'mine')
 
 // 「空」要连账号里的书一起算：本机没有、但账号里有 —— 那不是空书架，是一条能点的「加载」
 const isEmpty = computed(() =>

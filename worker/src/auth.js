@@ -15,8 +15,8 @@
  *     （OWASP 建议 60 万，平台不给）。
  */
 
-/** 会话滚动窗口：每次带 cookie 访问就顺延这么多 */
-export const SESSION_ROLLING_MS = 30 * 24 * 60 * 60 * 1000
+/** 会话滚动窗口：每次带 cookie 访问就顺延这么多（W-15：30 → 90 天，`#2026-10-31T0530-cd`） */
+export const SESSION_ROLLING_MS = 90 * 24 * 60 * 60 * 1000
 /** 会话绝对上限：从 created_at 起算，越过就不再续期（要重登一次） */
 export const SESSION_ABSOLUTE_MS = 180 * 24 * 60 * 60 * 1000
 /** 邮箱验证令牌有效期 */
