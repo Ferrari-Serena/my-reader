@@ -12,7 +12,7 @@
       Could not load the public catalogue ({{ error }}).
     </p>
 
-    <div v-if="loading" class="shelf-loading">Loading...</div>
+    <div v-if="loading" class="shelf-loading">加载中…</div>
 
     <div v-else-if="isEmpty" class="empty-state">
       <div class="empty-icon">📚</div>
