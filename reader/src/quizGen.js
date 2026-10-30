@@ -244,8 +244,11 @@ function genPhraseDefChoice(phrase, phraseDict, n = 3) {
     if (p.verb && p.verb === phrase.verb) sameVerb.push(p)
     else others.push(p)
   }
-  const dists = shuffle(sameVerb).slice(0, n)
-  if (dists.length < n) dists.push(...shuffle(others).slice(0, n - dists.length))
+  // **2026-10-31 裁（）：干扰项不再优先取同动词。**
+  // 同动词干扰项在「两字释义」题干下会造成真歧义（ 对「导致」、 对「逃离」）。
+  // 改为优先跨动词、义差明显的词组；同动词只在跨动词凑不满时才用来补位。
+  const dists = shuffle(others).slice(0, n)
+  if (dists.length < n) dists.push(...shuffle(sameVerb).slice(0, n - dists.length))
   if (dists.length < n) return null
 
   const options = shuffle([phrase, ...dists])
