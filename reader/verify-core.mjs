@@ -9,7 +9,7 @@
 
 import { createCard, rate, isDue, buildQueue, nextDueAt } from './src/fsrs.js'
 import { checkSpelling, levenshtein } from './src/utils/spelling.js'
-import { generateQuestions, generatePhraseQuestions } from './src/quizGen.js'
+import { generateQuestions, generatePhraseQuestions, plainClozeHead } from './src/quizGen.js'
 import { buildDictAlias, resolveDictKey, addEntryForms } from './src/utils/dictIndex.js'
 import { bookIdFromHex, bookIdFromBytes, bookIdFromText, isBookId, BOOK_ID_PREFIX, BOOK_ID_HEX_LEN } from './src/utils/bookId.js'
 import { readFileSync } from 'fs'
@@ -125,20 +125,28 @@ t('句子填空题干不含答案词', clozeQs.every(q => !new RegExp(`\\b${q.wo
     produced > 0 && bad.length === 0, bad.slice(0, 5).join(' | '))
 }
 
-// 词组题（两种题型混出：语境 cloze ＋ 看释义选词组；U5 · 2026-10-09）
+// 词组题（2026-10-31 起**只出释义题**：phraseCloze 因「动词+空格」多解已摘除，）
 const phrasesData = JSON.parse(readFileSync(join(__dirname, 'public/data/phrases.json'), 'utf8'))
 const phraseList = Object.entries(phrasesData).map(([phrase, e]) => ({ phrase, ...e }))
 const pqs = generatePhraseQuestions(phraseList, 10)
-t('词组题生成', pqs.length > 0)
-t('语境题的干扰项为同动词（这条判据只对 phraseCloze 成立）',
-  pqs.filter(q => q.type === 'phraseCloze').every(q => {
-    const answerVerb = q.options[q.answerIndex].split(' ')[0]
-    return q.options.every(o => o.split(' ')[0] === answerVerb)
+// 拼写提示唯一化（W-08 §2.3 · `#2026-10-31T1050-cd`）
+{
+  const peers = [{ word: 'dissuade' }, { word: 'diligent' }, { word: 'hardship' }]
+  t('拼写提示：同首字母同长度撞车时加长前缀到能区分', plainClozeHead('dissuade', peers) === 'Dis' && plainClozeHead('diligent', peers) === 'Dil')
+  t('拼写提示：不撞车时只给首字母', plainClozeHead('hardship', peers) === 'H')
+  t('拼写提示：前缀足以在池内唯一确定', peers.every(p => {
+    const h = plainClozeHead(p.word, peers).toLowerCase()
+    return peers.filter(q => q.word.toLowerCase().startsWith(h) && q.word.length === p.word.length).length === 1
   }))
-t('一次测验里两种题型各半（语境 5 ＋ 释义 5）',
-  pqs.filter(q => q.type === 'phraseCloze').length === 5 &&
-  pqs.filter(q => q.type === 'phraseDefChoice').length === 5,
+}
+
+t('词组题生成', pqs.length > 0)
+t('词组题一律 phraseDefChoice（phraseCloze 已摘除）',
+  pqs.every(q => q.type === 'phraseDefChoice'),
   pqs.map(q => q.type).join(','))
+t('词组题题干带释义、且不含答案词组本身',
+  pqs.every(q => q.stem.startsWith('哪个词组的意思是') &&
+    !q.stem.toLowerCase().includes(String(q.word).toLowerCase())))
 
 // 词组题：先筛再取样之后，不再出现「0 题」或「凑不满」
 {
@@ -150,17 +158,15 @@ t('一次测验里两种题型各半（语境 5 ＋ 释义 5）',
   t('词组题能凑满请求数', generatePhraseQuestions(phraseList, 10).length === 10)
 }
 
-// 词组题：选项必须凑满 4 个 ＋ U5 的题池扩容。
-// 干扰项的约束**分两档**：语境题只能取同动词（176 个动词里 107 个只有一条词组 ⇒ 那批出不了题）；
-// 释义题不要求同动词、只要释义不撞车 ⇒ 把被排除的那批救回。旧断言（出题数 = 190）在 U5 之后
-// 不再成立，改成逐档确定性口径。
+// 词组题：选项必须凑满 4 个；2026-10-31 起**只剩释义一档**（phraseCloze 已摘除）。
+// 池大小仍是钉子（防词典/出题器静默缩水）；不再有「语境档」这一支。
 {
   const byVerb = {}
   for (const p of phraseList) {
     if (p.verb && p.defs?.length) (byVerb[p.verb] ||= []).push(p)
   }
   const groups = Object.values(byVerb)
-  const expectedCloze = groups.filter(g => g.length >= 4).reduce((a, g) => a + g.length, 0)
+  const expectedCloze = groups.filter(g => g.length >= 4).reduce((a, g) => a + g.length, 0) // 只留作历史口径，不再参与断言
   const smallVerbs = groups.filter(g => g.length < 4).flatMap(g => g.map(p => p.phrase))
   const all = generatePhraseQuestions(phraseList, phraseList.length)
   const cloze = all.filter(q => q.type === 'phraseCloze')
@@ -168,10 +174,10 @@ t('一次测验里两种题型各半（语境 5 ＋ 释义 5）',
   const notEnough = all.filter(q => q.options.length !== 4)
   // 池大小是**钉子**（防词典/出题器静默缩水）：2026-10-10 收尾轮 ② 删 4 条 `-ing` 垃圾条目
   // ＋补 3 条正形键（`burn off`／`burn through`／`cool down`）⇒ 400 → 399。
-  t(`词组题池 190 → ${all.length} 条（语境 ${cloze.length} ＋ 释义 ${defs.length}），每条都凑满 4 选项`,
-    all.length === 399 && cloze.length === expectedCloze && notEnough.length === 0,
+  t(`词组题池 399 条（全部释义档），每条都凑满 4 选项`,
+    all.length === 399 && defs.length === 399 && cloze.length === 0 && notEnough.length === 0,
     `选项不足: ${notEnough.slice(0, 3).map(q => q.word + '=' + q.options.length).join(', ')}`)
-  t(`语境档出满 ${expectedCloze} 条（同动词兄弟 ≥ 4 的足额池）`, cloze.length === expectedCloze, `实际 ${cloze.length}`)
+  t('phraseCloze 一条都不再产出', cloze.length === 0, `实际 ${cloze.length}`)
   const inPool = new Set(defs.map(q => q.word))
   const rescued = smallVerbs.filter(w => inPool.has(w)).length
   t(`U5：「同动词兄弟不足」的 ${smallVerbs.length} 条全部进题池`, rescued === smallVerbs.length, `只进去 ${rescued} 条`)

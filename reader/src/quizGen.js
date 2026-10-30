@@ -179,52 +179,36 @@ function genDefinitionChoice(entry, allEntries) {
   }
 }
 
-function genPlainCloze(entry) {
+/**
+ * 拼写提示的字母头（W-08 §2.3 · `#2026-10-31T1050-cd`）：
+ * 默认只给首字母；若同池里有**同首字母且同长度**的词，就把前缀加长到能唯一区分（最多全词）。
+ * 2026-10-31 前只给首字母 ⇒ `dissuade` / `diligent` 的提示都是「以 D 开头，共 8 个字母」。
+ */
+export function plainClozeHead(word, allEntries = []) {
+  const w = String(word || '').toLowerCase()
+  if (w.length < 2) return w.toUpperCase()
+  const peers = (allEntries || [])
+    .map(e => String(e?.word || '').toLowerCase())
+    .filter(o => o && o !== w && o.length === w.length)
+  let n = 1
+  while (n < w.length && peers.some(o => o.slice(0, n) === w.slice(0, n))) n++
+  const head = w.slice(0, n)
+  return head.charAt(0).toUpperCase() + head.slice(1)
+}
+
+function genPlainCloze(entry, allEntries = []) {
   const def = (entry.snapshot?.definitions || [])[0]
   if (!def || !entry.word) return null
   return {
     type: 'plainCloze',
     stem: def,
     answer: entry.word,
-    hint: `以「${entry.word[0].toUpperCase()}」开头，共 ${entry.word.length} 个字母`,
+    hint: `以「${plainClozeHead(entry.word, allEntries)}」开头，共 ${entry.word.length} 个字母`,
     word: entry.word,
   }
 }
 
 // ─── 词组题生成器 ──────────────────────────────
-
-/**
- * 从短语词典中生成选择题。干扰项 = 同动词不同小品词。
- * phraseDict: { phrase, defs:[], verb, particle, forms[] }[]
- */
-function genPhraseCloze(phrase, phraseDict, n = 3) {
-  const def = (phrase.defs || [])[0]
-  if (!def) return null
-
-  // 干扰项：同动词不同小品词
-  const sameVerb = phraseDict.filter(p =>
-    p.phrase !== phrase.phrase && p.verb === phrase.verb
-  )
-  const dists = shuffle(sameVerb).slice(0, n)
-
-  const options = shuffle([phrase, ...dists])
-  const answerIndex = options.findIndex(p => p.phrase === phrase.phrase)
-
-  // 题干：用第一个例句（有替换条件）或用模板
-  const ex = (phrase.examples || [])[0]
-  const stem = ex
-    ? ex.replace(new RegExp(`\\b${phrase.phrase}\\b`, 'i'), '_______')
-    : `${phrase.verb} _______`
-
-  return {
-    type: 'phraseCloze',
-    stem,
-    options: options.map(p => p.phrase),
-    answerIndex,
-    explanation: `${phrase.phrase}: ${def}`,
-    word: phrase.phrase,
-  }
-}
 
 /** 释义归一（比较用：去空白 + 小写）。 */
 function normDefs(list) {
@@ -320,7 +304,7 @@ export function generateQuestions(candidates, allEntries, chapters = [], maxCoun
         const q = genDefinitionChoice(entry, allEntries)
         if (q) { questions.push(q); i++; }
       } else if (plan.type === 'plainCloze') {
-        const q = genPlainCloze(entry)
+        const q = genPlainCloze(entry, allEntries)
         if (q) { questions.push(q); i++; }
       }
     }
@@ -333,44 +317,21 @@ export function generateQuestions(candidates, allEntries, chapters = [], maxCoun
  * 从短语词典生成词组测验。
  */
 export function generatePhraseQuestions(phrases, maxCount = 20) {
-  // 两种题型混出（U5，2026-10-09）：
-  //   phraseCloze     —— 语境/搭配：干扰项只能取同动词 ⇒ 只有「兄弟 ≥ 3」的 190 条够格
-  //   phraseDefChoice —— 释义→选词组：干扰项不要求同动词 ⇒ 把剩下的 210 条一起救回
-  // 先过滤再取样这条老教训仍然成立（3294 条里只有 400 条带 verb；先抽后筛会凑不满）。
-  // 比例：请求数的一半给语境题（语境的更值钱），余下用释义题补；一边不够就从另一边补。
+  // **2026-10-31 裁（E2 修复窗口 `#2026-10-31T1050-cd`）：词组题只出释义题。**
+  // 原 `phraseCloze` 的题干是「动词 + 空格」（无语境时），四个同动词选项都成立 ⇒ 不可答；
+  // 已被 QA 判为多解，整型摘除。`phraseDefChoice` 的题干带释义，答案唯一。
+  // 干扰项不要求同动词，只要求释义不撞车（见 genPhraseDefChoice）。
   // 同一次测验里**一条词组只出一题**（两道题考同一个词组等于白送分）。
   const eligible = phrases.filter(p => p.verb && p.defs?.length)
-  const byVerb = new Map()
-  for (const p of eligible) {
-    const group = byVerb.get(p.verb)
-    if (group) group.push(p)
-    else byVerb.set(p.verb, [p])
-  }
-  const clozeSrc = shuffle(eligible.filter(p => (byVerb.get(p.verb) || []).length >= 4))
-  const defSrc = shuffle(eligible)
-
-  const cloze = []
-  const used = new Set()
-  const wantCloze = Math.ceil(maxCount / 2)
-  let ci = 0
-  for (; ci < clozeSrc.length && cloze.length < wantCloze; ci++) {
-    const q = genPhraseCloze(clozeSrc[ci], phrases, 3)
-    if (q) { cloze.push(q); used.add(clozeSrc[ci].phrase) }
-  }
   const defs = []
-  for (const p of defSrc) {
-    if (cloze.length + defs.length >= maxCount) break
+  const used = new Set()
+  for (const p of shuffle(eligible)) {
+    if (defs.length >= maxCount) break
     if (used.has(p.phrase)) continue
     const q = genPhraseDefChoice(p, eligible, 3)
     if (q) { defs.push(q); used.add(p.phrase) }
   }
-  // 释义档被释义撞车挡掉、或请求数很小 ⇒ 用剩下的语境题补空位
-  for (; ci < clozeSrc.length && cloze.length + defs.length < maxCount; ci++) {
-    if (used.has(clozeSrc[ci].phrase)) continue
-    const q = genPhraseCloze(clozeSrc[ci], phrases, 3)
-    if (q) { cloze.push(q); used.add(clozeSrc[ci].phrase) }
-  }
-  return shuffle([...cloze, ...defs])
+  return shuffle(defs)
 }
 
 /** 硬编码兜底词（当生词本过小时作为干扰项备选）。仅含常见 SAT 词，不会产生"明显易排除"的选项。 */
