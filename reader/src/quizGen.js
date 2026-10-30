@@ -146,7 +146,7 @@ function genWordChoice(entry, allEntries) {
 
   return {
     type: 'wordChoice',
-    stem: `Which word means: "${def}"?`,
+    stem: `哪个单词的意思是「${def}」？`,
     options: options.map(o => o.word),
     answerIndex,
     explanation: `${entry.word}: ${def}`,
@@ -171,7 +171,7 @@ function genDefinitionChoice(entry, allEntries) {
 
   return {
     type: 'definitionChoice',
-    stem: `What does "${entry.word}" mean?`,
+    stem: `「${entry.word}」是什么意思？`,
     options,
     answerIndex,
     explanation: `${entry.word}: ${correctDef}`,
@@ -186,7 +186,7 @@ function genPlainCloze(entry) {
     type: 'plainCloze',
     stem: def,
     answer: entry.word,
-    hint: `starts with "${entry.word[0].toUpperCase()}", ${entry.word.length} letters`,
+    hint: `以「${entry.word[0].toUpperCase()}」开头，共 ${entry.word.length} 个字母`,
     word: entry.word,
   }
 }
@@ -267,7 +267,7 @@ function genPhraseDefChoice(phrase, phraseDict, n = 3) {
   const options = shuffle([phrase, ...dists])
   return {
     type: 'phraseDefChoice',
-    stem: `Which phrase means “${def}”?`,
+    stem: `哪个词组的意思是「${def}」？`,
     options: options.map(p => p.phrase),
     answerIndex: options.findIndex(p => p.phrase === phrase.phrase),
     explanation: `${phrase.phrase}: ${defs.join('；')}`,

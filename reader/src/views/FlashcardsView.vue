@@ -3,28 +3,28 @@
     <!-- loading -->
     <div v-if="phase === 'loading'" class="placeholder-view">
       <div class="spinner"></div>
-      <p>Loading review...</p>
+      <p>正在准备复习…</p>
     </div>
 
     <!-- empty -->
     <div v-else-if="phase === 'empty'" class="placeholder-view">
       <div class="placeholder-icon">🔄</div>
-      <h2>No cards to review</h2>
-      <p>Save words while reading or miss a phrase in the quiz to start reviewing.</p>
-      <router-link to="/books" class="action-btn primary">Go to Books</router-link>
+      <h2>暂无需要复习的卡片</h2>
+      <p>阅读时收藏生词，或在测验中答错词组，就能开始复习。</p>
+      <router-link to="/books" class="action-btn primary">去书架</router-link>
     </div>
 
     <!-- nothing-due -->
     <div v-else-if="phase === 'nothing-due'" class="placeholder-view">
       <div class="placeholder-icon">⏳</div>
-      <h2>All caught up!</h2>
-      <p v-if="nextDue">Next review: {{ nextDueStr }}</p>
-      <p v-else>No cards scheduled yet — save words or miss a phrase to start reviewing.</p>
+      <h2>当前没有待复习的卡片</h2>
+      <p v-if="nextDue">下次复习：{{ nextDueStr }}</p>
+      <p v-else>还没有安排复习的卡片 —— 阅读时收藏生词，或在测验中答错词组即可开始。</p>
       <button v-if="freshCount" class="action-btn primary" @click="startSession('fresh')">
-        Learn {{ freshCount }} new card{{ freshCount > 1 ? 's' : '' }}
+        学习 {{ freshCount }} 张新卡
       </button>
       <button v-if="dueAheadCount" class="action-btn" @click="startSession('ahead')">
-        Review {{ dueAheadCount }} card{{ dueAheadCount > 1 ? 's' : '' }} ahead of schedule
+        提前复习 {{ dueAheadCount }} 张卡片
       </button>
     </div>
 
@@ -36,7 +36,7 @@
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: ((currentIdx + 1) / sessionCards.length * 100) + '%' }"></div>
         </div>
-        <span class="progress-due">Due: {{ freshDone > 0 ? freshDone + ' new, ' : '' }}{{ dueReviewCount }} to review</span>
+        <span class="progress-due">待复习：{{ freshDone > 0 ? freshDone + ' 张新卡，' : '' }}{{ dueReviewCount }} 张</span>
       </div>
 
       <!-- card -->
@@ -48,8 +48,8 @@
             <p v-if="currentItem?.content?.phonetic" class="flash-phonetic">
               {{ currentItem.content.phonetic }}
             </p>
-            <button v-if="!isPhraseCard" class="speak-btn" @click.stop="speakWord" title="Pronounce">🔊</button>
-            <p class="flip-hint">Tap card to flip</p>
+            <button v-if="!isPhraseCard" class="speak-btn" @click.stop="speakWord" title="朗读">🔊</button>
+            <p class="flip-hint">点卡片翻面</p>
           </div>
 
           <!-- back -->
@@ -62,7 +62,7 @@
 
             <!-- spelling input -->
             <div v-if="!isPhraseCard" class="spelling-section">
-              <label class="spelling-label">Type the word from memory:</label>
+              <label class="spelling-label">凭记忆拼写这个单词：</label>
               <input
                 ref="spellingInputEl"
                 v-model="spellingInput"
@@ -71,47 +71,47 @@
                 autocorrect="off"
                 autocomplete="off"
                 spellcheck="false"
-                placeholder="Type here..."
+                placeholder="在这里输入…"
                 @keyup.enter="checkSpelling"
               />
               <div v-if="spellingResult === 'correct'" class="spelling-feedback correct-fb">
-                ✅ Correct!
+                ✅ 拼写正确
               </div>
               <div v-else-if="spellingResult === 'wrong'" class="spelling-feedback wrong-fb">
-                ❌ Correct answer: <strong>{{ currentItem?.content?.text }}</strong>
+                ❌ 正确答案：<strong>{{ currentItem?.content?.text }}</strong>
                 <span v-if="spellingDiffHtml" class="diff-display" v-html="spellingDiffHtml"></span>
               </div>
               <div v-else-if="spellingResult === 'close'" class="spelling-feedback close-fb">
-                ⚠️ Close! You may have a typo.
+                ⚠️ 很接近，可能有一处拼写错误。
                 <span v-if="spellingDiffHtml" class="diff-display" v-html="spellingDiffHtml"></span>
               </div>
-              <button v-if="!spellingResult" class="check-btn" @click.stop="checkSpelling">Check</button>
+              <button v-if="!spellingResult" class="check-btn" @click.stop="checkSpelling">检查</button>
             </div>
 
             <!-- FSRS rating -->
             <div class="rating-row">
-              <button class="rating-btn again" @click.stop="rateCard(1)" title="Keyboard: 1">Again</button>
-              <button class="rating-btn hard" @click.stop="rateCard(2)" title="Keyboard: 2">Hard</button>
-              <button class="rating-btn good" @click.stop="rateCard(3)" title="Keyboard: 3">Good</button>
-              <button class="rating-btn easy" @click.stop="rateCard(4)" title="Keyboard: 4">Easy</button>
+              <button class="rating-btn again" @click.stop="rateCard(1)" title="键盘：1">重来</button>
+              <button class="rating-btn hard" @click.stop="rateCard(2)" title="键盘：2">困难</button>
+              <button class="rating-btn good" @click.stop="rateCard(3)" title="键盘：3">良好</button>
+              <button class="rating-btn easy" @click.stop="rateCard(4)" title="键盘：4">简单</button>
             </div>
           </div>
         </div>
       </div>
 
-      <p class="kb-hint">Space = flip · 1–4 = rate</p>
+      <p class="kb-hint">空格 = 翻面 · 1–4 = 评级</p>
     </div>
 
     <!-- complete -->
     <div v-else-if="phase === 'complete'" class="placeholder-view">
       <div class="placeholder-icon">🎉</div>
-      <h2>Review Complete!</h2>
-      <p>{{ sessionReviewed }} card{{ sessionReviewed > 1 ? 's' : '' }} reviewed.</p>
-      <button class="action-btn primary" @click="resetToSetup">Done</button>
+      <h2>本轮复习完成</h2>
+      <p>已复习 {{ sessionReviewed }} 张卡片。</p>
+      <button class="action-btn primary" @click="resetToSetup">完成</button>
     </div>
 
     <p v-if="phase === 'empty' || phase === 'nothing-due'" class="fsrs-note">
-      Cards use FSRS spaced repetition: your Again / Hard / Good / Easy rating schedules when the card comes back.
+      卡片按 FSRS 间隔重复安排复习：你选的「重来／困难／良好／简单」决定下次出现的时间。
     </p>
   </div>
 </template>
@@ -248,12 +248,12 @@ const nextDueStr = computed(() => {
   const now = new Date()
   const diff = d - now
   const mins = Math.ceil(diff / 60000)
-  if (mins <= 0) return 'now'
-  if (mins < 60) return `in ${mins} min`
+  if (mins <= 0) return '现在'
+  if (mins < 60) return `${mins} 分钟后`
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `in ${hrs} hr`
+  if (hrs < 24) return `${hrs} 小时后`
   const days = Math.floor(hrs / 24)
-  return `in ${days} day${days > 1 ? 's' : ''}`
+  return `${days} 天后`
 })
 
 const freshCount = computed(() => {

@@ -2,14 +2,14 @@
   <div class="vocabulary-view">
     <!-- Header: count + overflow menu -->
     <div class="vocab-header">
-      <span class="vocab-count">{{ filtered.length }} of {{ vocab.count.value }} words</span>
+      <span class="vocab-count">共 {{ vocab.count.value }} 个生词 · 当前 {{ filtered.length }} 个</span>
       <div class="menu-wrap">
         <button class="menu-btn" @click.stop="menuOpen = !menuOpen">⋯</button>
         <div v-if="menuOpen" class="menu-dropdown" @click.stop>
-          <button class="menu-item" @click="doExportBackup">⬇ Export Backup</button>
-          <button class="menu-item" @click="fileInput?.click(); menuOpen = false">⬆ Import Backup</button>
-          <button class="menu-item" @click="showSyncPanel = true; menuOpen = false">↻ Sync</button>
-          <button class="menu-item danger" @click="doClearAll">Clear all</button>
+          <button class="menu-item" @click="doExportBackup">⬇ 导出备份</button>
+          <button class="menu-item" @click="fileInput?.click(); menuOpen = false">⬆ 导入备份</button>
+          <button class="menu-item" @click="showSyncPanel = true; menuOpen = false">↻ 同步</button>
+          <button class="menu-item danger" @click="doClearAll">清空全部</button>
         </div>
       </div>
       <input ref="fileInput" type="file" accept=".json,application/json" style="display:none" @change="doImportBackup" />
@@ -21,39 +21,39 @@
         <div v-if="showSyncPanel" class="popup-overlay" @click.self="showSyncPanel = false">
           <div class="popup-card sync-panel">
             <div class="popup-header">
-              <h3>↻ Sync</h3>
+              <h3>↻ 同步</h3>
               <button class="popup-close" @click="showSyncPanel = false">✕</button>
             </div>
             <div v-if="sync.paired.value" class="sync-status">
-              <p>✅ Synced to your account</p>
+              <p>✅ 已同步到账号</p>
               <p class="sync-hint" v-if="sync.lastSync.value">
-                Last sync: {{ sync.lastSync.value.toLocaleString() }}
+                上次同步：{{ sync.lastSync.value.toLocaleString() }}
               </p>
               <!-- 4.4 同步可见：待上传数 / 拒收 / 冲突账本 -->
               <p class="sync-hint" v-if="sync.pending.value > 0">
-                Waiting to upload: <strong>{{ sync.pending.value }}</strong>
+                待上传：<strong>{{ sync.pending.value }}</strong>
               </p>
-              <p v-else class="sync-hint">All changes uploaded ✓</p>
+              <p v-else class="sync-hint">所有改动已上传 ✓</p>
               <p class="sync-hint warn" v-if="sync.rejected.value > 0">
-                {{ sync.rejected.value }} change(s) here were older than another device's — the newer copy won.
+                本机有 {{ sync.rejected.value }} 项改动比另一台设备旧，已采用较新的版本。
               </p>
               <p v-if="sync.error.value" class="sync-error">{{ sync.error.value }}</p>
               <!-- 拉 + 推都做：只 pull 的话，本机这次的改动要等下一次变异才会上去 -->
               <button class="action-btn primary" @click="sync.syncNow(); showSyncPanel = false" :disabled="sync.pulling.value || sync.pushing.value">
-                {{ (sync.pulling.value || sync.pushing.value) ? 'Syncing...' : 'Sync Now' }}
+                {{ (sync.pulling.value || sync.pushing.value) ? '同步中…' : '立即同步' }}
               </button>
               <details v-if="sync.conflicts.value.length" class="sync-conflicts">
-                <summary>Recent sync events ({{ sync.conflicts.value.length }})</summary>
+                <summary>最近的同步事件（{{ sync.conflicts.value.length }}）</summary>
                 <ul class="sync-conflict-list">
                   <li v-for="(c, i) in sync.conflicts.value" :key="i">{{ conflictText(c) }}</li>
                 </ul>
-                <button class="action-btn" type="button" @click="sync.clearConflicts()">Clear</button>
+                <button class="action-btn" type="button" @click="sync.clearConflicts()">清空</button>
               </details>
             </div>
             <div v-else>
               <div class="sync-section">
-                <p class="sync-label">Sign in to sync your words, notes and books across devices.</p>
-                <p class="sync-hint">Open the Account tab to sign in — no sync code needed.</p>
+                <p class="sync-label">登录后可在多台设备间同步生词、笔记和书籍。</p>
+                <p class="sync-hint">到「我的」页登录即可，不需要同步码。</p>
               </div>
               <p v-if="sync.error.value" class="sync-error">{{ sync.error.value }}</p>
             </div>
@@ -67,7 +67,7 @@
       v-model="searchInput"
       class="vocab-search"
       type="search"
-      placeholder="🔍 Search words or definitions"
+      placeholder="🔍 搜索生词或释义"
     />
 
     <!-- Filter chips + sort -->
@@ -79,14 +79,14 @@
           @click="filter = f.value"
         >{{ f.label }}</button>
         <select v-if="chapterOptions.length" v-model="chapterFilter" class="chapter-select">
-          <option value="">All chapters</option>
+          <option value="">全部章节</option>
           <option v-for="ch in chapterOptions" :key="ch" :value="ch">{{ ch }}</option>
         </select>
       </div>
       <select v-model="sortBy" class="sort-select">
-        <option value="recent">Recently added</option>
+        <option value="recent">最近添加</option>
         <option value="alpha">A – Z</option>
-        <option value="chapter">Chapter order</option>
+        <option value="chapter">按章节排序</option>
       </select>
     </div>
 
@@ -96,17 +96,17 @@
     <!-- Empty state -->
     <div v-if="vocab.count.value === 0" class="empty-state">
       <div class="empty-icon">📝</div>
-      <p>No words saved yet.</p>
-      <p class="empty-hint">While reading, tap any word and choose “+ Add to Words”.</p>
+      <p>还没有收藏生词。</p>
+      <p class="empty-hint">阅读时点任意单词，选择「+ 加入生词本」。</p>
       <div class="empty-actions">
-        <router-link to="/books" class="action-btn primary">Go to Books</router-link>
-        <button class="action-btn" @click="fileInput?.click()">Import Backup</button>
+        <router-link to="/books" class="action-btn primary">去书架</router-link>
+        <button class="action-btn" @click="fileInput?.click()">导入备份</button>
       </div>
     </div>
 
     <!-- No match -->
     <div v-else-if="filtered.length === 0" class="empty-state">
-      <p>No words match the current filter.</p>
+      <p>没有符合当前筛选条件的生词。</p>
     </div>
 
     <!-- Word list -->
@@ -127,7 +127,7 @@
               </span>
             </div>
             <div v-if="expanded !== entry.word" class="card-def-preview">
-              {{ entry.snapshot.definitions[0] || 'Definition pending — open this word online once' }}
+              {{ entry.snapshot.definitions[0] || '释义待补全 —— 联网打开一次这个词即可' }}
             </div>
           </div>
           <button class="speak-btn" @click.stop="speak(entry.word)">🔊</button>
@@ -137,17 +137,17 @@
           <ol v-if="entry.snapshot.definitions.length" class="def-list">
             <li v-for="(def, i) in entry.snapshot.definitions" :key="i">{{ def }}</li>
           </ol>
-          <p v-else class="def-pending">Definition pending — tap this word in the reader while online to fill it in.</p>
+          <p v-else class="def-pending">释义待补全 —— 联网时在阅读页点一下这个词即可补上。</p>
           <div v-if="entry.snapshot.chapters.length" class="card-chapters">
-            <span class="chapters-label">Appears in:</span>
+            <span class="chapters-label">出现章节：</span>
             <span v-for="ch in entry.snapshot.chapters" :key="ch" class="chapter-badge">{{ ch }}</span>
           </div>
           <div class="card-footer">
-            <span class="added-at">Added {{ formatDate(entry.addedAt) }}</span>
+            <span class="added-at">添加于 {{ formatDate(entry.addedAt) }}</span>
             <button
               :class="['remove-btn', { confirming: removeConfirm === entry.word }]"
               @click.stop="onRemove(entry.word)"
-            >{{ removeConfirm === entry.word ? 'Remove?' : 'Remove' }}</button>
+            >{{ removeConfirm === entry.word ? '确认删除？' : '删除' }}</button>
           </div>
         </div>
       </div>
@@ -170,13 +170,13 @@ const showSyncPanel = ref(false)
 
 // 4.4 同步可见：把事件账本里的一条翻成一句人话
 const CONFLICT_TEXT = {
-  rejected: n => `${n} change(s) here were older than another device's — the newer copy won`,
-  'remote-delete': n => `${n} item(s) were deleted on another device`,
-  repush: n => `${n} local change(s) were merged with another device and re-uploaded`
+  rejected: n => `本机 ${n} 项改动比另一台设备旧，已采用较新的版本`,
+  'remote-delete': n => `另一台设备删除了 ${n} 项`,
+  repush: n => `本机 ${n} 项改动已与另一台设备合并并重新上传`
 }
 function conflictText(c) {
   const make = CONFLICT_TEXT[c && c.kind]
-  const what = make ? make((c && c.n) || 0) : ((c && c.kind) || 'sync event')
+  const what = make ? make((c && c.n) || 0) : ((c && c.kind) || '同步事件')
   const at = c && c.at ? new Date(c.at).toLocaleString() : ''
   return at ? `${at} — ${what}` : what
 }
@@ -202,7 +202,7 @@ watch(searchInput, (v) => {
 })
 
 const filterOptions = [
-  { value: 'all', label: 'All' },
+  { value: 'all', label: '全部' },
   { value: 'SAT', label: 'SAT' },
   { value: 'AP', label: 'AP' }
   // 7.2/7.3 解锁：Due today / Wrong answers
@@ -279,7 +279,7 @@ function showToast(msg) {
 
 // localStorage 写失败（配额/私有模式）只提示一次
 watch(vocab.persistFailed, (failed) => {
-  if (failed) showToast('Saving failed — storage may be full or in private mode')
+  if (failed) showToast('保存失败 —— 存储可能已满，或正处于隐私模式')
 })
 
 // ---- export / import / clear ----
@@ -296,7 +296,7 @@ async function doExportBackup() {
   URL.revokeObjectURL(url)
   const n = Object.keys(envelope.data.vocabulary.words).length
   const p = Object.keys(envelope.data.progress).length
-  showToast(`Backup exported — ${n} words, ${p} reading positions`)
+  showToast(`备份已导出 —— ${n} 个生词、${p} 个阅读位置`)
 }
 
 async function doImportBackup(event) {
@@ -305,9 +305,9 @@ async function doImportBackup(event) {
   if (!file) return
   try {
     const r = await vocab.importBackup(file)
-    showToast(`Backup restored — ${r.words.applied} words, ${r.tombstones} deletions, ${r.progress} positions`)
+    showToast(`备份已恢复 —— ${r.words.applied} 个生词、${r.tombstones} 条删除、${r.progress} 个位置`)
   } catch (e) {
-    showToast(`Backup restore failed: ${e.message}`)
+    showToast(`恢复备份失败：${e.message}`)
   }
 }
 
@@ -316,9 +316,9 @@ async function doClearAll() {
   const n = vocab.count.value
   if (!n) return
   // 低频毁灭性操作用原生 confirm
-  if (window.confirm(`Delete all ${n} saved words? This cannot be undone.`)) {
+  if (window.confirm(`删除全部 ${n} 个生词？此操作无法撤销。`)) {
     await vocab.clearAll()
-    showToast('All words cleared')
+    showToast('已清空全部生词')
   }
 }
 

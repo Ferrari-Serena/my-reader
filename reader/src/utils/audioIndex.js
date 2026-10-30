@@ -10,8 +10,8 @@
  */
 
 export const NO_AUDIO_LABEL = {
-  front_matter: 'Front matter',
-  unrecorded: 'Not recorded',
+  front_matter: '前置内容',
+  unrecorded: '未录音',
 }
 
 export const NO_AUDIO_TOOLTIP = {
@@ -42,12 +42,12 @@ export function tocMissingAudio(index) {
 
 /** 无音频原因 → 短标签 */
 export function noAudioLabel(reason) {
-  return NO_AUDIO_LABEL[reason] || 'No audio'
+  return NO_AUDIO_LABEL[reason] || '无音频'
 }
 
 /** 无音频原因 → 完整提示语（章表 title / 播放器副标题） */
 export function noAudioTooltip(reason) {
-  return NO_AUDIO_TOOLTIP[reason] || 'No chapter audio available'
+  return NO_AUDIO_TOOLTIP[reason] || '这一章没有音频'
 }
 
 /**

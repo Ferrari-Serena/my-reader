@@ -3,46 +3,45 @@
     <p v-if="result" class="banner" :class="result.ok ? 'banner-ok' : 'banner-bad'">{{ result.text }}</p>
 
     <section class="card">
-      <h2 class="card-title">Send feedback</h2>
+      <h2 class="card-title">发送反馈</h2>
       <p class="hint">
-        Found something broken, or got an idea? Tell us what happened.
-        <template v-if="auth.user.value">This report is linked to your account.</template>
-        <template v-else>No account needed — leave a contact below if you want a reply.</template>
+        遇到故障，或有想法？告诉我们发生了什么。
+        <template v-if="auth.user.value">这条反馈会关联到你的账号。</template>
+        <template v-else>无需账号 —— 想收到回复可在下方留下联系方式。</template>
       </p>
 
-      <label class="label" for="fb-cat">Kind of report</label>
+      <label class="label" for="fb-cat">反馈类型</label>
       <select id="fb-cat" v-model="category" class="input" :disabled="busy">
         <option v-for="c in CATEGORIES" :key="c" :value="c">{{ categoryLabel(c) }}</option>
       </select>
 
-      <label class="label" for="fb-msg">What happened?</label>
+      <label class="label" for="fb-msg">发生了什么？</label>
       <textarea
         id="fb-msg" v-model="message" class="input textarea" rows="6"
-        placeholder="What were you doing, and what went wrong?"
+        placeholder="你当时在做什么？哪里出了问题？"
         :disabled="busy" @blur="touched = true"
       ></textarea>
       <p class="counter" :class="{ over: tooLong }">{{ message.length }} / {{ MAX_MESSAGE }}</p>
 
-      <label class="label" for="fb-contact">Contact — optional</label>
+      <label class="label" for="fb-contact">联系方式（可选）</label>
       <input
         id="fb-contact" v-model="contact" class="input" type="text"
-        placeholder="email or anything else — only if you want a reply"
+        placeholder="邮箱或其他联系方式 —— 只在你想收到回复时填写"
         :disabled="busy" @blur="touched = true"
       />
 
       <p v-if="problem" class="error">{{ problem }}</p>
 
       <button class="btn primary" :disabled="busy" @click="submit">
-        {{ busy ? 'Sending…' : 'Send feedback' }}
+        {{ busy ? '发送中…' : '发送反馈' }}
       </button>
     </section>
 
     <!-- 提交前**先看到**要发什么：这一页不是免责声明，是「预览 ＋ 同意」的那一步 -->
     <section class="card">
-      <h2 class="card-title">What gets sent</h2>
+      <h2 class="card-title">会发送什么</h2>
       <p class="hint">
-        Besides your message, we attach only the diagnostic below. No book text, no words,
-        no notes, no email address.
+        除你的正文外，只附带下面的诊断信息。不包含书籍正文、生词、笔记和邮箱地址。
       </p>
       <dl class="diag">
         <div v-for="row in diagRows" :key="row.k" class="diag-row">
@@ -52,25 +51,24 @@
       </dl>
       <p class="hint diag-sub">
         <template v-if="errors.length">
-          Recent errors on this device (the newest {{ MAX_ERROR_LINES }} are sent):
+          本机最近的错误（发送最新 {{ MAX_ERROR_LINES }} 条）：
         </template>
-        <template v-else>No errors were caught on this device.</template>
+        <template v-else>本机没有捕获到错误。</template>
       </p>
       <ul v-if="errors.length" class="errs">
         <li v-for="(e, i) in errors" :key="i">{{ e }}</li>
       </ul>
       <p class="hint diag-sub">
-        Which browser you are on is added by the server from the request itself — we do not
-        send it from here, and we store no IP address.
+        浏览器类型由服务端从请求本身识别，前端不发送；我们也不保存 IP 地址。
       </p>
     </section>
 
     <section class="card">
-      <h2 class="card-title">Your reports</h2>
+      <h2 class="card-title">我的反馈</h2>
       <p v-if="mineError" class="error">{{ mineError }}</p>
       <p v-else-if="!items.length" class="hint">
-        Nothing from this device yet.
-        <template v-if="!auth.user.value">Sign in and your reports follow the account.</template>
+        这台设备还没有提交过反馈。
+        <template v-if="!auth.user.value">登录后，反馈会跟着账号走。</template>
       </p>
       <ul v-else class="mine">
         <li v-for="it in items" :key="it.id" class="mine-row">
@@ -83,7 +81,7 @@
         </li>
       </ul>
       <button class="btn" :disabled="loadingMine" @click="loadMine">
-        {{ loadingMine ? 'Loading…' : 'Refresh' }}
+        {{ loadingMine ? '加载中…' : '刷新' }}
       </button>
     </section>
   </div>
@@ -186,7 +184,7 @@ async function loadMine() {
   // 401 ＝ 未登录又没带键：不是错误，只是「这台上还没提过」
   if (r.status === 401) { items.value = []; return }
   items.value = []
-  mineError.value = 'Could not load your reports just now — try Refresh.'
+  mineError.value = '暂时无法加载你的反馈 —— 请点「刷新」重试。'
 }
 
 function when(iso) {

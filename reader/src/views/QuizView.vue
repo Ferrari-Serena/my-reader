@@ -2,10 +2,10 @@
   <div class="quiz-view">
     <!-- ═══ SETUP ═══ -->
     <div v-if="phase === 'setup'" class="quiz-setup">
-      <h2 class="setup-title">Quiz Setup</h2>
+      <h2 class="setup-title">测验设置</h2>
 
       <div class="setup-group">
-        <label class="setup-label">Source</label>
+        <label class="setup-label">来源</label>
         <div class="source-options">
           <button
             v-for="s in sourceOptions" :key="s.value"
@@ -20,46 +20,46 @@
       </div>
 
       <div class="setup-group">
-        <label class="setup-label">Questions</label>
+        <label class="setup-label">题目数量</label>
         <div class="count-options">
           <button
             v-for="c in [10, 20, 30, 'All']" :key="c"
             :class="['count-btn', { active: count === c }]"
             @click="count = c"
-          >{{ c }}</button>
+          >{{ c === 'All' ? '全部' : c }}</button>
         </div>
       </div>
 
       <div class="setup-stats" v-if="totalAttempts > 0">
-        📊 Answered {{ totalAttempts }} · Accuracy {{ accuracy }}%
-        <span v-if="vocab.errorPool.value.length"> · Error pool: {{ vocab.errorPool.value.length }}</span>
+        📊 已答 {{ totalAttempts }} 题 · 正确率 {{ accuracy }}%
+        <span v-if="vocab.errorPool.value.length"> · 错题池：{{ vocab.errorPool.value.length }}</span>
       </div>
 
       <button class="start-btn" :disabled="!canStart" @click="startQuiz">
-        Start Quiz
+        开始测验
       </button>
       <p v-if="!canStart" class="start-hint">
-        {{ vocab.count.value === 0 ? 'Save words while reading first.' : 'Selected source has no words.' }}
+        {{ vocab.count.value === 0 ? '请先在阅读时收藏生词。' : '所选来源没有可用的生词。' }}
       </p>
     </div>
 
     <!-- ═══ LOADING ═══ -->
     <div v-else-if="phase === 'loading'" class="placeholder-view">
       <div class="spinner"></div>
-      <p>Preparing questions...</p>
+      <p>正在生成题目…</p>
     </div>
 
     <!-- ═══ ERROR ═══ -->
     <div v-else-if="phase === 'error'" class="placeholder-view">
       <p>{{ errorMsg }}</p>
-      <button class="action-btn" @click="phase = 'setup'">Back</button>
+      <button class="action-btn" @click="phase = 'setup'">返回</button>
     </div>
 
     <!-- ═══ ACTIVE ═══ -->
     <div v-else-if="phase === 'active'" class="quiz-active">
       <!-- progress -->
       <div class="quiz-progress">
-        <span class="progress-text">Q{{ currentIdx + 1 }}/{{ questions.length }}</span>
+        <span class="progress-text">第 {{ currentIdx + 1 }}/{{ questions.length }} 题</span>
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: ((currentIdx + 1) / questions.length * 100) + '%' }"></div>
         </div>
@@ -92,24 +92,24 @@
             :class="['answer-input', answered && (lastCorrect ? 'correct' : 'wrong')]"
             :disabled="answered"
             autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false"
-            placeholder="Type your answer..."
+            placeholder="输入答案…"
             @keyup.enter="answerTyped"
           />
-          <button v-if="!answered" class="submit-btn" @click="answerTyped">Submit</button>
+          <button v-if="!answered" class="submit-btn" @click="answerTyped">提交</button>
         </div>
 
         <!-- feedback -->
         <div v-if="answered" :class="['feedback', lastCorrect ? 'fb-correct' : 'fb-wrong']" aria-live="polite">
-          <template v-if="lastCorrect">✅ Correct!</template>
+          <template v-if="lastCorrect">✅ 回答正确</template>
           <template v-else>
-            ❌ Incorrect. Answer:
+            ❌ 回答错误。答案：
             <strong>{{ current.options ? current.options[current.answerIndex] : current.answer }}</strong>
           </template>
           <p v-if="current.explanation" class="fb-explanation">{{ current.explanation }}</p>
         </div>
 
         <button v-if="answered" class="next-btn" @click="nextQuestion">
-          {{ currentIdx + 1 >= questions.length ? 'See Results' : 'Next →' }}
+          {{ currentIdx + 1 >= questions.length ? '查看结果' : '下一题 →' }}
         </button>
       </div>
     </div>
@@ -125,7 +125,7 @@
       </div>
 
       <div v-if="wrongList.length" class="wrong-section">
-        <h3 class="wrong-title">Review these words</h3>
+        <h3 class="wrong-title">复习这些生词</h3>
         <div
           v-for="w in wrongList" :key="w.word"
           :class="['wrong-card', { expanded: expandedWrong === w.word }]"
@@ -141,9 +141,9 @@
 
       <div class="result-actions">
         <button v-if="wrongList.length" class="action-btn primary" @click="retryWrong">
-          Retry Wrong ({{ wrongList.length }})
+          重做错题（{{ wrongList.length }}）
         </button>
-        <button class="action-btn" @click="phase = 'setup'">New Quiz</button>
+        <button class="action-btn" @click="phase = 'setup'">新测验</button>
       </div>
     </div>
   </div>
@@ -176,9 +176,9 @@ const errorMsg = ref('')
 
 const sourceOptions = computed(() => {
   const opts = [
-    { value: 'all', label: 'All Words', count: vocab.count.value, disabled: vocab.count.value === 0 },
-    { value: 'error-pool', label: 'Error Pool', count: vocab.errorPool.value.length, disabled: vocab.errorPool.value.length === 0 },
-    { value: 'phrases', label: 'Phrases', count: phrases.count.value || '—', disabled: !phrases.loaded.value || phrases.count.value === 0 },
+    { value: 'all', label: '全部生词', count: vocab.count.value, disabled: vocab.count.value === 0 },
+    { value: 'error-pool', label: '错题池', count: vocab.errorPool.value.length, disabled: vocab.errorPool.value.length === 0 },
+    { value: 'phrases', label: '词组', count: phrases.count.value || '—', disabled: !phrases.loaded.value || phrases.count.value === 0 },
   ]
   return opts
 })
@@ -253,7 +253,7 @@ async function startQuiz() {
       const candidates = source.value === 'error-pool'
         ? vocab.errorPool.value.filter(e => e.snapshot?.definitions?.length)
         : Object.values(vocab.words.value).filter(e => e.snapshot?.definitions?.length)
-      if (!candidates.length) throw new Error('No words with definitions available. Tap words online while reading to fill definitions.')
+      if (!candidates.length) throw new Error('没有带释义的生词。联网时在阅读页点一下单词即可补全释义。')
 
       // 错题池词优先排在前（generateQuestions 内部会 shuffle 类型分配，此处将错题词放进候选前列）
       const errorSet = new Set(vocab.errorPool.value.map(e => e.word))
@@ -265,7 +265,7 @@ async function startQuiz() {
       qs = generateQuestions(sorted, distractorPool, chapters, maxCount === Infinity ? candidates.length : maxCount)
     }
 
-    if (!qs.length) throw new Error('Could not generate questions from this source.')
+    if (!qs.length) throw new Error('无法从所选来源生成题目。')
 
     questions.value = qs
     currentIdx.value = 0
@@ -300,7 +300,7 @@ async function recordAnswer(correct) {
     wrongList.value.push({
       word: current.value.word,
       type: current.value.type,
-      explanation: current.value.explanation || (current.value.answer ? `Answer: ${current.value.answer}` : '')
+      explanation: current.value.explanation || (current.value.answer ? `答案：${current.value.answer}` : '')
     })
   }
 

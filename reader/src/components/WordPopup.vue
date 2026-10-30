@@ -54,7 +54,7 @@
 
             <div v-if="loadingDict" class="popup-loading">
               <div class="spinner-sm"></div>
-              <span>Looking up...</span>
+              <span>查词中…</span>
             </div>
 
             <template v-else-if="dictEntry">
@@ -72,41 +72,41 @@
                 </li>
               </ol>
               <p v-else-if="dictEntry.notFound" class="notfound-hint">
-                Not found in Merriam-Webster.
+                韦氏词典未收录。
                 <template v-if="dictEntry.suggestions?.length">
-                  Did you mean: {{ dictEntry.suggestions.slice(0, 3).join(', ') }}?
+                  你是不是想查：{{ dictEntry.suggestions.slice(0, 3).join('、') }}？
                 </template>
               </p>
 
               <div class="popup-chapters" v-if="dictEntry.chapters?.length">
-                <span class="chapters-label">Appears in:</span>
+                <span class="chapters-label">出现章节：</span>
                 <span v-for="ch in dictEntry.chapters" :key="ch" class="chapter-badge">{{ ch }}</span>
               </div>
 
               <div class="popup-actions">
                 <button class="action-btn" @click="speakWord">
-                  🔊 Listen
+                  🔊 朗读
                 </button>
                 <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
-                  ✓ In Words
+                  ✓ 已在生词本
                 </button>
                 <button v-else class="action-btn primary" @click="addToVocab">
-                  + Add to Words
+                  + 加入生词本
                 </button>
               </div>
             </template>
 
             <div v-else class="popup-notfound">
-              <p>Definition not available offline.</p>
+              <p>离线暂无法显示释义。</p>
               <div class="popup-actions">
                 <button class="action-btn" @click="lookupOnline">
-                  🌐 Look up online
+                  🌐 在线查词
                 </button>
                 <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
-                  ✓ In Words
+                  ✓ 已在生词本
                 </button>
                 <button v-else class="action-btn primary" @click="addToVocab">
-                  + Add to Words
+                  + 加入生词本
                 </button>
               </div>
             </div>

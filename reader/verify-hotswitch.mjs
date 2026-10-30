@@ -93,9 +93,9 @@ t('缺 id 的项算空串（＝无段落身份）', paragraphIdAt([{ start: 0 }]
 console.log('\n[AudioPlayer — 三态源名 ＋ 热切的顺序形状]')
 const player = read('src/components/AudioPlayer.vue')
 t('引了位置换算纯函数（不自己写一套）', player.includes("from '../utils/ttsChunks.js'"))
-t('三态源名齐：Cloud voice ／ Browser TTS ／ Generating…',
+t('三态源名齐：云端音色 ／ 浏览器朗读 ／ 生成中…（内部状态值仍为 Cloud voice / Browser TTS）',
   player.includes("ref('Cloud voice')") && player.includes("source.value = 'Browser TTS'") &&
-  player.includes("'Browser TTS · Generating…'"))
+  player.includes("'浏览器朗读 · 生成中…'"))
 t('旧源名 Chapter audio 不再当「源」用',
   !/source(\.value)?\s*=\s*'Chapter audio'/.test(player))
 t('pending 分支只在「正在朗读」时出现',

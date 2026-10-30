@@ -6,7 +6,7 @@
         :disabled="currentIndex <= 0"
         @click="$emit('prev')"
       >
-        ← Previous
+        ← 上一章
       </button>
 
       <button
@@ -21,7 +21,7 @@
         :disabled="currentIndex >= total - 1"
         @click="$emit('next')"
       >
-        Next →
+        下一章 →
       </button>
     </div>
 
@@ -36,7 +36,7 @@
         title="划线笔记"
         aria-haspopup="dialog"
         @click="$emit('notes')"
-      >Notes <span class="notes-count">{{ notesCount }}</span></button>
+      >笔记 <span class="notes-count">{{ notesCount }}</span></button>
       <button
         v-if="showSettings"
         class="nav-btn aa-btn"

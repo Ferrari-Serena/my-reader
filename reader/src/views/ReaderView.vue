@@ -3,7 +3,7 @@
     <!-- Loading -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
-      <p>Loading book...</p>
+      <p>正在加载书籍…</p>
     </div>
 
     <!-- 缺书（第 9 步 9.4）：正文不在本机 / 取不到，但笔记在 —— 排在 error 前，先认这一支 -->
@@ -14,7 +14,7 @@
         导入同一本书（同一份文件）后，划线会自动接上，不用重新划。
       </p>
       <div class="missing-actions">
-        <button class="missing-btn" @click="openNotesPanel">Notes {{ bookNotes.length }}</button>
+        <button class="missing-btn" @click="openNotesPanel">笔记 {{ bookNotes.length }}</button>
         <router-link class="missing-btn" to="/import" title="导入同一份文件才能接上（靠内容指纹对齐）">去导入</router-link>
       </div>
       <p class="missing-why">{{ error }}</p>
@@ -23,7 +23,7 @@
     <!-- Error -->
     <div v-else-if="error" class="error-state">
       <p>{{ error }}</p>
-      <button @click="loadBook">Retry</button>
+      <button @click="loadBook">重试</button>
     </div>
 
     <!-- Reader -->
@@ -61,7 +61,7 @@
               :height="imageHeight"
               class="page-image"
               @load="onImageLoad"
-              alt="Page image"
+              alt="页面图片"
             />
             <!-- Image word tooltip -->
             <div
@@ -77,7 +77,7 @@
           <!-- Page jumper -->
           <div class="page-jumper">
             <button @click="prevChapter" :disabled="currentChapterIndex <= 0" class="jumper-btn">&larr;</button>
-            <span class="jumper-label">Page</span>
+            <span class="jumper-label">页</span>
             <input
               type="number"
               :value="currentPageNumber"
@@ -104,7 +104,7 @@
             <button
               v-if="paraStart(para.id) !== null"
               class="para-play"
-              title="Play from here"
+              title="从这里播放"
               @click.stop="playFromPara(para.id)"
             >&#x25b6;</button>
             <span
@@ -322,7 +322,7 @@ function paraLostNotes(paraId) {
 }
 function paraLostTitle(paraId) {
   const arr = paraLostNotes(paraId)
-  return arr ? arr.length + ' 条划线笔记锚点失效（已降级为段落级）—— 打开 Notes 查看' : null
+  return arr ? arr.length + ' 条划线笔记锚点失效（已降级为段落级）—— 打开笔记查看' : null
 }
 
 /** 选区一端在段内的字符偏移；段落开头的 ▶ 按钮属于 DOM 但不属于 para.text，要减掉 */
@@ -1150,7 +1150,7 @@ async function loadBuiltinBook() {
     fetch(`${baseUrl}/audio-index.json`).catch(() => null)
   ])
 
-  if (!chaptersRes.ok) throw new Error(`Failed to load book: ${chaptersRes.status}`)
+  if (!chaptersRes.ok) throw new Error(`加载书籍失败：${chaptersRes.status}`)
 
   const chaptersData = await chaptersRes.json()
   bookTitle.value = chaptersData.title
@@ -1176,18 +1176,18 @@ async function loadBuiltinBook() {
  * 这种情形要给可读的原因（而不是白屏 / 报 404）。
  */
 async function loadByoBook() {
-  const notHere = 'This imported book is not on this device \u2014 imported books stay on the device you added them from.'
+  const notHere = '\u8fd9\u672c\u5bfc\u5165\u7684\u4e66\u4e0d\u5728\u672c\u673a \u2014 \u5bfc\u5165\u7684\u4e66\u53ea\u7559\u5728\u6dfb\u52a0\u5b83\u7684\u90a3\u53f0\u8bbe\u5907\u4e0a\u3002'
   let record = null
   try {
     record = await loadByoRecord(bookId.value)
   } catch (e) {
     if (e instanceof BookStoreError && e.code === 'UNAVAILABLE') {
-      throw new Error('This browser is blocking local storage, so imported books cannot be opened.')
+      throw new Error('浏览器阻止了本地存储，导入的书无法打开。')
     }
     throw new Error(notHere)
   }
   if (!record) throw new Error(notHere)
-  bookTitle.value = record.title || 'Untitled'
+  bookTitle.value = record.title || '未命名'
   chapters.value = record.chapters
   // 云端就绪清单（第 17 步块 D）：未登录 401／还没生成过 404 一律当「没有清单」→ 播放器
   // 退回「点开试、404 再降级浏览器朗读」的旧行为（不报错、不空转、也不冒充有音频）。

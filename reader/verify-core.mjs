@@ -185,7 +185,7 @@ t('一次测验里两种题型各半（语境 5 ＋ 释义 5）',
     defs.every(q => q.options.every(o => o === q.word || !clash(o, q.word))),
     defs.filter(q => q.options.some(o => o !== q.word && clash(o, q.word))).slice(0, 3).map(q => q.word).join(', '))
   t('释义档题干是释义、且不含答案词组本身',
-    defs.every(q => /^Which phrase means/.test(q.stem) && !q.stem.toLowerCase().includes(q.word.toLowerCase())))
+    defs.every(q => /^哪个词组的意思是/.test(q.stem) && !q.stem.toLowerCase().includes(q.word.toLowerCase())))
   t('一次测验里一条词组只出一题（不重复考）', new Set(all.map(q => q.word)).size === all.length)
 }
 

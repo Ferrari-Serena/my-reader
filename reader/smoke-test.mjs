@@ -74,7 +74,7 @@ t('无章节 id → 有音频', chapterHasAudio(mixed, ''))
 t('章表：混合书标缺章', Object.keys(tocMissingAudio(mixed)).length === 2)
 t('章表：纯文本书不逐行标', Object.keys(tocMissingAudio({ withAudio: [], missing: { 'ch-01': 'unrecorded' } })).length === 0)
 t('章表：无清单不标', Object.keys(tocMissingAudio(null)).length === 0)
-t('标签与提示语有兜底', noAudioLabel('front_matter') === 'Front matter' && noAudioTooltip('unknown').length > 0)
+t('标签与提示语有兜底', noAudioLabel('front_matter') === '前置内容' && noAudioTooltip('unknown').length > 0)
 
 // 8b. 断章续播：一章放完该不该自动接下一章（纯判据，不碰 vue / audio）
 const chs = [{ id: 'ch-01' }, { id: 'ch-02' }, { id: 'ch-03' }, { id: 'ch-04' }]

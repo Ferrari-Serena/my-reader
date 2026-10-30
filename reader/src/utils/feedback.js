@@ -51,13 +51,13 @@ export const CONTEXT_LIMITS = {
 export const ANON_KEY_STORAGE = 'mr-feedback-key'
 
 export const CATEGORY_LABELS = {
-  bug: 'Something is broken',
-  idea: 'An idea',
-  other: 'Something else',
+  bug: '有问题／打不开',
+  idea: '一个想法',
+  other: '其他',
 }
 export function categoryLabel(key) { return CATEGORY_LABELS[key] || CATEGORY_LABELS.other }
 
-export const STATUS_LABELS = { new: 'Sent', read: 'Read', closed: 'Closed' }
+export const STATUS_LABELS = { new: '已提交', read: '已查看', closed: '已处理' }
 export function statusLabel(s) { return STATUS_LABELS[s] || String(s || '') }
 
 const HEX = '0123456789abcdef'
@@ -442,28 +442,28 @@ export function feedbackErrorText(status, body = {}) {
   if (code === 'too-many-feedback') {
     const m = retryMinutes(b.retryAfter)
     return m > 0
-      ? `Too many reports from this device — please wait about ${m} minute${m === 1 ? '' : 's'} and try again.`
-      : 'Too many reports from this device — please wait a little and try again.'
+      ? `这台设备提交得太频了，大约 ${m} 分钟后再试。`
+      : '这台设备提交得太频了，稍等一会儿再试。'
   }
-  if (code === 'message-too-long') return `That is too long — please keep it under ${MAX_MESSAGE} characters.`
-  if (code === 'message-too-short') return `Please write at least ${MIN_MESSAGE} characters.`
-  if (status === 400) return 'That did not go through — please check what you wrote and try again.'
-  if (status === 403) return 'That did not go through (this page looks like an outside site). Try reloading, then send again.'
-  if (!status) return 'Could not reach the server — check your connection and try again.'
-  if (status >= 500) return 'Something went wrong on our side — please try again later.'
-  return `That did not go through (HTTP ${status}) — please try again.`
+  if (code === 'message-too-long') return `太长了，请控制在 ${MAX_MESSAGE} 字以内。`
+  if (code === 'message-too-short') return `请至少写 ${MIN_MESSAGE} 个字。`
+  if (status === 400) return '没提交成功，检查一下写的内容再试。'
+  if (status === 403) return '没提交成功（这个页面看起来像外部站点），刷新后再发一次。'
+  if (!status) return '连不上服务器，检查网络后再试。'
+  if (status >= 500) return '我们这边出了点问题，稍后再试。'
+  return `没提交成功（HTTP ${status}），再试一次。`
 }
 
 /** 提交结果 → `{ ok, text }`（成/败两种口吻；本地不合格走 bad-draft 那一档） */
 export function submitResultLine(result) {
   const r = result && typeof result === 'object' ? result : {}
-  if (r.ok) return { ok: true, text: 'Thanks — we got it. You can send another from this page any time.' }
+  if (r.ok) return { ok: true, text: '收到了，谢谢你。这个页面随时可以再发一条。' }
   if (r.reason === 'bad-draft') {
     return {
       ok: false,
       text: r.error === 'message-too-long'
-        ? `That is too long — please keep it under ${MAX_MESSAGE} characters.`
-        : `Please write at least ${MIN_MESSAGE} characters.`,
+        ? `太长了，请控制在 ${MAX_MESSAGE} 字以内。`
+        : `请至少写 ${MIN_MESSAGE} 个字。`,
     }
   }
   return { ok: false, text: feedbackErrorText(r.status, { error: r.error, retryAfter: r.retryAfter }) }

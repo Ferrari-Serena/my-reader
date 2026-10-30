@@ -62,10 +62,10 @@ t('诊断白名单六格（version/viewport/lang/route/bookId/chapterId）',
     ['bookId', 'chapterId', 'lang', 'route', 'version', 'viewport']))
 t('错误条数与单条长度上限 = 5 / 200', F.MAX_ERROR_LINES === 5 && F.MAX_ERROR_LEN === 200)
 t('分类文案：认不出的分类回「Something else」，不抛',
-  F.categoryLabel('bug').includes('broken') && F.categoryLabel('nope') === F.categoryLabel('other')
+  F.categoryLabel('bug').includes('有问题') && F.categoryLabel('nope') === F.categoryLabel('other')
   && F.categoryLabel(undefined).length > 0)
 t('状态文案：new → Sent（不是原样回 new）',
-  F.statusLabel('new') === 'Sent' && F.statusLabel('read') === 'Read' && F.statusLabel('closed') === 'Closed')
+  F.statusLabel('new') === '已提交' && F.statusLabel('read') === '已查看' && F.statusLabel('closed') === '已处理')
 
 // ═══ ② 跨文件漂移闸（现读 worker 源码比对）═══
 console.log('\n[feedback — 跨文件漂移闸（与 worker/src/feedback.js 现读比对）]')
@@ -389,34 +389,34 @@ t('retryMinutes：0/负/非数字 → 0（不编分钟数）',
 t('retryMinutes：30 秒 → 1、60 → 1、61 → 2、600 → 10',
   F.retryMinutes(30) === 1 && F.retryMinutes(60) === 1 && F.retryMinutes(61) === 2 && F.retryMinutes(600) === 10)
 t('429 + retryAfter=600 → 报「约 10 分钟」（不吞掉具体值）',
-  F.feedbackErrorText(429, { error: 'too-many-feedback', retryAfter: 600 }).includes('10 minutes'))
+  F.feedbackErrorText(429, { error: 'too-many-feedback', retryAfter: 600 }).includes('10 分钟'))
 t('429 但没带 retryAfter → 照样说「太频繁」，且不乱编数字', (() => {
   const m = F.feedbackErrorText(429, { error: 'too-many-feedback' })
-  return m.includes('Too many') && !/[0-9]/.test(m)
+  return m.includes('太频') && !/[0-9]/.test(m)
 })())
 t('429 带 retryAfter=60 → 「1 minute」（单数，不写 1 minutes）',
-  F.feedbackErrorText(429, { error: 'too-many-feedback', retryAfter: 60 }).includes('1 minute '))
+  F.feedbackErrorText(429, { error: 'too-many-feedback', retryAfter: 60 }).includes('1 分钟'))
 t('code 优先于 status：message-too-long + 400 说长度，不说「检查一下」',
   F.feedbackErrorText(400, { error: 'message-too-long' }).includes(String(F.MAX_MESSAGE)))
 t('403（外站 Origin）→ 提示刷新重试，不是「未知错误」',
-  F.feedbackErrorText(403, { error: 'bad-origin' }).toLowerCase().includes('reload'))
-t('status 0 → 提示查网络', F.feedbackErrorText(0, {}).toLowerCase().includes('connection'))
-t('5xx → 说「我们这边出问题」', F.feedbackErrorText(503, {}).includes('our side'))
+  F.feedbackErrorText(403, { error: 'bad-origin' }).includes('刷新'))
+t('status 0 → 提示查网络', F.feedbackErrorText(0, {}).includes('网络'))
+t('5xx → 说「我们这边出问题」', F.feedbackErrorText(503, {}).includes('我们这边'))
 t('认不出来的码 → 兜底一句且不抛（含 HTTP 码）',
   F.feedbackErrorText(418, {}).includes('418') && F.feedbackErrorText(undefined, undefined).length > 0)
 t('submitResultLine：成功 → ok:true 且是道谢口吻', (() => {
   const r = F.submitResultLine({ ok: true, status: 201 })
-  return r.ok && r.text.includes('Thanks')
+  return r.ok && r.text.includes('收到了')
 })())
 t('submitResultLine：bad-draft 两档分别说短/说长，且都不提网络',
   (() => {
     const s = F.submitResultLine({ ok: false, reason: 'bad-draft', error: 'message-too-short' })
     const l = F.submitResultLine({ ok: false, reason: 'bad-draft', error: 'message-too-long' })
-    return !s.ok && s.text.includes('at least') && !l.ok && l.text.includes(String(F.MAX_MESSAGE))
+    return !s.ok && s.text.includes('至少') && !l.ok && l.text.includes(String(F.MAX_MESSAGE))
   })())
 t('submitResultLine：429 走限流那句', (() => {
   const r = F.submitResultLine({ ok: false, status: 429, error: 'too-many-feedback', retryAfter: 600 })
-  return !r.ok && r.text.includes('10 minutes')
+  return !r.ok && r.text.includes('10 分钟')
 })())
 t('submitResultLine：认不出的入参也不抛', typeof F.submitResultLine(undefined).text === 'string')
 

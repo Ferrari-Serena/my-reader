@@ -14,23 +14,23 @@ export const PASSWORD_MAX = 200
 /** 邮箱弱校验（前端只挡明显的错，真伪靠验证信）；过 -> null，否则回一句给用户看的话 */
 export function emailProblem(raw) {
   const s = typeof raw === 'string' ? raw.trim() : ''
-  if (!s) return 'Enter your email address.'
-  if (s.length > 254) return 'That email address is too long.'
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return 'That does not look like an email address.'
+  if (!s) return '请输入邮箱。'
+  if (s.length > 254) return '邮箱地址太长了。'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return '这不像一个邮箱地址。'
   return null
 }
 
 /** 密码长度；过 -> null */
 export function passwordProblem(raw) {
   const s = typeof raw === 'string' ? raw : ''
-  if (s.length < PASSWORD_MIN) return 'Password needs at least ' + PASSWORD_MIN + ' characters.'
-  if (s.length > PASSWORD_MAX) return 'Password must be at most ' + PASSWORD_MAX + ' characters.'
+  if (s.length < PASSWORD_MIN) return '密码至少 ' + PASSWORD_MIN + ' 位。'
+  if (s.length > PASSWORD_MAX) return '密码最多 ' + PASSWORD_MAX + ' 位。'
   return null
 }
 
 /** 两次输入是否一致；过 -> null */
 export function confirmProblem(password, confirm) {
-  return password === confirm ? null : 'The two passwords do not match.'
+  return password === confirm ? null : '两次输入的密码不一致。'
 }
 
 /** 多少秒换算成「大约几分钟」；不足一分钟按 1 分钟说 */
@@ -48,25 +48,25 @@ export function retryMinutes(seconds) {
 export function authErrorMessage(status, payload) {
   const data = payload || {}
   const code = data.error || ''
-  if (code === 'invalid-email') return 'Enter a valid email address.'
+  if (code === 'invalid-email') return '请输入有效的邮箱地址。'
   if (code === 'weak-password') {
     return data.reason === 'too-long'
-      ? 'Password must be at most ' + PASSWORD_MAX + ' characters.'
-      : 'Password needs at least ' + PASSWORD_MIN + ' characters.'
+      ? '密码最多 ' + PASSWORD_MAX + ' 位。'
+      : '密码至少 ' + PASSWORD_MIN + ' 位。'
   }
-  if (code === 'email-taken') return 'That email is already registered — try signing in instead.'
-  if (code === 'invalid-credentials') return 'Email or password is incorrect.'
+  if (code === 'email-taken') return '这个邮箱已经注册过了，直接登录就行。'
+  if (code === 'invalid-credentials') return '邮箱或密码不对。'
   if (code === 'too-many-attempts' || status === 429) {
     const mins = retryMinutes(data.retryAfter)
     return mins
-      ? 'Too many attempts. Try again in about ' + mins + ' minute' + (mins === 1 ? '' : 's') + '.'
-      : 'Too many attempts. Try again a bit later.'
+      ? '尝试次数太多了，大约 ' + mins + ' 分钟后再试。'
+      : '尝试次数太多了，稍后再试。'
   }
-  if (code === 'bad-origin' || code === 'bad-csrf') return 'That request was blocked for safety — reload the page and try again.'
-  if (code === 'password-required') return 'Enter your password to confirm.'
-  if (code === 'gone') return 'That account can no longer be restored — its 30-day window has passed.'
-  if (code === 'not-pending') return 'This account is not scheduled for deletion.'
-  if (code === 'network' || status === 0) return 'Cannot reach the server. Check your connection and try again.'
-  if (code === 'internal' || status >= 500) return 'Something went wrong on our side. Try again in a moment.'
-  return 'Something went wrong. Try again.'
+  if (code === 'bad-origin' || code === 'bad-csrf') return '这次请求被安全拦截了，刷新页面再试一次。'
+  if (code === 'password-required') return '请输入密码确认。'
+  if (code === 'gone') return '这个账号已经过了 30 天撤销期，无法恢复。'
+  if (code === 'not-pending') return '这个账号不在注销状态。'
+  if (code === 'network' || status === 0) return '连不上服务器，检查网络后再试。'
+  if (code === 'internal' || status >= 500) return '我们这边出了点问题，稍后再试。'
+  return '出了点问题，再试一次。'
 }

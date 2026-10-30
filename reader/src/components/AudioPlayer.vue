@@ -16,7 +16,7 @@
         class="fallback-btn"
         @click="useBrowserTTS"
       >
-        Use Browser TTS
+        用浏览器朗读
       </button>
     </div>
 
@@ -29,7 +29,7 @@
         :max="duration"
         step="0.1"
         :value="seekDisplay"
-        aria-label="Seek"
+        aria-label="拖动进度"
         @input="onSeekInput"
         @change="onSeekCommit"
       />
@@ -86,13 +86,13 @@ let chunkStarts = [] // 本轮切句各自在章文本里的起点（与 chunks 
 const statusLabel = computed(() => {
   // 无音频章：静态 MP3 压根不存在，直接亮「No chapter audio」+ 兜底按钮
   if (!props.hasAudio && state.value !== 'playing' && state.value !== 'loading') {
-    return 'No chapter audio'
+    return '本章无音频'
   }
   switch (state.value) {
-    case 'loading': return 'Loading...'
-    case 'playing': return 'Playing...'
-    case 'error': return 'Cloud voice unavailable'
-    default: return 'Read aloud'
+    case 'loading': return '加载中…'
+    case 'playing': return '播放中…'
+    case 'error': return '云端音色不可用'
+    default: return '朗读'
   }
 })
 
@@ -102,8 +102,10 @@ const sourceLabel = computed(() => {
   // pending 态（第 17 步块 D-3）：正在用浏览器朗读，而这一章的云端音色还在本机生成 ——
   // 就绪后会自动热切，这一行要如实告诉用户「现在听的是谁、后台在干什么」。
   if (source.value === 'Browser TTS' && state.value === 'playing' && props.cloudPending) {
-    return 'Browser TTS · Generating…'
+    return '浏览器朗读 · 生成中…'
   }
+  if (source.value === 'Browser TTS') return '浏览器朗读'
+  if (source.value === 'Cloud voice') return '云端音色'
   return source.value
 })
 
@@ -220,8 +222,8 @@ function startStaticAudio(seekTo = null) {
     console.error('Cloud voice failed:', err.name, err.message)
     state.value = 'error'
     source.value = err.name === 'NotAllowedError'
-      ? 'Playback blocked — tap Browser TTS'
-      : 'Audio not found — use Browser TTS'
+      ? '播放被拦截，请点「用浏览器朗读」'
+      : '找不到音频，请改用浏览器朗读'
   })
 
   // 慢速网络守卫：超时仍在 loading 就放弃，亮出兜底按钮
@@ -229,7 +231,7 @@ function startStaticAudio(seekTo = null) {
     if (mySid !== sessionId || state.value !== 'loading') return
     if (audioEl.value) { audioEl.value.pause(); audioEl.value.removeAttribute('src') }
     state.value = 'error'
-    source.value = 'Loading timed out — use Browser TTS'
+    source.value = '加载超时，请改用浏览器朗读'
   }, LOAD_TIMEOUT)
 }
 
@@ -305,7 +307,7 @@ function mediaMeta() {
   // 回退 title：取 chapterText 第一句话，避免长篇文字截断成乱码（Q15 fix）
   const firstSentence = props.chapterText?.match(/^[^.!\n]+[.!\n]?/)?.[0]?.trim()
   const meta = {
-    title: props.chapterTitle || firstSentence || 'Chapter',
+    title: props.chapterTitle || firstSentence || '章节',
     artist: props.bookTitle || 'my-reader',
     album: props.bookTitle || '',
     artwork: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }]
@@ -497,7 +499,7 @@ function onAudioEnded() {
 function onAudioError() {
   if (state.value === 'loading') {
     state.value = 'error'
-    source.value = 'Audio not found — use Browser TTS'
+    source.value = '找不到音频，请改用浏览器朗读'
   } else if (state.value === 'playing') {
     if (hasMediaSession) navigator.mediaSession.playbackState = 'paused' // Issue D fix
     stopAll()
@@ -515,7 +517,7 @@ function startBrowserTTS() {
   teardownMediaSession() // Browser TTS 锁屏不可靠，清除旧的 MP3 锁屏信息
   if (!('speechSynthesis' in window)) {
     state.value = 'error'
-    source.value = 'Browser TTS not supported'
+    source.value = '浏览器不支持朗读'
     return
   }
 

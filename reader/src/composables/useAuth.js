@@ -117,7 +117,7 @@ export async function signUp(email, password) {
 export async function sendReset(email) {
   const r = await post('/reset-request', { email })
   // 一律 200 且不区分「这个邮箱有没有账号」（防枚举）—— 所以文案也只能这么写
-  if (r.ok) state.notice = 'If that email has an account, a reset link is on its way. Check your inbox and spam folder.'
+  if (r.ok) state.notice = '如果这个邮箱注册过，重置链接已经发出，请查收收件箱和垃圾邮件。'
   return r
 }
 
