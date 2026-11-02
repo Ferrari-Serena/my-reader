@@ -192,18 +192,36 @@ console.log('\n[monitor.js — 最小监控（第 4 步 4.8）]')
 
   const now = Date.UTC(2026, 9, 5, 15, 30)
   const qs = monMod.metricsQueries(now)
-  t('metricsQueries: 六项计数',
+  t('metricsQueries: 十项计数（六项旧口径＋四类运行计数）',
     JSON.stringify(qs.map(q => q.name)) === JSON.stringify(
-      ['dictLookupsToday', 'dictCached', 'syncCodes', 'syncLiveRows', 'syncTombstones', 'users']))
-  t('metricsQueries: 全是 COUNT（永不 SELECT 业务行）', qs.every(q => /COUNT\(/i.test(q.sql)))
+      ['dictLookupsToday', 'dictCached', 'syncCodes', 'syncLiveRows', 'syncTombstones', 'users',
+        'model_calls', 'rate_429', 'abstain', 'cache_hits']))
+  t('metricsQueries: 业务计数走 COUNT；四计数读预聚合表',
+    qs.filter(q => /COUNT\(/i.test(q.sql)).length === 6
+    && qs.filter(q => monMod.METRIC_COUNTERS.includes(q.name)).every(q => /FROM metric_counters/.test(q.sql)))
   const lookup = qs.find(q => q.name === 'dictLookupsToday')
   t('metricsQueries: 词典调用按 UTC 日切片',
     JSON.stringify(lookup.binds) === JSON.stringify([rlMod.utcDayStart(now)]))
+  const counterRead = qs.find(q => q.name === 'model_calls')
+  t('metricsQueries: 四计数按 UTC 日＋计数名读',
+    JSON.stringify(counterRead.binds) === JSON.stringify([monMod.utcDay(now), 'model_calls']))
 
-  const shaped = monMod.shapeMetrics([{ n: 42 }, { n: 1200 }, { n: 3 }, { n: 500 }, { n: 7 }, { n: 9 }], now)
+  const inc = monMod.counterQuery('cache_hits', now)
+  t('counterQuery: 自增语句带 UTC 日与计数名',
+    JSON.stringify(inc.binds) === JSON.stringify([monMod.utcDay(now), 'cache_hits'])
+    && /ON CONFLICT\(day, name\) DO UPDATE SET n = n \+ 1/.test(inc.sql)
+    && /VALUES \(\?, \?, 1\)/.test(inc.sql))
+  t('counterQuery: 未知计数名直接报错（不写脏行）', (() => {
+    try { monMod.counterQuery('word_text', now); return false } catch { return true }
+  })())
+
+  const shaped = monMod.shapeMetrics(
+    [{ n: 42 }, { n: 1200 }, { n: 3 }, { n: 500 }, { n: 7 }, { n: 9 }, { n: 11 }, { n: 2 }, { n: 5 }, { n: 30 }],
+    now)
   t('shapeMetrics: 逐项落值',
     shaped.dictLookupsToday === 42 && shaped.dictCached === 1200 && shaped.syncCodes === 3
-    && shaped.syncLiveRows === 500 && shaped.syncTombstones === 7 && shaped.users === 9)
+    && shaped.syncLiveRows === 500 && shaped.syncTombstones === 7 && shaped.users === 9
+    && shaped.model_calls === 11 && shaped.rate_429 === 2 && shaped.abstain === 5 && shaped.cache_hits === 30)
   t('shapeMetrics: ok + serverNow + dayStart',
     shaped.ok === true && shaped.serverNow === new Date(now).toISOString() && shaped.dayStart === rlMod.utcDayStart(now))
   const zeros = monMod.shapeMetrics([null, undefined, {}, { n: 'x' }, { n: 0 }, { n: NaN }], now)

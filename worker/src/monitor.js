@@ -62,6 +62,28 @@ export function buildLogLine(rec) {
  * 全部走 COUNT，永远不 SELECT 业务行 —— 监控端点不能变成数据导出。
  * 日切按 UTC（与限流日配额同口径，见 ratelimit.js 的 utcDayStart）。
  */
+export const METRIC_COUNTERS = ['model_calls', 'rate_429', 'abstain', 'cache_hits']
+
+/** UTC 日键（与 utcDayStart 同口径）；接受毫秒时间戳或 Date。 */
+export function utcDay(now) {
+  const d = now instanceof Date ? now : new Date(Number(now) || Date.now())
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * 四类计数的一次自增（纯函数）：返回可直接交给 D1 prepare/bind/run 的语句。
+ * 自增口径：一次模型调用只 +1（调用前记）；缓存命中只 +cache_hits；429 只 +rate_429；
+ * abstain 只 +abstain。写失败由调用方吞掉并记日志——监控不能反过来打断业务。
+ */
+export function counterQuery(name, now) {
+  if (!METRIC_COUNTERS.includes(name)) throw new Error(`unknown metric counter: ${name}`)
+  return {
+    name,
+    sql: 'INSERT INTO metric_counters (day, name, n) VALUES (?, ?, 1) ON CONFLICT(day, name) DO UPDATE SET n = n + 1',
+    binds: [utcDay(now), name],
+  }
+}
+
 export function metricsQueries(now) {
   return [
     // 当日真去调 M-W 的次数（0.0 限流就是按这张表计数的）→ 「用了多少 / 有没有人刷」
@@ -74,6 +96,12 @@ export function metricsQueries(now) {
     { name: 'syncTombstones', sql: 'SELECT COUNT(*) AS n FROM sync_data WHERE deleted_at IS NOT NULL', binds: [] },
     // 有效账号数（注销中的不算）
     { name: 'users', sql: 'SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL', binds: [] },
+    // 四类运行计数（G5）：预聚合表按 UTC 日读，不扫业务行、不带词文本或 IP。
+    ...METRIC_COUNTERS.map((name) => ({
+      name,
+      sql: 'SELECT COALESCE(n, 0) AS n FROM metric_counters WHERE day = ? AND name = ?',
+      binds: [utcDay(now), name],
+    })),
   ]
 }
 

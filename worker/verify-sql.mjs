@@ -462,6 +462,27 @@ console.log('\n[0010 迁移 — 词组限流账本增加 user_id（一次性 ALT
   })())
 }
 
+console.log('\n[0011 迁移 — 四类运行计数账本（幂等）]')
+{
+  const mig = readFileSync(new URL('./migrations/0011_metric_counters.sql', import.meta.url), 'utf8')
+  db.exec(mig)
+  const hasTable = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name=?").get(n).n === 1
+  t('0011 建出 metric_counters 表', hasTable('metric_counters'))
+  t('0011 幂等：重复执行不报错', (() => { try { db.exec(mig); return true } catch { return false } })())
+  const inc = db.prepare(
+    'INSERT INTO metric_counters (day, name, n) VALUES (?, ?, 1) ON CONFLICT(day, name) DO UPDATE SET n = n + 1'
+  )
+  inc.run('2026-11-02', 'model_calls')
+  inc.run('2026-11-02', 'model_calls')
+  t('同一天同一计数连加两次 → n=2（重试由调用方控次）',
+    db.prepare('SELECT n FROM metric_counters WHERE day = ? AND name = ?').get('2026-11-02', 'model_calls').n === 2)
+  inc.run('2026-11-02', 'cache_hits')
+  t('不同计数名互不影响',
+    db.prepare("SELECT n FROM metric_counters WHERE day = ? AND name = 'cache_hits'").get('2026-11-02').n === 1)
+  t('只存 day/name/n 三列（不存词文本/IP）',
+    db.prepare("SELECT name FROM pragma_table_info('metric_counters')").all().map(r => r.name).join(',') === 'day,name,n')
+}
+
 console.log('\n[0010 集成 — per-user 日额：换 IP 也绕不过]')
 {
   const asyncDb = {
@@ -563,8 +584,8 @@ console.log('\n[schema.sql 单独建库（权威源：空库直接建出最终�
   let ok = true
   try { fresh.exec(schemaSql) } catch (e) { ok = false; console.log('   ', e.message) }
   t('schema.sql 能在空库上跑通', ok)
-  t('schema.sql 建出 12 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表 + audio_tasks + feedback + phrase_cloud_cache + phrase_rate_events）',
-    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 12)
+  t('schema.sql 建出 13 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表 + audio_tasks + feedback + phrase_cloud_cache + phrase_rate_events + metric_counters）',
+    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 13)
   t('schema.sql 幂等：重复执行不报错', ok && (() => {
     try { fresh.exec(schemaSql); return true } catch { return false }
   })())

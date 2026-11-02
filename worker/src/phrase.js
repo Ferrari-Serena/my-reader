@@ -32,6 +32,17 @@ import { sessionUserId } from './authapi.js'
 import { isBookId } from './sync.js'
 import { clientIp } from './ratelimit.js'
 import { takePhraseToken } from './phraseRateLimit.js'
+import { counterQuery } from './monitor.js'
+
+/** 四类运行计数自增；写失败只记日志，绝不影响响应（监控不反过来打断业务）。 */
+async function bumpMetric(env, name, now = Date.now()) {
+  try {
+    const q = counterQuery(name, now)
+    await env.DB.prepare(q.sql).bind(...q.binds).run()
+  } catch (e) {
+    console.error('metric bump failed:', name, e && e.message)
+  }
+}
 
 export const ROUTE_PATH = '/api/phrase/resolve'
 export const CONFIG_PATH = '/api/phrase/config'
@@ -405,6 +416,7 @@ export async function handlePhraseResolve(request, env) {
       .bind(cacheKey)
       .first()
     if (row && payload.senses.some(s => s.rank === row.rank)) {
+      await bumpMetric(env, 'cache_hits')
       return json(cors, { status: 'cloud', rank: row.rank, confidence, source: 'cache' })
     }
   } catch (e) {
@@ -418,6 +430,7 @@ export async function handlePhraseResolve(request, env) {
     if (gate.scope === 'storage') {
       return json(cors, { status: 'unavailable', error: 'rate limit unavailable' }, 503)
     }
+    await bumpMetric(env, 'rate_429')
     return json(
       cors,
       { status: 'rate_limited', scope: gate.scope },
@@ -426,7 +439,8 @@ export async function handlePhraseResolve(request, env) {
     )
   }
 
-  // 3. 模型终判。
+  // 3. 模型终判。一次调用只记一次；callPhraseLlm 内部无重试，重试不会双计。
+  await bumpMetric(env, 'model_calls')
   const r = await callPhraseLlm(env, payload)
   if (!r.ok) {
     if (r.status === 503) return json(cors, { status: 'unavailable', error: r.detail }, 503)
@@ -434,6 +448,7 @@ export async function handlePhraseResolve(request, env) {
     return json(cors, { status: 'unavailable', error: 'upstream failed' }, 502)
   }
   if (r.status === 'uncertain') {
+    await bumpMetric(env, 'abstain')
     return json(cors, { status: 'uncertain', rank: null, confidence: r.confidence, source: 'model' })
   }
 

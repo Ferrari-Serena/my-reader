@@ -170,3 +170,12 @@ CREATE TABLE IF NOT EXISTS phrase_cloud_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_phrase_cloud_created ON phrase_cloud_cache (created_at);
+
+-- ── 四类运行计数账本（G5；增量迁移：migrations/0011_metric_counters.sql）──
+-- 一行 = 一个 UTC 日 + 一个计数名；只自增，不存请求内容、IP 或词文本。
+CREATE TABLE IF NOT EXISTS metric_counters (
+  day  TEXT    NOT NULL,
+  name TEXT    NOT NULL,
+  n    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, name)
+);

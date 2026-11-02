@@ -248,30 +248,35 @@ console.log('\n[callPhraseLlm — 用替身 fetch 走 OpenAI-compatible 协议]'
 
 console.log('\n[handlePhraseResolve — 路由闸]')
 {
-  const fakeDb = ({ cacheRow = null, cacheError = false, rateRow = { ip_n: 0, day_n: 0, user_n: 0 }, rateError = false, insertError = false } = {}) => ({
-    prepare(sql) {
-      let args = []
-      const stmt = {
-        bind(...a) { args = a; return stmt },
-        async first() {
-          if (sql.includes('FROM phrase_cloud_cache')) {
-            if (cacheError) throw new Error('cache down')
-            return cacheRow
-          }
-          if (sql.includes('FROM phrase_rate_events')) {
-            if (rateError) throw new Error('rate down')
-            return rateRow
-          }
-          return null
-        },
-        async run() {
-          if (insertError && sql.includes('INSERT INTO phrase_rate_events')) throw new Error('insert down')
-          return { meta: { changes: 1 } }
-        },
-      }
-      return stmt
-    },
-  })
+  const fakeDb = ({ cacheRow = null, cacheError = false, rateRow = { ip_n: 0, day_n: 0, user_n: 0 }, rateError = false, insertError = false } = {}) => {
+    const bumps = []
+    return {
+      bumps,
+      prepare(sql) {
+        let args = []
+        const stmt = {
+          bind(...a) { args = a; return stmt },
+          async first() {
+            if (sql.includes('FROM phrase_cloud_cache')) {
+              if (cacheError) throw new Error('cache down')
+              return cacheRow
+            }
+            if (sql.includes('FROM phrase_rate_events')) {
+              if (rateError) throw new Error('rate down')
+              return rateRow
+            }
+            return null
+          },
+          async run() {
+            if (insertError && sql.includes('INSERT INTO phrase_rate_events')) throw new Error('insert down')
+            if (sql.includes('INSERT INTO metric_counters')) bumps.push(args[1])
+            return { meta: { changes: 1 } }
+          },
+        }
+        return stmt
+      },
+    }
+  }
   const cfg = {
     PHRASE_LLM_BASE_URL: 'https://llm.example/v1/chat/completions',
     PHRASE_LLM_API_KEY: 'k',
@@ -322,14 +327,14 @@ console.log('\n[handlePhraseResolve — 路由闸]')
     const byo = await handlePhraseResolve(req(ROUTE_PATH, 'POST', { ...GOOD_BODY, bookId: 'bk_0123456789abcdef' }), authEnv)
     t('BYO 书未登录 → 401', byo.status === 401 && (await byo.json()).status === 'unauthorized')
 
-    const hit = await handlePhraseResolve(req(ROUTE_PATH), {
-      ...authEnv,
-      DB: fakeDb({ cacheRow: { rank: 2 } }),
-    })
+    const dbHit = fakeDb({ cacheRow: { rank: 2 } })
+    const hit = await handlePhraseResolve(req(ROUTE_PATH), { ...authEnv, DB: dbHit })
     const hitBody = await hit.json()
     t('旧客户端缓存命中 → certain + cache',
       hit.status === 200 && hitBody.rank === 2 && hitBody.confidence === 'certain' && hitBody.source === 'cache')
     t('缓存命中不调模型', modelCalls === 0)
+    t('缓存命中 +cache_hits，且不 +model_calls（负测）',
+      dbHit.bumps.filter(n => n === 'cache_hits').length === 1 && !dbHit.bumps.includes('model_calls'))
 
     const modernHit = await handlePhraseResolve(req(ROUTE_PATH, 'POST', MODERN_BODY), {
       ...authEnv,
@@ -340,11 +345,14 @@ console.log('\n[handlePhraseResolve — 路由闸]')
       modernHit.status === 200 && modernHitBody.rank === 2 &&
       modernHitBody.confidence === 'selected' && modernHitBody.source === 'cache')
 
-    const fresh = await handlePhraseResolve(req(ROUTE_PATH), authEnv)
+    const dbFresh = fakeDb()
+    const fresh = await handlePhraseResolve(req(ROUTE_PATH), { ...authEnv, DB: dbFresh })
     const freshBody = await fresh.json()
     t('旧客户端模型命中 → certain + model',
       fresh.status === 200 && freshBody.rank === 1 && freshBody.confidence === 'certain' && freshBody.source === 'model')
     t('真正调模型一次', modelCalls === 1)
+    t('模型调用 +model_calls 恰好一次（重试不双计）',
+      dbFresh.bumps.filter(n => n === 'model_calls').length === 1 && !dbFresh.bumps.includes('cache_hits'))
 
     const modernFresh = await handlePhraseResolve(req(ROUTE_PATH, 'POST', MODERN_BODY), authEnv)
     const modernFreshBody = await modernFresh.json()
@@ -362,15 +370,18 @@ console.log('\n[handlePhraseResolve — 路由闸]')
     t('缓存命中不消耗限流额度（即使账本已满也放行）',
       hitDespiteLimits.status === 200 && (await hitDespiteLimits.json()).source === 'cache')
 
+    const dbLimited = fakeDb({ rateRow: { ip_n: 1, day_n: 1 } })
     const limited = await handlePhraseResolve(req(ROUTE_PATH), {
       ...authEnv,
       PHRASE_RATE_PER_MIN: '1',
-      DB: fakeDb({ rateRow: { ip_n: 1, day_n: 1 } }),
+      DB: dbLimited,
     })
     const limitedBody = await limited.json()
     t('超过每 IP 窗口 → 429', limited.status === 429 && limitedBody.status === 'rate_limited' && limitedBody.scope === 'ip')
     t('429 带 Retry-After', limited.headers.get('Retry-After') === '60')
     t('429 不调模型', modelCalls === 2)
+    t('429 +rate_429，且不 +model_calls（负测）',
+      dbLimited.bumps.filter(n => n === 'rate_429').length === 1 && !dbLimited.bumps.includes('model_calls'))
 
     const dailyLimited = await handlePhraseResolve(req(ROUTE_PATH), {
       ...authEnv,
@@ -409,6 +420,19 @@ console.log('\n[handlePhraseResolve — 路由闸]')
       modernLegacy.status === 200 && modernLegacyJson.rank === 1 &&
       modernLegacyJson.confidence === 'selected' && modernLegacyJson.source === 'model')
     t('旧/新客户端各调模型一次', modelCalls === 4)
+
+    const dbAbstain = fakeDb()
+    globalThis.fetch = async () => {
+      modelCalls++
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ABSTAIN' } }] }) }
+    }
+    const abstainRes = await handlePhraseResolve(req(ROUTE_PATH, 'POST', MODERN_BODY), { ...authEnv, DB: dbAbstain })
+    const abstainBody = await abstainRes.json()
+    t('模型 ABSTAIN → 200 uncertain', abstainRes.status === 200 && abstainBody.status === 'uncertain' && abstainBody.rank === null)
+    t('abstain +abstain＋一次 model_calls，不 +cache_hits（正测）',
+      dbAbstain.bumps.filter(n => n === 'abstain').length === 1
+      && dbAbstain.bumps.filter(n => n === 'model_calls').length === 1
+      && !dbAbstain.bumps.includes('cache_hits'))
   } finally {
     globalThis.fetch = origFetch
   }
