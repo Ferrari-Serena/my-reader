@@ -104,6 +104,7 @@
             :removable="managing"
             :gen="genOf(book)"
             :audio-count="audioOf(book)"
+            :progress="progressOf(book)"
             :clear="clearOf(book)"
             :clear-note="clearNoteOf(book)"
             @remove="removeBook"
@@ -155,6 +156,7 @@ import {
   fetchGenStatus, genEntryState, genEntryTo, loadShelfNoteOpen, markShelfNoteSeen,
   saveShelfNoteOpen, shelfIndexStale, withAudioCount
 } from '../utils/genApi.js'
+import { loadPosition } from '../composables/useReadingPosition.js'
 
 // 数据源在组合式里：静态 book-index.json（公开书库）＋ IndexedDB 书库（我的书架），
 // 合成与排序口径全在 utils/bookShelf.js，这里只负责画。
@@ -263,6 +265,17 @@ function audioOf(book) {
   const info = genInfo.value[book.id]
   const n = info && typeof info.withAudioCount === 'number' ? info.withAudioCount : cachedCounts.value[book.id]
   return typeof n === 'number' ? n : null
+}
+
+/** 阅读进度（章节粒度）：有 chapterIds 且有位置才算；否则 null（卡片不画进度条） */
+function progressOf(book) {
+  const ids = Array.isArray(book.chapterIds) ? book.chapterIds : []
+  if (!ids.length) return null
+  const pos = loadPosition(book.id)
+  if (!pos) return 0
+  const idx = ids.indexOf(pos.chapterId)
+  if (idx < 0) return null
+  return Math.max(0, Math.min(100, Math.round((idx / ids.length) * 100)))
 }
 
 /** 一本书的入口三态（未登录时 `genEntryState` 直接给 login 那一格，不看去数） */
