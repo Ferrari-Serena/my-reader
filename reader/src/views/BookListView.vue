@@ -1,7 +1,7 @@
 <template>
   <div class="book-list-view">
     <div class="shelf-actions">
-      <router-link to="/import" class="add-book">添加书</router-link>
+      <router-link to="/import" class="add-book">＋ 添加书</router-link>
     </div>
 
     <!-- 两个来源各自降级：一个坏掉，另一个照常显示，但要说清楚缺了什么 -->
@@ -16,8 +16,10 @@
 
     <div v-else-if="isEmpty" class="empty-state">
       <div class="empty-icon">📚</div>
-      <h2>还没有书</h2>
-      <p>Books you import will appear here.</p>
+      <h2>书架还是空的</h2>
+      <p>把老师发的书、自己买的书放进来</p>
+      <router-link to="/import" class="empty-import">＋ 导入第一本书</router-link>
+      <p class="empty-formats">支持 EPUB／PDF（含扫描件 OCR）／TXT；DRM 加密书不支持</p>
     </div>
 
     <!-- 两个**平级**的切换标签（第 7 步 7.2 的两栏 → 2026-10-06 Ferrari 裁 A）：
@@ -624,4 +626,24 @@ onMounted(refresh)
 }
 
 .missing-row-go.as-button:disabled { opacity: 0.6; cursor: default; }
+.empty-import {
+  display: inline-block;
+  margin-top: 16px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: var(--accent-color, #1a73e8);
+  color: #fff;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.empty-import:hover { opacity: 0.9; }
+
+.empty-formats {
+  max-width: 300px;
+  margin: 14px auto 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary, #6e6e73);
+}
 </style>
