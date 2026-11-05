@@ -103,6 +103,7 @@
             :book="book"
             :removable="managing"
             :gen="genOf(book)"
+            :audio-count="audioOf(book)"
             :clear="clearOf(book)"
             :clear-note="clearNoteOf(book)"
             @remove="removeBook"
@@ -255,6 +256,13 @@ function refreshCachedCounts() {
   const m = {}
   for (const b of myBooks.value) m[b.id] = cachedAudioCount(b.id)
   cachedCounts.value = m
+}
+
+/** 已生成音频章数：API 最新值优先，其次本机缓存；都没有 → null（卡片不出这段） */
+function audioOf(book) {
+  const info = genInfo.value[book.id]
+  const n = info && typeof info.withAudioCount === 'number' ? info.withAudioCount : cachedCounts.value[book.id]
+  return typeof n === 'number' ? n : null
 }
 
 /** 一本书的入口三态（未登录时 `genEntryState` 直接给 login 那一格，不看去数） */
