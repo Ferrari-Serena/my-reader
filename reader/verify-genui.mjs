@@ -560,7 +560,10 @@ t('确认框三件事都在：只删音频／可重新生成／不退额度',
     list.includes('clearResultText(book, r)') && !list.includes('已清空《'))
   t('书卡：按钮在卡片 link **之外**（与生成入口同一条结构约束）；结果行与按钮各自独立',
     card.indexOf('class="book-clear"') > card.indexOf('</router-link>')
-    && card.includes('v-if="clear || clearNote"') && card.includes('v-if="clear"') && card.includes('v-if="clearNote"'))
+    && card.includes('v-if="clear || clearNote"')
+    && card.includes('v-if="clear && !confirming"')
+    && card.includes('v-else-if="clear && confirming"')
+    && card.includes('v-if="clearNote"'))
   t('书卡不自己判定（出不出、文案全在 genApi）',
     !/clearEntryState\s*\(/.test(card) && !/clearResultText\s*\(/.test(card)
     && !card.includes('withAudioCount') && !/from\s+['"][^'"]*genApi/.test(card))
