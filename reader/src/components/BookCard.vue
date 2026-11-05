@@ -12,7 +12,11 @@
       <div class="book-info">
         <h3 class="book-title">{{ book.title }}</h3>
         <p class="book-author" v-if="book.author">{{ book.author }}</p>
-        <p class="book-meta">{{ book.chapterCount }} 章</p>
+        <p class="book-meta">
+          {{ book.chapterCount }} 章<template v-if="audioCount !== null"> · 已生成 {{ audioCount }} 章音频</template>
+        </p>
+        <div v-if="progress !== null" class="book-bar"><i :style="{ width: Math.max(0, Math.min(100, progress)) + '%' }"></i></div>
+        <p v-if="progress !== null" class="book-progress">{{ progress > 0 ? '已读 ' + progress + '%' : '未读' }}</p>
         <!-- 「我的书架」栏里自带书不给来源提示时，用户会以为它上了云 -->
         <p class="book-kind" v-if="book.kind === 'byo'">我导入的</p>
       </div>
@@ -70,7 +74,12 @@ const props = defineProps({
    */
   clear: { type: Object, default: null },
   /** 清空的结果那一行 `{ ok, text }`（`genApi.clearResultText`）。与按钮各自独立显示。 */
-  clearNote: { type: Object, default: null }
+  clearNote: { type: Object, default: null },
+
+  /** 阅读进度（0–100）；`null` ＝ 父级没给，不画进度条。 */
+  progress: { type: Number, default: null },
+  /** 已生成音频章数；`null` ＝ 父级没给。 */
+  audioCount: { type: Number, default: null }
 })
 
 defineEmits(['remove', 'clear'])
@@ -255,4 +264,7 @@ const coverSrc = computed(() => {
 .book-title { font-size: 14px; -webkit-line-clamp: 1; margin-bottom: 2px; }
 .book-author { font-size: 12px; }
 .book-meta { margin: 2px 0 0; font-size: 11px; color: var(--text-secondary, #6e6e73); }
+.book-bar { height: 4px; margin-top: 6px; background: var(--border-color, #e5e5e5); border-radius: 2px; overflow: hidden; }
+.book-bar i { display: block; height: 100%; background: var(--accent-color, #1a73e8); }
+.book-progress { margin: 4px 0 0; font-size: 11px; color: var(--text-secondary, #6e6e73); }
 </style>
