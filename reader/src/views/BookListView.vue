@@ -427,9 +427,9 @@ onMounted(refresh)
 
 <style scoped>
 .book-list-view {
-  max-width: 960px;
+  max-width: 720px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 14px 14px 16px;
 }
 
 .shelf-actions {
