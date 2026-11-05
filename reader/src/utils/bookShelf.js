@@ -105,7 +105,11 @@ export function metaOf(record) {
     kind: BOOK_KIND.BYO,
     chapterCount: Number(record.chapterCount) || 0,
     // UI-01 进度条：章节顺序映射；读取旧 shelf 记录时无 chapters ⇒ []（进度显示 null）
-    chapterIds: Array.isArray(record.chapters) ? record.chapters.map((ch) => String(ch.id || '')) : [],
+    chapterIds: Array.isArray(record.chapters)
+      ? record.chapters.map((ch) => String(ch.id || ''))
+      : Array.isArray(record.chapterIds)
+        ? record.chapterIds.map((id) => String(id || ''))
+        : [],
     charCount: Number(record.charCount) || 0,
     addedAt: String(record.addedAt || '')
   }
