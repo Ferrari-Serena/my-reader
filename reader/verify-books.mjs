@@ -167,6 +167,8 @@ console.log('\n[utils/bookShelf.js — 书架聚合口径]')
   tEq('metaOf：无标题 -> Untitled', metaOf({ bookId: 'bk_ffffffffffffffff' }).title, 'Untitled')
   tEq('metaOf：合法封面带出来', metaOf({ id: 'bk_ffffffffffffffff', coverUrl: GOOD_COVER }).coverUrl, GOOD_COVER)
   tEq('metaOf：脏封面丢掉', metaOf({ id: 'bk_ffffffffffffffff', coverUrl: 'http://x/y.png' }).coverUrl, '')
+  tEq('metaOf：已是书架 meta 时保留 chapterIds', metaOf({ id: 'bk_ffffffffffffffff', chapterIds: ['c1', 'c2'] }).chapterIds, ['c1', 'c2'])
+  tEq('metaOf：旧记录无 chapterIds ⇒ []', metaOf({ id: 'bk_ffffffffffffffff' }).chapterIds, [])
 
   const sorted = sortByAddedAtDesc([
     { id: 'a', addedAt: '2026-01-01T00:00:00.000Z' },
