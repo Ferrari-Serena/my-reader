@@ -12,6 +12,7 @@
       <div class="book-info">
         <h3 class="book-title">{{ book.title }}</h3>
         <p class="book-author" v-if="book.author">{{ book.author }}</p>
+        <p class="book-meta">{{ book.chapterCount }} 章</p>
         <!-- 「我的书架」栏里自带书不给来源提示时，用户会以为它上了云 -->
         <p class="book-kind" v-if="book.kind === 'byo'">我导入的</p>
       </div>
@@ -246,4 +247,12 @@ const coverSrc = computed(() => {
   font-size: 12px;
   color: var(--text-secondary, #6e6e73);
 }
+/* UI-01 书架卡片：横排（封面左、信息右） */
+.book-card { flex-direction: row; align-items: stretch; }
+.book-cover { width: 46px; height: 62px; aspect-ratio: auto; flex: 0 0 auto; border-radius: 4px; }
+.book-cover.placeholder span { font-size: 22px; }
+.book-info { flex: 1; min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; justify-content: center; }
+.book-title { font-size: 14px; -webkit-line-clamp: 1; margin-bottom: 2px; }
+.book-author { font-size: 12px; }
+.book-meta { margin: 2px 0 0; font-size: 11px; color: var(--text-secondary, #6e6e73); }
 </style>
