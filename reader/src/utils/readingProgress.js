@@ -3,6 +3,7 @@
  * @param {object} book 书架条目（含 chapterIds）
  * @param {(id: string) => object | null} loadPosition 位置读取函数
  */
+/** 章节粒度：idx/len，0–100。 */
 export function progressOfBook(book, loadPosition) {
   const ids = Array.isArray(book.chapterIds) ? book.chapterIds : []
   if (!ids.length) return null
