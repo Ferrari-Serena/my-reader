@@ -35,12 +35,21 @@
          结果那一行（`clearNote`）与按钮各自独立：清完按钮会消失，这句话要留住。 -->
     <div v-if="clear || clearNote" class="book-clear-wrap">
       <button
-        v-if="clear"
+        v-if="clear && !confirming"
         type="button"
         class="book-clear"
         :disabled="clear.busy"
-        @click="$emit('clear', book)"
+        @click="confirming = true"
       >{{ clear.label }}</button>
+      <div v-else-if="clear && confirming" class="book-clear-confirm">
+        <p class="book-clear-q">清空《{{ book.title }}》的音频？</p>
+        <p class="book-clear-d">清空后音频不可恢复，只释放存储空间。</p>
+        <p class="book-clear-d">重新生成将按一次新生成计算，占用当日额度并产生合成费用。</p>
+        <div class="book-clear-actions">
+          <button type="button" class="book-clear-cancel" @click="confirming = false">取消</button>
+          <button type="button" class="book-clear-ok" :disabled="clear.busy" @click="doClear">清空</button>
+        </div>
+      </div>
       <p v-if="clearNote" class="book-clear-note" :class="clearNote.ok ? 'ok' : 'bad'">{{ clearNote.text }}</p>
     </div>
     <!-- 只对自带书出删除（公开书库那栏删不了） -->
@@ -56,7 +65,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({
   book: { type: Object, required: true },
@@ -82,7 +91,13 @@ const props = defineProps({
   audioCount: { type: Number, default: null }
 })
 
-defineEmits(['remove', 'clear'])
+const emit = defineEmits(['remove', 'clear'])
+const confirming = ref(false)
+
+function doClear() {
+  confirming.value = false
+  emit('clear', props.book)
+}
 
 // book-index.json 里的 coverUrl 是站点相对路径（books/<id>/cover.svg）。
 // 将来 BASE_URL 若从 '/' 挪回子路径，这里跟着走，不会指到域名根上。
@@ -267,4 +282,11 @@ const coverSrc = computed(() => {
 .book-bar { height: 4px; margin-top: 6px; background: var(--border-color, #e5e5e5); border-radius: 2px; overflow: hidden; }
 .book-bar i { display: block; height: 100%; background: var(--accent-color, #1a73e8); }
 .book-progress { margin: 4px 0 0; font-size: 11px; color: var(--text-secondary, #6e6e73); }
+.book-clear-confirm { margin-top: 6px; padding: 8px 10px; border: 1px solid var(--border-color, #e5e5e5); border-radius: 8px; background: var(--bg-secondary, #f5f5f5); }
+.book-clear-q { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-primary, #1d1d1f); }
+.book-clear-d { margin: 4px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary, #6e6e73); }
+.book-clear-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.book-clear-cancel, .book-clear-ok { padding: 4px 10px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; }
+.book-clear-cancel { border: 1px solid var(--border-color, #e5e5e5); background: transparent; color: var(--text-secondary, #6e6e73); }
+.book-clear-ok { border: 1px solid var(--accent-color, #1a73e8); background: var(--accent-color, #1a73e8); color: #fff; }
 </style>
