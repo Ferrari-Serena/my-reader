@@ -1,74 +1,91 @@
 <template>
   <div class="import-view">
+    <div class="steps">
+      <span class="step" :class="{ on: stepIndex === 1, done: stepIndex > 1 }">1 选文件</span>
+      <span class="step" :class="{ on: stepIndex === 2, done: stepIndex > 2 }">2 解析</span>
+      <span class="step" :class="{ on: stepIndex === 3, done: stepIndex > 3 }">3 完成</span>
+    </div>
     <!-- 选文件 ＋ 版权勾选。完成/失败后这一块也留着，方便接着再来一本 -->
-    <section class="card" v-if="step !== IMPORT_STEP.DONE">
-      <h2>导入自己的书</h2>
-      <p class="lead">
-        {{ copy.lead }}
-      </p>
-
-      <label class="consent">
-        <input type="checkbox" v-model="consent" :disabled="busy" />
-        <span>This is my own copy — I will read it here for personal use only and will not redistribute it.</span>
-      </label>
+    <!-- 选文件（空闲／预检） -->
+    <section class="card" v-if="step === IMPORT_STEP.IDLE">
+      <div class="drop" v-if="!file">
+        <div class="drop-big">选择文件</div>
+        <div class="drop-sub">EPUB／PDF／TXT，一次一本</div>
+        <button class="btn primary" @click="pickFile">选择文件</button>
+      </div>
 
       <input ref="fileInput" class="sr-only" type="file" :accept="ACCEPT_ATTR" @change="onPicked" />
 
-      <div class="row">
-        <button class="btn primary" :disabled="!consent || busy" @click="pickFile">
-          {{ file ? 'Choose a different file' : 'Choose a file' }}
-        </button>
+      <p class="lead" v-if="!file">{{ copy.lead }}</p>
+
+      <div class="frow" v-if="file">
+        <span class="fname">{{ file.name }} · {{ sizeText }}</span>
+        <button class="link" @click="removeFile">移除</button>
       </div>
 
-      <p class="hint" v-if="!consent">
-        Tick the box above to continue. {{ copy.deviceHint }}
-      </p>
-
-      <div class="picked" v-if="file">
-        <p class="picked-name">{{ file.name }}</p>
-        <p class="picked-meta">{{ sizeText }} &middot; will be titled &ldquo;{{ titleGuess }}&rdquo;</p>
-        <p class="warn" v-if="heavy">Large file &mdash; this can take a while and use a lot of memory.</p>
-
-        <p class="error" v-if="preflightError">{{ preflightError.message }}</p>
-        <p class="hint" v-if="preflightError">{{ preflightError.hint }}</p>
-
-        <div class="row" v-if="!preflightError && !busy">
-          <button class="btn primary" :disabled="!startable" @click="start">导入</button>
-        </div>
+      <div class="checks" v-if="file && !preflightError">
+        <div class="check-row"><span>格式</span><span>{{ formatLabel }} ✓</span></div>
+        <div class="check-row"><span>大小</span><span>{{ sizeText }} ✓</span></div>
+        <div class="check-row"><span>DRM</span><span>导入时校验</span></div>
       </div>
 
-      <div class="progress" v-if="busy">
-        <p class="stage">{{ stageLabel }}</p>
-        <div class="bar" :class="{ indeterminate: percent === null }">
-          <div class="fill" :style="fillStyle"></div>
-        </div>
-        <p class="pct" v-if="percent !== null">{{ Math.round(percent) }}%</p>
-        <div class="row">
-          <button class="btn ghost" @click="cancel">取消</button>
-        </div>
-      </div>
+      <p class="error" v-if="preflightError">{{ preflightError.message }}</p>
+      <p class="hint" v-if="preflightError">{{ preflightError.hint }}</p>
+
+      <label class="consent" v-if="file && !preflightError">
+        <input type="checkbox" v-model="consent" :disabled="busy" />
+        <span>我确认有权使用此文件</span>
+      </label>
+
+      <button class="btn primary wide" v-if="file && !preflightError" :disabled="!startable" @click="start">开始导入</button>
+      <p class="hint" v-if="!file">{{ copy.deviceHint }}</p>
     </section>
 
-    <!-- 成功 -->
-    <section class="card outcome" v-if="step === IMPORT_STEP.DONE">
-      <h2>{{ result.existed ? 'Already on your shelf' : 'Added to your shelf' }}</h2>
-      <p class="outcome-title">{{ result.title }}</p>
-      <p class="outcome-meta">{{ result.chapterCount }} chapters</p>
-      <div class="row">
-        <router-link class="btn primary" :to="`/reader/${result.id}`">开始读</router-link>
-        <button class="btn ghost" @click="resetAll">再导入一本</button>
+    <!-- 解析中 -->
+    <section class="card" v-if="busy">
+      <div class="frow">
+        <span class="fname">{{ file && file.name }} · {{ sizeText }}</span>
       </div>
-      <p class="hint">{{ copy.outcomeHint }}</p>
+      <div class="stage-list">
+        <div class="stage-row" v-for="s in stageRows" :key="s.key">
+          <span class="mark" :class="s.state"></span>
+          <span>{{ s.label }}</span>
+          <span class="stage-s">{{ s.text }}</span>
+        </div>
+      </div>
+      <div class="bar" :class="{ indeterminate: percent === null }">
+        <div class="fill" :style="fillStyle"></div>
+      </div>
+      <div class="pct" v-if="percent !== null"><span>{{ stageLabel }}</span><span>{{ Math.round(percent) }}%</span></div>
+      <div class="row" style="margin-top:16px">
+        <button class="btn ghost wide" @click="cancel">取消导入</button>
+      </div>
+      <p class="hint">取消后本次导入作废，需重新选择文件。</p>
+    </section>
+
+    <!-- 完成 -->
+    <section class="card outcome" v-if="step === IMPORT_STEP.DONE">
+      <div class="cent">
+        <div class="done-art">✓</div>
+        <h2>{{ result.existed ? '已在书架里' : '已加入书架' }}</h2>
+        <p class="outcome-title">{{ result.title }}</p>
+        <p class="outcome-meta">{{ result.chapterCount }} 章</p>
+        <router-link class="btn primary wide" :to="`/reader/${result.id}`">去阅读</router-link>
+        <button class="btn ghost wide" @click="resetAll">再导一本</button>
+        <p class="hint"><router-link to="/books">回书架</router-link></p>
+      </div>
     </section>
 
     <!-- 失败 -->
     <section class="card outcome error-state" v-if="step === IMPORT_STEP.ERROR">
-      <h2>这个文件没能导入</h2>
-      <p class="outcome-title">{{ error.message }}</p>
-      <p class="hint">{{ error.hint }}</p>
-      <p class="code" v-if="error.code">{{ error.code }}</p>
-      <div class="row">
-        <button class="btn primary" @click="resetOutcome">换个文件试试</button>
+      <div class="cent">
+        <div class="fail-art">!</div>
+        <h2>{{ isNoText ? '这些页是扫描图，本版本无法识别' : '这个文件没能导入' }}</h2>
+        <p class="outcome-title" v-if="!isNoText">{{ error.message }}</p>
+        <p class="hint" v-if="isNoText">本版本扫描页不能识别，M2 提供扫描件识别。<br>有文字层的页可以照常导入。</p>
+        <p class="hint" v-else>{{ error.hint }}</p>
+        <button class="btn primary wide" v-if="!isNoText" @click="resetOutcome">换个文件试试</button>
+        <button class="btn ghost wide" v-if="isNoText" @click="resetOutcome">取消导入</button>
       </div>
     </section>
   </div>
@@ -123,8 +140,34 @@ const titleGuess = computed(() => stripExt(file.value && file.value.name))
 const startable = computed(() =>
   canStart({ consent: consent.value, file: file.value, busy: busy.value }) && !preflightError.value)
 
+const stepIndex = computed(() => {
+  if (step.value === IMPORT_STEP.DONE) return 3
+  if ([IMPORT_STEP.READING, IMPORT_STEP.PARSING, IMPORT_STEP.SAVING, IMPORT_STEP.ERROR].includes(step.value)) return 2
+  return 1
+})
+
+const stageRows = computed(() => {
+  const cur = step.value === IMPORT_STEP.READING ? 1 : step.value === IMPORT_STEP.PARSING ? 2 : step.value === IMPORT_STEP.SAVING ? 3 : 0
+  return ['读取文件', '解析文字', '保存到书架'].map((label, i) => {
+    const n = i + 1
+    return {
+      key: label,
+      label,
+      state: n < cur ? 'done' : n === cur ? 'cur' : '',
+      text: n < cur ? '完成' : n === cur ? '进行中' : '等待'
+    }
+  })
+})
+
+const formatLabel = computed(() => {
+  const name = String((file.value && file.value.name) || '')
+  const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1]
+  return ext ? ext.toUpperCase() : '文件'
+})
+
+const isNoText = computed(() => !!(error.value && error.value.code === 'PDF_NO_TEXT'))
+
 function pickFile() {
-  if (!consent.value) return
   fileInput.value?.click()
 }
 
@@ -139,6 +182,14 @@ function resetAll() {
   resetOutcome()
   file.value = null
   preflightError.value = null
+  consent.value = false
+}
+
+function removeFile() {
+  file.value = null
+  preflightError.value = null
+  consent.value = false
+  resetOutcome()
 }
 
 function onPicked(event) {
@@ -385,4 +436,29 @@ function cancel() {
   color: var(--text-secondary);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+.steps { display: flex; gap: 4px; margin-bottom: 14px; }
+.step { flex: 1; font-size: 11px; text-align: center; padding: 4px 0; border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-secondary); }
+.step.on { border-color: var(--accent-color); color: var(--accent-color); font-weight: 600; }
+.step.done { border-color: var(--text-secondary); color: var(--text-primary); }
+.drop { border: 1px dashed var(--border-color); border-radius: 8px; padding: 18px 12px; text-align: center; background: var(--bg-primary); }
+.drop-big { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.drop-sub { font-size: 12px; color: var(--text-secondary); margin: 4px 0 10px; }
+.frow { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; margin-top: 10px; font-size: 13px; }
+.fname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link { border: none; background: none; padding: 0; color: var(--text-secondary); text-decoration: underline; font: inherit; cursor: pointer; }
+.checks { margin-top: 12px; }
+.check-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); }
+.check-row span:last-child { color: var(--text-primary); }
+.stage-list { margin-top: 12px; }
+.stage-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--border-color); }
+.mark { width: 11px; height: 11px; border: 1px solid var(--text-secondary); flex: 0 0 auto; }
+.mark.done { background: var(--accent-color); border-color: var(--accent-color); }
+.mark.cur { border-width: 2px; border-color: var(--accent-color); }
+.stage-s { margin-left: auto; font-size: 11px; color: var(--text-secondary); }
+.pct { display: flex; justify-content: space-between; }
+.wide { display: flex; width: 100%; margin-top: 10px; }
+.cent { text-align: center; }
+.done-art, .fail-art { width: 56px; height: 56px; margin: 10px auto 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 28px; line-height: 54px; color: var(--accent-color); }
+.fail-art { color: var(--danger-color); }
+.cent .outcome-title { font-size: 15px; }
 </style>
