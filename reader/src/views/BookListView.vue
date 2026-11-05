@@ -73,6 +73,10 @@
       </section>
 
       <section v-else class="shelf-pane" role="tabpanel">
+        <div v-if="myBooks.length" class="shelf-sec">
+          <span class="shelf-sec-title">我的书 · {{ myBooks.length }}</span>
+          <button type="button" class="shelf-sec-link" @click="managing = !managing">{{ managing ? '完成' : '管理' }}</button>
+        </div>
         <!-- 页面级常驻条（第 17 步块 D-3 ／ D21-b・m）：**可折叠** —— 首次展开，之后收成一行小字。
              文案只有一份（utils/genApi.js 的 SHELF_NOTE_LINES／SHELF_NOTE_COLLAPSED），这里只画。
              **不写死「5 章」**：额度一律写「单账号每日限额，剩余额度在生成页」（D21-e）。 -->
@@ -90,14 +94,14 @@
         </div>
 
         <p v-if="myBooks.length === 0" class="shelf-note">
-          Books you import stay on this device and appear here.
+          导入的书只留在这台设备，会出现在这里。
         </p>
-        <div v-else class="book-grid">
+        <div v-else class="book-grid my-books-list">
           <BookCard
             v-for="book in myBooks"
             :key="book.id"
             :book="book"
-            removable
+            :removable="managing"
             :gen="genOf(book)"
             :clear="clearOf(book)"
             :clear-note="clearNoteOf(book)"
@@ -239,6 +243,7 @@ const auth = useAuth()
 const genInfo = ref({})        // bookId → { summary, withAudioCount }
 const cachedCounts = ref({})   // bookId → 本机缓存里的已就绪章数（null ＝ 没缓存）
 const noteOpen = ref(true)
+const managing = ref(false)
 
 /** 本机缓存里的已就绪章数；没缓存 → null（与 0 不是一回事：只有 null 才可能要去拉真索引） */
 function cachedAudioCount(bookId) {
@@ -646,4 +651,9 @@ onMounted(refresh)
   line-height: 1.6;
   color: var(--text-secondary, #6e6e73);
 }
+/* UI-01 我的书：段头 + 单列列表 */
+.shelf-sec { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 8px; font-size: 12px; color: var(--text-secondary, #6e6e73); }
+.shelf-sec-title { font-weight: 600; color: var(--text-primary, #1d1d1f); }
+.shelf-sec-link { border: none; background: none; padding: 2px 0; font: inherit; color: var(--accent-color, #1a73e8); cursor: pointer; }
+.my-books-list { display: flex; flex-direction: column; gap: 8px; }
 </style>
