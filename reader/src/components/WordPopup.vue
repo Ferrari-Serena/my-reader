@@ -3,9 +3,17 @@
     <Transition name="popup">
       <div v-if="visible" class="popup-overlay" @click.self="$emit('close')">
         <div class="popup-card">
+          <div class="popup-handle"></div>
           <div class="popup-header">
-            <h3 class="popup-word">{{ word }}</h3>
-            <button class="popup-close" @click="$emit('close')">✕</button>
+            <div class="popup-title">
+              <h3 class="popup-word">{{ word }}</h3>
+              <span v-if="dictEntry?.phonetic" class="popup-ipa">{{ dictEntry.phonetic }}</span>
+              <span v-if="dictEntry?.partOfSpeech" class="popup-pos">{{ dictEntry.partOfSpeech }}</span>
+            </div>
+            <div class="popup-header-actions">
+              <button class="popup-speak" @click="speakWord">听发音</button>
+              <button class="popup-close" @click="$emit('close')">✕</button>
+            </div>
           </div>
 
           <!-- 词组义项弹窗（§5.7 四块）：有 senses 时替代单词义区域 -->
@@ -13,7 +21,9 @@
             <section class="sense-block">
               <h4 class="sense-label">本句义</h4>
               <p v-if="currentSense" class="sense-current">{{ currentSense.zh }}</p>
-              <p v-else class="sense-unresolved">{{ unresolvedText }}</p>
+              <div v-else class="cloud-note">
+                <p class="sense-unresolved">{{ unresolvedText }}</p>
+              </div>
               <p v-if="currentSense && cloudSourceText" class="sense-source">{{ cloudSourceText }}</p>
             </section>
 
@@ -61,10 +71,8 @@
               </div>
 
               <template v-else-if="lookupState === 'hit' || lookupState === 'english'">
-                <div class="popup-meta">
-                  <span v-if="dictEntry?.phonetic" class="phonetic">{{ dictEntry.phonetic }}</span>
-                  <span v-if="dictEntry?.partOfSpeech" class="pos-tag">{{ dictEntry.partOfSpeech }}</span>
-                  <span v-if="dictEntry?.level" class="level-tag" :class="dictEntry.level.toLowerCase()">
+                <div v-if="dictEntry?.level" class="popup-meta">
+                  <span class="level-tag" :class="dictEntry.level.toLowerCase()">
                     ★ {{ dictEntry.level }}
                   </span>
                 </div>
@@ -100,14 +108,11 @@
               </div>
 
               <div v-if="showActions" class="popup-actions">
-                <button class="action-btn" @click="speakWord">
-                  🔊 朗读
-                </button>
-                <button v-if="isSaved" class="action-btn saved" @click="$emit('remove-vocab', word)">
+                <button v-if="isSaved" class="action-btn saved wide" @click="$emit('remove-vocab', word)">
                   ✓ 已在生词本
                 </button>
-                <button v-else class="action-btn primary" @click="addToVocab">
-                  + 加入生词本
+                <button v-else class="action-btn primary wide" @click="addToVocab">
+                  ＋ 加入生词本
                 </button>
                 <button
                   v-if="lookupState === 'miss' || lookupState === 'error'"
@@ -119,6 +124,7 @@
               </div>
             </template>
           </template>
+          <p v-if="dictEntry?.phonetic" class="popup-foot">音标仅供参考</p>
         </div>
       </div>
     </Transition>
@@ -248,7 +254,7 @@ export default { inheritAttrs: false }
   max-width: 500px;
   max-height: 60vh;
   overflow-y: auto;
-  padding: 20px;
+  padding: 12px 16px 0;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -572,4 +578,14 @@ export default { inheritAttrs: false }
     max-height: 70vh;
   }
 }
+.popup-handle { width: 36px; height: 4px; background: var(--border-color, #e5e5e5); border-radius: 2px; margin: 0 auto 10px; }
+.popup-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.popup-ipa { font-size: 12px; color: var(--text-secondary, #6e6e73); }
+.popup-pos { font-size: 10px; border: 1px solid var(--border-color, #999); border-radius: 2px; padding: 1px 4px; color: var(--text-secondary, #6e6e73); }
+.popup-header-actions { display: flex; align-items: center; gap: 8px; }
+.popup-speak { border: 1px solid var(--border-color, #d2d2d7); background: transparent; border-radius: 6px; padding: 4px 8px; font-size: 12px; color: var(--text-primary, #1d1d1f); cursor: pointer; }
+.cloud-note { border: 1px dashed var(--border-color, #999); border-radius: 6px; padding: 8px 10px; margin: 10px 0; background: var(--bg-secondary, #f5f5f5); }
+.cloud-note .sense-unresolved { margin: 0; }
+.action-btn.wide { flex: 1; padding: 10px 12px; font-size: 13px; }
+.popup-foot { border-top: 1px solid var(--border-color, #e5e5e5); text-align: center; font-size: 10px; color: var(--text-secondary, #6e6e73); padding: 8px 0 12px; margin-top: 10px; }
 </style>
