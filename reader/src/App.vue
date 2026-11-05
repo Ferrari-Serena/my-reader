@@ -100,7 +100,7 @@ const backLabel = computed(() => 'Home')
 
 const currentTitle = computed(() => {
   const titles = {
-    BookList: 'Library',
+    BookList: '书架',
     Import: 'Add a book',
     Reader: '',
     GenerateAudio: 'Audio',

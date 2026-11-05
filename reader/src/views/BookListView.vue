@@ -666,7 +666,7 @@ onMounted(refresh)
 .empty-import:hover { opacity: 0.9; }
 
 .empty-formats {
-  max-width: 300px;
+  max-width: 360px;
   margin: 14px auto 0;
   font-size: 12px;
   line-height: 1.6;
