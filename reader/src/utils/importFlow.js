@@ -171,14 +171,14 @@ export function canStart({ consent, file, busy } = {}) {
 export function importCopy(signedIn) {
   if (signedIn) {
     return {
-      lead: 'EPUB, PDF (with a text layer), or TXT. The file is read on this device and kept in your account, so your other signed-in devices can read it.',
-      deviceHint: 'Imported books are kept in your account, not just this device.',
-      outcomeHint: 'This book is in your account. Open My Books on another device you are signed in on to read it there too.'
+      lead: 'EPUB、PDF（含文字层）或 TXT。文件在本机读取，保存在你的账号里，登录的其他设备也能读。',
+      deviceHint: '导入的书存在你的账号里，不只在当前这一台设备。',
+      outcomeHint: '这本书已在你的账号里；在另一台登录的设备打开「我的书」即可读。'
     }
   }
   return {
-    lead: 'EPUB, PDF (with a text layer), or TXT. The file is read on this device and never uploaded.',
-    deviceHint: 'Imported books stay on this device. Sign in to have them follow your account.',
-    outcomeHint: 'This book lives on this device only. There is no recorded audio \u2014 the player falls back to your browser\u2019s voice.'
+    lead: 'EPUB、PDF（含文字层）或 TXT。文件只在本机读取，不会上传。',
+    deviceHint: '导入的书只留在当前设备；登录后会跟随账号。',
+    outcomeHint: '这本书只在当前设备；没有已录制音频时，播放器会用浏览器的声音。'
   }
 }

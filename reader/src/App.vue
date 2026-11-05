@@ -101,7 +101,7 @@ const backLabel = computed(() => 'Home')
 const currentTitle = computed(() => {
   const titles = {
     BookList: '书架',
-    Import: 'Add a book',
+    Import: '导入',
     Reader: '',
     GenerateAudio: 'Audio',
     Vocabulary: 'Vocabulary',

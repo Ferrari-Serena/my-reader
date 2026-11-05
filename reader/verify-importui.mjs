@@ -155,11 +155,11 @@ console.log('\n[importFlow — 上云口径的文案（第 16 步块 2）：登�
 {
   const anon = F.importCopy(false)
   const in_ = F.importCopy(true)
-  t('未登录：明说不上传', /never uploaded/i.test(anon.lead))
-  t('未登录：明说不随账号走', /stay on this device/i.test(anon.deviceHint))
+  t('未登录：明说不上传', /不会上传/.test(anon.lead))
+  t('未登录：明说不随账号走', /只留在当前设备/.test(anon.deviceHint))
   t('登录：说清进的是自己的账号（不是「上传到我们的服务器」那种含糊话）',
-    /your account/i.test(in_.lead) && /your account/i.test(in_.outcomeHint))
-  t('登录：不再出现「never uploaded」这种已经不成立的话', !/never uploaded/i.test(in_.lead))
+    /你的账号/.test(in_.lead) && /你的账号/.test(in_.outcomeHint))
+  t('登录：不再出现「不上传」这种已经不成立的话', !/不会上传/.test(in_.lead))
   t('两态是两份不同的文案（不是同一份套模板）',
     anon.lead !== in_.lead && anon.outcomeHint !== in_.outcomeHint)
   t('三句话都给全（模板只负责画）',
