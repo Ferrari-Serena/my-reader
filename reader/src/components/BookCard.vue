@@ -24,12 +24,15 @@
     <!-- 书级生成入口（第 17 步块 D-3 ／ D21-b・f）：只对自带书、且三态由父级算好传进来
          —— 判定与文案都在 `utils/genApi.js`（genEntryState），本组件只负责画。
          未登录那一态也走这里：`to` 由父级指到账号页（D21-j 引导登录）。 -->
-    <router-link
-      v-if="gen"
-      class="book-gen"
-      :class="'book-gen-' + gen.kind"
-      :to="gen.to"
-    >{{ gen.label }}</router-link>
+    <div class="book-actions">
+      <router-link :to="`/reader/${book.id}`" class="book-action primary">{{ progress && progress > 0 ? '继续阅读' : '开始阅读' }}</router-link>
+      <router-link
+        v-if="gen"
+        class="book-gen"
+        :class="'book-gen-' + gen.kind"
+        :to="gen.to"
+      >{{ gen.label }}</router-link>
+    </div>
     <!-- 「清空该书音频」（第 17 步块 D 的 D4／D25）：与生成入口同一条结构约束 —— 按钮在书卡
          `router-link` **之外**（`button` 不能嵌 `a`，iOS Safari 会连导航一起触发）。
          结果那一行（`clearNote`）与按钮各自独立：清完按钮会消失，这句话要留住。 -->
@@ -289,4 +292,8 @@ const coverSrc = computed(() => {
 .book-clear-cancel, .book-clear-ok { padding: 4px 10px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; }
 .book-clear-cancel { border: 1px solid var(--border-color, #e5e5e5); background: transparent; color: var(--text-secondary, #6e6e73); }
 .book-clear-ok { border: 1px solid var(--accent-color, #1a73e8); background: var(--accent-color, #1a73e8); color: #fff; }
+.book-actions { display: flex; gap: 6px; margin-top: 8px; }
+.book-action { flex: 1; display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 6px 10px; border-radius: 8px; font-size: 12px; text-decoration: none; }
+.book-action.primary { border: 1px solid var(--accent-color, #1a73e8); background: var(--accent-color, #1a73e8); color: #fff; }
+.book-actions .book-gen { flex: 1; margin-top: 0; display: inline-flex; align-items: center; justify-content: center; min-height: 34px; text-align: center; }
 </style>
