@@ -73,6 +73,26 @@ t('枚举就是规格那 8 个值', LOOKUP_STATES.join(',') === 'idle,loading,hi
 
 {
   // ④ 未收：lookupState==='miss' && 无 definitions && reason 属于 miss_dict／miss_empty
+
+{
+  // ④ 未收：entry.notFound 时 lookupState 的分支测试
+  const testCases = [
+    { reason: 'miss_dict', expected: 'miss' },
+    { reason: 'miss_empty', expected: 'miss' },
+    { reason: 'miss_shard', expected: 'error' },
+    { reason: 'miss_net', expected: 'error' }
+  ]
+  testCases.forEach(({ reason, expected }) => {
+    const out = resolveZhOutcome({
+      zh: { status: 'miss', reason },
+      entry: { notFound: true },
+      offline: false
+    })
+    t(`④ 未收：entry.notFound 时 lookupState=${expected}，reason=${reason}`,
+      out.lookupState === expected &&
+      out.zhReason === reason)
+  })
+}
   const a = resolveZhOutcome({ zh: { status: 'miss', reason: 'miss_empty' }, entry: null, offline: true })
   const b = resolveOnlineOutcome({ reason: 'miss_dict', online: { notFound: true } })
   const ok = (o) => o.lookupState === 'miss' && !o.dictEntry?.definitions?.length &&
