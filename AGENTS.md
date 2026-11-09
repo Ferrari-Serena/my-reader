@@ -17,6 +17,10 @@ internal_status: 2-活动项目/my-reader/my-reader-STATUS.md
 - 云端词组消歧会把被点句子送到 Worker/provider；新增解释、证据或更长上下文前，先补告知与授权边界。
 - 公开仓不写真实缺陷、原始验收分数、内部路线取舍或 provider 账单信息。
 
+## 本机执行环境
+
+- shell 方言、大文件读取粒度、沙箱写边界三条：正文唯一权威 = 全局 `~/.codex/AGENTS.md` 的「本机执行环境（Windows · PowerShell）」一节；本处只放指针、不抄正文。
+
 ## 验证
 
 - `cd worker && npm test`
