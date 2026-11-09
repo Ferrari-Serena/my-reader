@@ -109,6 +109,8 @@ t('枚举就是规格那 8 个值', LOOKUP_STATES.join(',') === 'idle,loading,hi
   t('⑤ 网络/超时：在线失败 → error／miss_net', net.lookupState === 'error' && net.zhReason === 'miss_net')
   t('⑤ 网络/超时：miss_shard 在线 404 不落 miss，落 error', shard.lookupState === 'error' && shard.zhReason === 'miss_shard')
   t('⑤ 网络/超时：deadline abort → error／miss_net', dl.lookupState === 'error' && dl.zhReason === 'miss_net')
+  const stale = resolveOnlineOutcome({ reason: 'miss_net', online: { notFound: false, definitions: [{ def: 'stale' }] }, failed: true })
+  t('⑤ failed 优先于 stale definitions ⇒ error', stale.lookupState === 'error' && stale.zhReason === 'miss_net')
 }
 
 {
