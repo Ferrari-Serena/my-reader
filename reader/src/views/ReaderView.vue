@@ -1,5 +1,28 @@
 <template>
   <div class="reader-view" :style="[settingsCssVars, dockVars]">
+    <!-- 一行顶栏（线框 v0.2 · 屏 2 / UI-02）：← 书架 ／ 章名 · 共 N 章 ／ 笔记 ／ Aa。
+         四个兜底分支共用这一条 —— 加载、缺书、错误时也留得住退路，不会困在阅读页。 -->
+    <header class="reader-topbar">
+      <router-link to="/books" class="topbar-back" title="返回书架">← 书架</router-link>
+      <div class="topbar-title" :title="topbarTitle">{{ topbarTitle }}</div>
+      <template v-if="currentChapter && !isImageBook">
+        <button class="topbar-btn" title="划线笔记" aria-haspopup="dialog" @click="openNotesPanel">
+          笔记 <span class="topbar-count">{{ bookNotes.length }}</span>
+        </button>
+        <button class="topbar-btn topbar-aa" title="阅读设置" aria-haspopup="dialog" @click="settingsOpen = true">Aa</button>
+      </template>
+    </header>
+
+    <!-- 进度行（线框 v0.2 的 progrow）：全书已读走真实章节表 ＋ 本机存档位置；
+         右侧只写真实章号，不编「剩余约 N 小时」这种没有数据源的文案。 -->
+    <div v-if="currentChapter && bookProgress !== null" class="progress-row">
+      <div class="progress-text">
+        <span>全书已读 {{ bookProgress }}%</span>
+        <span>第 {{ currentChapterIndex + 1 }} / {{ chapters.length }} 章</span>
+      </div>
+      <div class="progress-bar"><i :style="{ width: bookProgress + '%' }"></i></div>
+    </div>
+
     <!-- Loading -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -247,6 +270,7 @@ import { useSync } from '../composables/useSync'
 import { useAuth } from '../composables/useAuth'
 import { useTTS } from '../composables/useTTS.js'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
+import { progressOfBook } from '../utils/readingProgress.js'
 import { isBookId } from '../utils/bookId.js'
 import { loadBook as loadByoRecord, BookStoreError } from '../storage/index.js'
 import ReadingSettings from '../components/ReadingSettings.vue'
@@ -493,6 +517,29 @@ const missingBook = ref(false)
 const missingTitle = computed(() => {
   const titled = bookNotes.value.find(n => n.bookTitle)
   return titled ? titled.bookTitle : bookId.value
+})
+
+// ── 一行顶栏与全书进度（线框 v0.2 · 屏 2 / UI-02）────────────────────
+// 顶栏四个兜底分支都在，标题按当前状态给：加载 / 缺书 / 错误 / 正文。
+const topbarTitle = computed(() => {
+  if (loading.value) return '正在加载…'
+  if (missingBook.value) return missingTitle.value
+  if (error.value) return '打开失败'
+  const ch = currentChapter.value
+  if (!ch) return bookTitle.value || '阅读'
+  return `${ch.title} · 共 ${chapters.value.length} 章`
+})
+
+// 全书已读 = 真实章节表 ＋ 本机存档位置（progressOfBook），再用当前章兜底：
+// 刚切到新章时存档还停在上一章，只看存档会少算一章，所以取两者较大的百分比。
+const bookProgress = computed(() => {
+  if (!chapters.value.length) return null
+  const persisted = progressOfBook(
+    { id: bookId.value, chapterIds: chapters.value.map(ch => ch.id) },
+    loadPosition,
+  )
+  const live = Math.round((currentChapterIndex.value / chapters.value.length) * 100)
+  return Math.max(persisted === null ? 0 : persisted, live)
 })
 
 // ---- Image mode ----
@@ -1496,6 +1543,99 @@ onBeforeUnmount(() => {
      2026-10-07 实测：断点里写死底部 88px 会盖掉这里，条一变高正文就被压住。 */
   --dock-pad: calc(var(--dock-h, 88px) + 16px);
   padding: 0 16px var(--dock-pad);
+}
+
+/* 一行顶栏（线框 v0.2 · 屏 2）：阅读页自己的返回条 + 章名，四个兜底分支共用。
+   外壳 App.vue 在 Reader 路由不再重复画顶栏，所以这里 sticky 住，滚动时退路一直在。 */
+.reader-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  background: var(--bg-primary, #fff);
+  border-bottom: 1px solid var(--border-color, #d2d2d7);
+}
+
+.topbar-back {
+  flex: 0 0 auto;
+  min-width: 56px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color, #1a73e8);
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.topbar-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #1d1d1f);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-btn {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 8px;
+  border: none;
+  background: none;
+  color: var(--accent-color, #1a73e8);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.topbar-aa {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.topbar-count {
+  color: var(--text-secondary, #6e6e73);
+}
+
+/* 顶栏已经给了章名／笔记／Aa，ChapterNav 的 label-row 在阅读页不再重复一遍
+   （上一章／目录／下一章那一行仍保留）。 */
+:deep(.top-nav .label-row) {
+  display: none;
+}
+
+/* 进度行（线框 v0.2 的 progrow）：真数据，只有章节粒度百分比，没有编造的剩余时长 */
+.progress-row {
+  padding: 6px 0 8px;
+  border-bottom: 1px solid var(--border-color, #d2d2d7);
+}
+
+.progress-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-secondary, #6e6e73);
+}
+
+.progress-bar {
+  height: 2px;
+  background: var(--bg-secondary, #e5e5e5);
+}
+
+.progress-bar i {
+  display: block;
+  height: 100%;
+  background: var(--text-primary, #333);
+  transition: width 0.2s;
 }
 
 /* 底部停靠区（2026-10-07 裁 A；2026-10-08 块 D-1 收窄）：只剩播放器条，仍是 fixed 栈 */

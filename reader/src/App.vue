@@ -85,7 +85,9 @@ watch(() => auth.user.value, (u) => { if (u) reconcileTenant(auth) })
 // 断网提示的第二行：待上传条数（0 条时 offlinePendingMsg 回空串 ⇒ 整行不出现）
 const offlinePendingLine = computed(() => offlinePendingMsg(sync.pending.value))
 
-const showHeader = computed(() => true)
+// 阅读页自带一行顶栏（← 书架／章名·共 N 章／Aa，见 ReaderView .reader-topbar），
+// 外壳不再重复画一条，免得阅读页上出现两条返回条。
+const showHeader = computed(() => route.name !== 'Reader')
 const showTabbar = computed(() => {
   return ['BookList', 'Vocabulary', 'Flashcards', 'Quiz', 'Account'].includes(route.name)
 })
