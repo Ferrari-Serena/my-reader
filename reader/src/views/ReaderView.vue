@@ -5,6 +5,14 @@
     <header class="reader-topbar">
       <router-link to="/books" class="topbar-back" title="返回书架">← 书架</router-link>
       <div class="topbar-title" :title="topbarTitle">{{ topbarTitle }}</div>
+      <!-- 目录入口：打开 ChapterNav 的同一张遮罩（章节列表来自真实 chapters 表） -->
+      <button
+        v-if="chapters.length"
+        class="topbar-btn"
+        title="目录"
+        aria-haspopup="dialog"
+        @click="tocOpen = true"
+      >目录</button>
       <template v-if="currentChapter && !isImageBook">
         <button class="topbar-btn" title="划线笔记" aria-haspopup="dialog" @click="openNotesPanel">
           笔记 <span class="topbar-count">{{ bookNotes.length }}</span>
@@ -61,6 +69,8 @@
         :show-settings="!isImageBook"
         :show-notes="!isImageBook"
         :notes-count="bookNotes.length"
+        :toc-open="tocOpen"
+        @update:tocOpen="tocOpen = $event"
         @settings="settingsOpen = true"
         @notes="openNotesPanel"
         @prev="prevChapter"
@@ -179,13 +189,19 @@
       </div>
     </template>
 
-    <!-- 划词浮条（第 9 步 9.1）：选中 -> 选色 -> 划到词边界 -->
+    <!-- 划词浮条（第 9 步 9.1）：选中 -> 查词／朗读／选色划到词边界。
+         查词复用正文点词的同一套六态查询（openWordLookup），朗读走 useTTS。 -->
     <div
       v-if="noteBar.show"
       class="note-bar"
+      role="toolbar"
+      aria-label="选中文本操作"
       :style="{ left: noteBar.x + 'px', top: noteBar.y + 'px' }"
       @mousedown.prevent
     >
+      <button class="note-bar-btn note-bar-action" title="查所选词" @click="lookupSelection">查词</button>
+      <button class="note-bar-btn note-bar-action" title="朗读所选文本" @click="speakSelection">朗读</button>
+      <span class="note-bar-sep"></span>
       <span class="note-bar-label">划线</span>
       <button
         v-for="c in NOTE_COLORS" :key="c"
@@ -329,6 +345,8 @@ setHashWord(async (input) => {
 // 阅读设置（第 8 步 8.1）：字号 / 行距 / 页宽 / 字体。
 // 值 → .reader-view 的内联 CSS 变量；落盘与同步都在 useReaderSettings 里。
 const settingsOpen = ref(false)
+// 目录遮罩（顶栏「目录」入口与顶部 ChapterNav 共用同一个开合状态）
+const tocOpen = ref(false)
 const {
   settings: readerSettings,
   cssVars: settingsCssVars,
@@ -386,6 +404,18 @@ function boundaryOffset(paraEl, node, offset) {
   return Math.max(0, r.toString().length - (btn ? btn.textContent.length : 0))
 }
 
+/** 段内字符偏移 → 模板里 split(/(\s+)/) 的 token 下标（选区起点已对齐到词边界） */
+function tokenIndexAt(text, charStart) {
+  const tokens = text.split(/(\s+)/)
+  let pos = 0
+  for (let i = 0; i < tokens.length; i++) {
+    const end = pos + tokens[i].length
+    if (charStart >= pos && charStart < end) return i
+    pos = end
+  }
+  return -1
+}
+
 function pickSelection() {
   if (isImageBook.value) return
   const sel = window.getSelection()
@@ -404,7 +434,8 @@ function pickSelection() {
   if (!snap) return
   pendingAnchor.value = { paraId, charStart: snap.start, charEnd: snap.end, quote: para.text.slice(snap.start, snap.end) }
   const rect = r.getBoundingClientRect()
-  const barW = 232
+  // 浮条比旧版宽（多了查词／朗读），按实际按钮数留位；窗口过窄时再夹回可视区
+  const barW = 300
   const x = Math.min(Math.max(8, rect.left + rect.width / 2 - barW / 2), Math.max(8, window.innerWidth - barW - 8))
   const y = rect.top > 60 ? rect.top - 46 : rect.bottom + 10
   noteBar.value = { show: true, x, y }
@@ -428,6 +459,31 @@ function startNote(color) {
     status: '新划线：第 ' + a.charStart + '–' + a.charEnd + ' 字（已对齐到词边界）'
   }
   noteEditorOpen.value = true
+  hideNoteBar()
+}
+
+/**
+ * 浮条「查词」：把选区的**首个词**交给正文点词的同一套查询（openWordLookup），
+ * 词组识别、六态决策、弹窗渲染都不用另写一份 —— 浮条只是第二个入口。
+ */
+function lookupSelection() {
+  const a = pendingAnchor.value
+  const para = (currentChapter.value?.paragraphs || []).find(p => p.id === a?.paraId)
+  if (!a || !para) return
+  const idx = tokenIndexAt(para.text, a.charStart)
+  const raw = idx >= 0 ? para.text.split(/(\s+)/)[idx] : ''
+  const word = raw.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase()
+    || (a.quote.match(/[A-Za-z][A-Za-z'-]*/) || [''])[0].toLowerCase()
+  if (!word || word.length < 2) return
+  hideNoteBar()
+  openWordLookup(word, a.paraId, idx)
+}
+
+/** 浮条「朗读」：读选中的原文（不读对齐后的词边界，所见即所读） */
+function speakSelection() {
+  const a = pendingAnchor.value
+  if (!a || !a.quote) return
+  useTTS().speak(a.quote)
   hideNoteBar()
 }
 
@@ -1110,7 +1166,7 @@ function onImageLoad() {
 // 与 /api/dict 共用一个 AbortController；到点落「网络/超时」，不再等后续 fetch。
 const DICT_DEADLINE_MS = 8000
 
-async function onWordClick(event) {
+function onWordClick(event) {
   const word = event.target.dataset.word
   if (!word || word.length < 2) return
 
@@ -1128,6 +1184,14 @@ async function onWordClick(event) {
     return
   }
 
+  openWordLookup(word, paraId, tokenIdx)
+}
+
+/**
+ * 查一个词：正文点词与浮条「查词」共用。word 是清洗后的词形，
+ * paraId／tokenIdx 用于词组命中判定（浮条没有真实 DOM token 时传 -1）。
+ */
+async function openWordLookup(word, paraId, tokenIdx) {
   const span = (paraPhraseSpans.value[paraId] || [])
     .find(s => tokenIdx >= s.start && tokenIdx <= s.end)
   if (span) {
@@ -1381,6 +1445,7 @@ async function loadBook() {
   loading.value = true
   error.value = null
   missingBook.value = false
+  tocOpen.value = false // 换书时目录遮罩必须收起，否则会指着上一本的章节表
   explicitChapterOnLoad = !!chapterId.value
   phraseAnnotations.load(bookId.value)
 
@@ -1966,6 +2031,11 @@ onBeforeUnmount(() => {
   font-size: 13px;
   cursor: pointer;
   padding: 2px 4px;
+}
+
+/* 查词／朗读：浮条上的主操作，压过四色圆点（但仍是轻量文字按钮） */
+.note-bar-action {
+  font-weight: 600;
 }
 
 /* ---- 缺书占位（第 9 步 9.4）---- */

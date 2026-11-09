@@ -46,8 +46,16 @@
       >Aa</button>
     </div>
 
-    <!-- TOC Dropdown -->
-    <div v-if="showToc" class="toc-overlay" @click.self="showToc = false">
+    <!-- TOC 遮罩：全屏遮罩 + 底部目录面板。章节列表来自父级传入的真实 tocItems，
+         不写死示例数据；「当前/总数」与无音频标记都按真实章节表渲染。 -->
+    <div
+      v-if="showToc"
+      class="toc-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="目录"
+      @click.self="showToc = false"
+    >
       <div class="toc-dropdown">
         <div class="toc-header">
           <span>{{ bookTitle }}</span>
@@ -76,7 +84,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { noAudioLabel, noAudioTooltip } from '../utils/audioIndex.js'
 
 const props = defineProps({
@@ -91,12 +99,24 @@ const props = defineProps({
   showSettings: { type: Boolean, default: false },
   // 是否显示「Notes」划线笔记入口（同上，只顶部 nav）
   showNotes: { type: Boolean, default: false },
-  notesCount: { type: Number, default: 0 }
+  notesCount: { type: Number, default: 0 },
+  // 目录遮罩开合。父级传了就受控 —— 阅读页顶栏的「目录」入口与这里打开的是同一张遮罩；
+  // 不传则组件自管（底部那份导航条保持原行为）。用 undefined 判「没传」，
+  // 所以不能给 Boolean 默认 false。
+  tocOpen: { type: Boolean, default: undefined }
 })
 
-const emit = defineEmits(['prev', 'next', 'jump', 'settings', 'notes'])
+const emit = defineEmits(['prev', 'next', 'jump', 'settings', 'notes', 'update:tocOpen'])
 
-const showToc = ref(false)
+const tocOpenLocal = ref(false)
+const tocControlled = computed(() => props.tocOpen !== undefined)
+const showToc = computed({
+  get: () => (tocControlled.value ? props.tocOpen : tocOpenLocal.value),
+  set: (v) => {
+    tocOpenLocal.value = v
+    if (tocControlled.value) emit('update:tocOpen', v)
+  }
+})
 
 function selectChapter(index) {
   emit('jump', index)
