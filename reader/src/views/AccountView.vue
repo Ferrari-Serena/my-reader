@@ -40,6 +40,14 @@
       <router-link class="btn entry-link" to="/feedback">发送反馈</router-link>
     </section>
 
+    <!-- 法律与隐私（UI-35）：占位页，条款待法律审阅 —— 入口放在反馈下面，
+         同样不进 tabbar，不抢主路径。 -->
+    <section class="card legal-entry">
+      <h2 class="card-title">法律与隐私</h2>
+      <p class="hint">隐私政策与服务条款（待法律审阅后补全）。</p>
+      <button class="btn" @click="goLegal">查看</button>
+    </section>
+
     <!-- 已登录 -->
     <template v-if="auth.user.value">
       <section class="card">
@@ -180,11 +188,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useSync } from '../composables/useSync.js'
 import { bookSyncState } from '../sync/bookSync.js'
 import { emailProblem, passwordProblem, confirmProblem } from '../utils/authForm.js'
 
+const router = useRouter()
 const auth = useAuth()
 const sync = useSync()
 // 「Sync now」这一趟包含书体对账（useSync.syncNow 里 await 了它），所以按钮的忙态要把
@@ -279,6 +289,8 @@ async function submit() {
   await auth.signIn(email.value, password.value)
 }
 
+function goLegal() { router.push('/legal') }
+
 function doResend() { auth.resendVerify() }
 
 function doSignOut() {
@@ -355,6 +367,10 @@ function forgetPending() {
 }
 
 .feedback-entry {
+  margin-bottom: 16px;
+}
+
+.legal-entry {
   margin-bottom: 16px;
 }
 

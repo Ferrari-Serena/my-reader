@@ -55,6 +55,13 @@ const routes = [
     path: '/account',
     name: 'Account',
     component: () => import('../views/AccountView.vue')
+  },
+  {
+    // UI-35：法律与隐私（占位页，条款待法律审阅）。入口在账号页。
+    // 懒加载：同反馈页，属于「偶尔才去」的一页。
+    path: '/legal',
+    name: 'Legal',
+    component: () => import('../views/LegalView.vue')
   }
 ]
 
