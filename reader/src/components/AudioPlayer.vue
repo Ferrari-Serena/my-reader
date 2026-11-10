@@ -1,10 +1,22 @@
 <template>
   <div class="audio-player" v-if="chapterText">
     <div class="audio-row">
+      <button
+        class="track-btn"
+        aria-label="上一首"
+        :disabled="!hasPrev"
+        @click="emit('prev-track')"
+      >⏮</button>
       <button class="play-btn" @click="togglePlay">
         <span v-if="state === 'loading'" class="spinner-sm"></span>
         <span v-else>{{ state === 'playing' ? '⏸' : '▶' }}</span>
       </button>
+      <button
+        class="track-btn"
+        aria-label="下一首"
+        :disabled="!hasNext"
+        @click="emit('next-track')"
+      >⏭</button>
 
       <div class="audio-info">
         <span class="audio-label">{{ statusLabel }}</span>
@@ -62,7 +74,10 @@ const props = defineProps({
   // 云端音色还在本机生成（第 17 步块 D-3）：只影响副标题文案
   cloudPending: { type: Boolean, default: false },
   // 「章文本里每段的字符起点」表（标题那项 id 留空）—— 热切时把朗读位置换成段落
-  paragraphStarts: { type: Array, default: () => [] }
+  paragraphStarts: { type: Array, default: () => [] },
+  // 音频章队列里有没有上/下一首（无音频章不入队；由 ReaderView 计算后传入）
+  hasPrev: { type: Boolean, default: false },
+  hasNext: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['time', 'next-track', 'prev-track', 'ended'])
@@ -697,6 +712,32 @@ onUnmounted(() => {
 
 .play-btn:disabled {
   opacity: 0.6;
+}
+
+/* 上一首／下一首：只在音频章队列内跳，禁用态比播放按钮更淡（无上一首/下一首可走） */
+.track-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--accent-color, #1a73e8);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.track-btn:hover:not(:disabled) {
+  background: var(--bg-secondary, #f5f5f7);
+}
+
+.track-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .spinner-sm {

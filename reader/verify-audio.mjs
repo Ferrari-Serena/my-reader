@@ -160,6 +160,12 @@ console.log('\n[audioCloud — D25 清空音频后的读侧口径：正文仍可
     t('initial 队列 current 是第一首', q2.current().id === 'x')
     q2.remove(0)
     t('remove 当前之前的项，index 左移', q2.current().id === 'y')
+    const q3 = createAudioQueue([{ id: 'x' }, { id: 'y' }, { id: 'z' }])
+    t('setIndex(1) 后 current = 第二首', q3.setIndex(1) === 1 && q3.current().id === 'y')
+    t('setIndex(99) 后 clamp 到最后一首', q3.setIndex(99) === 2 && q3.current().id === 'z')
+    t('setIndex(-5) 后 clamp 到第一首', q3.setIndex(-5) === 0 && q3.current().id === 'x')
+    const q4 = createAudioQueue()
+    t('空队列 setIndex(0) 返回 -1', q4.setIndex(0) === -1 && q4.current() === null)
   }
 }
 

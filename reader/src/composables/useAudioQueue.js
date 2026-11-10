@@ -56,6 +56,15 @@ export function createAudioQueue(initial = []) {
     return null
   }
 
+  /** 直接把当前项定到第 i 项（clamp 到 0..length-1）；空队列返回 -1 */
+  function setIndex(i) {
+    if (!items.length) return -1
+    const n = Math.trunc(Number(i))
+    const target = Number.isFinite(n) ? n : 0
+    currentIndex = Math.max(0, Math.min(target, items.length - 1))
+    return currentIndex
+  }
+
   function remove(at = currentIndex) {
     if (currentIndex < 0 || at < 0 || at >= items.length) return null
     const [removed] = items.splice(at, 1)
@@ -84,6 +93,6 @@ export function createAudioQueue(initial = []) {
   }
 
   return {
-    enqueue, enqueueNext, current, next, prev, remove, clear, setRepeat, size, getState,
+    enqueue, enqueueNext, current, next, prev, setIndex, remove, clear, setRepeat, size, getState,
   }
 }

@@ -181,9 +181,11 @@
           :chapter-title="currentChapter?.title || ''"
           :cloud-pending="cloudGenerating"
           :paragraph-starts="chapterParagraphStarts"
+          :has-prev="hasPrevTrack"
+          :has-next="hasNextTrack"
           @time="onAudioTime"
-          @next-track="nextChapter"
-          @prev-track="prevChapter"
+          @next-track="onAudioNextTrack"
+          @prev-track="onAudioPrevTrack"
           @ended="onChapterAudioEnded"
         />
       </div>
@@ -277,7 +279,7 @@ import { lookup as lookupZh, normalizeWord } from '../utils/zhDict.js'
 import { beginWordLookup, beginPhraseLookup, resolveZhOutcome, resolveOnlineOutcome, deadlineOutcome } from '../utils/zhState.js'
 import { setHashWord, zhEnter, zhLookup, zhShown, zhAction } from '../utils/zhEvents.js'
 import { isOffline } from '../utils/offline.js'
-import { autoContinueTarget, chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
+import { chapterHasAudio, noAudioReason, tocMissingAudio } from '../utils/audioIndex.js'
 import { chapterAudioPath, chapterTimingsUrl, fetchCloudIndex, indexUsable } from '../utils/audioCloud.js'
 import { GEN_POLL_MS, fetchGenStatus, isChapterPending, chapterGenState, CH_STATE } from '../utils/genApi.js'
 import { loadAudioIndex, saveAudioIndex } from '../sync/audioIndexCache.js'
@@ -285,6 +287,7 @@ import { buildParagraphStarts } from '../utils/ttsChunks.js'
 import { useSync } from '../composables/useSync'
 import { useAuth } from '../composables/useAuth'
 import { useTTS } from '../composables/useTTS.js'
+import { createAudioQueue } from '../composables/useAudioQueue.js'
 import { savePosition, loadPosition } from '../composables/useReadingPosition'
 import { progressOfBook } from '../utils/readingProgress.js'
 import { isBookId } from '../utils/bookId.js'
@@ -669,6 +672,57 @@ const chapterNoAudioReason = computed(() =>
 const currentChapterHasAudio = computed(() =>
   chapterHasAudio(audioIndex.value, currentChapter.value?.id))
 const tocNoAudio = computed(() => tocMissingAudio(audioIndex.value))
+
+// ---- 音频章队列（只收「有音频」的章）----
+// 播放器的上一首／下一首与「播完自动续播」都走这条队列：无音频章（前置页、未录音）不入队，
+// 所以音频导航会跳过它们；ChapterNav 的全章导航仍是全章表，不受影响。
+// 队列本体是纯 JS（不响应式），另用两个 ref 把「当前章在不在队列里、队列有多长」
+// 带进模板与按钮禁用态；chapters／audioIndex 一变就重建（索引晚到、云端刚生成都算）。
+const audioQueue = createAudioQueue()
+let audioQueueItems = [] // 与队列同序：{ chapterId, chapterIndex }，chapterIndex 是全章表下标
+const audioQueueIndex = ref(-1) // 当前章在队列中的位置；-1 = 当前章没有音频
+const audioQueueSize = ref(0)
+
+function syncAudioQueueIndex() {
+  const id = currentChapter.value?.id || ''
+  const pos = id ? audioQueueItems.findIndex(item => item.chapterId === id) : -1
+  audioQueueIndex.value = pos
+  if (pos >= 0) audioQueue.setIndex(pos)
+}
+
+function rebuildAudioQueue() {
+  audioQueueItems = chapters.value
+    .map((ch, i) => ({ chapterId: ch.id, chapterIndex: i }))
+    .filter(item => chapterHasAudio(audioIndex.value, item.chapterId))
+  audioQueue.clear()
+  for (const item of audioQueueItems) audioQueue.enqueue(item)
+  audioQueueSize.value = audioQueueItems.length
+  syncAudioQueueIndex()
+}
+
+const hasPrevTrack = computed(() => audioQueueIndex.value > 0)
+const hasNextTrack = computed(() =>
+  audioQueueIndex.value >= 0 && audioQueueIndex.value < audioQueueSize.value - 1)
+
+watch([chapters, audioIndex], rebuildAudioQueue)
+// 用章 id 一起盯：首次载入时「章表到位」的 watcher 可能先于 setChapter 刷新，
+// 而 currentChapterIndex 从 0 → 0 不算变化；只看 index 会让队列位置停在 -1。
+watch([currentChapterIndex, () => currentChapter.value?.id], syncAudioQueueIndex)
+
+/** 音频队列前进／后退得到的那一首 → 切到它所属的（全章表）章；到头则不动 */
+function playQueueItem(item) {
+  if (item) setChapter(item.chapterIndex)
+}
+
+function onAudioPrevTrack() {
+  if (audioQueueIndex.value < 0) return // 当前章不在音频队列里：没有可参照的位置
+  playQueueItem(audioQueue.prev())
+}
+
+function onAudioNextTrack() {
+  if (audioQueueIndex.value < 0) return
+  playQueueItem(audioQueue.next())
+}
 
 // ---- 段落定位播放（时间表 + 高亮跟随）----
 
@@ -1524,14 +1578,15 @@ function nextChapter() {
 }
 
 /**
- * 本章音频放完了（断章续播）。要不要接下一章由纯函数判：
- * 最后一章、或下一章没有音频 → 停住不跳（与「手动点无音频章不自动跳」同一口径）。
+ * 本章音频放完了（断章续播）：只在音频章队列里找下一首 —— 无音频章不入队，
+ * 自动续播因此跳过它们；队列到头就停住（播放器已自行 stopAll），不再按全章表猜下一章。
  */
 function onChapterAudioEnded() {
-  const target = autoContinueTarget(audioIndex.value, chapters.value, currentChapterIndex.value)
-  if (target < 0) return
+  if (audioQueueIndex.value < 0) return
+  const item = audioQueue.next()
+  if (!item) return
   pendingAutoPlay.value = true
-  setChapter(target)
+  setChapter(item.chapterIndex)
 }
 
 // 续播不能紧接在 setChapter 后面直接调 —— 那一刻 AudioPlayer 手上的 props
