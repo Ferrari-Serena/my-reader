@@ -16,6 +16,7 @@ import {
   AUDIO_ROUTE as WRITE_ROUTE, chapterAudioPath as writePath,
   mergeAudioIndex as writeMerge, timingsOf as writeTimings,
 } from './src/generate/audioUpload.js'
+import { createAudioQueue } from './src/composables/useAudioQueue.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -134,6 +135,32 @@ console.log('\n[audioCloud — D25 清空音频后的读侧口径：正文仍可
     AUDIO_ROUTE === '/api/book/' && !AUDIO_ROUTE.includes('sync'))
   t('清空音频的 URL 形状 = AUDIO_ROUTE ＋ <bookId> ＋ "/audio"（与 worker 的 clearAll 形状对齐）',
     `${AUDIO_ROUTE}${bid}/audio` === '/api/book/bk_a1b2c3d4e5f60718/audio')
+  {
+    console.log('\n[audioQueue — 队列、重复、移除]')
+    const q = createAudioQueue()
+    t('空队列：current/next/prev 都是 null', q.current() === null && q.next() === null && q.prev() === null)
+    q.enqueue({ id: 'a' }); q.enqueue({ id: 'b' }); q.enqueue({ id: 'c' })
+    t('enqueue 后 current 是第一首', q.current().id === 'a')
+    t('next 逐首推进', q.next().id === 'b' && q.next().id === 'c')
+    t('repeat off 到末尾 next 返回 null 且停在最后一首', q.next() === null && q.current().id === 'c')
+    q.setRepeat('all')
+    t('repeat all 末尾 next 回第一首', q.next().id === 'a')
+    t('repeat all 开头 prev 回最后一首', q.prev().id === 'c')
+    q.setRepeat('one')
+    t('repeat one next 返回当前首', q.next().id === 'c')
+    q.setRepeat('off')
+    q.enqueueNext({ id: 'b2' })
+    t('enqueueNext 插到当前之后且 current 不变', q.current().id === 'c' && q.next().id === 'b2')
+    q.prev()
+    q.remove()
+    t('remove 当前项后 current 落到下一首', q.current().id === 'b2')
+    q.clear()
+    t('clear 后队列空', q.size() === 0 && q.current() === null)
+    const q2 = createAudioQueue([{ id: 'x' }, { id: 'y' }])
+    t('initial 队列 current 是第一首', q2.current().id === 'x')
+    q2.remove(0)
+    t('remove 当前之前的项，index 左移', q2.current().id === 'y')
+  }
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
