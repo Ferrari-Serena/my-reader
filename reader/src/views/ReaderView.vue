@@ -18,7 +18,13 @@
         class="topbar-btn"
         title="从第一章音频连续播放（跳过无音频章）"
         @click="playWholeBook"
-      >播放整本</button>
+      >播放整本（{{ audioQueueSize }} 章）</button>
+      <button
+        v-if="audioQueueSize > 0 && audioQueueIndex >= 0"
+        class="topbar-btn"
+        title="从当前章开始连续播放（跳过无音频章）"
+        @click="playFromCurrent"
+      >从本章播</button>
       <template v-if="currentChapter && !isImageBook">
         <button class="topbar-btn" title="划线笔记" aria-haspopup="dialog" @click="openNotesPanel">
           笔记 <span class="topbar-count">{{ bookNotes.length }}</span>
@@ -736,6 +742,19 @@ function playWholeBook() {
   }
   pendingAutoPlay.value = true
   setChapter(first.chapterIndex)
+}
+
+/** 从当前章开始连续播：当前章无音频则顺延到下一个有音频章 */
+function playFromCurrent() {
+  if (!audioQueueSize.value) return
+  if (audioQueueIndex.value >= 0) {
+    audioPlayerRef.value?.playFrom(0)
+    return
+  }
+  const next = audioQueueItems.find(item => item.chapterIndex > currentChapterIndex.value)
+  if (!next) return
+  pendingAutoPlay.value = true
+  setChapter(next.chapterIndex)
 }
 
 function onAudioNextTrack() {
