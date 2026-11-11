@@ -175,8 +175,9 @@ console.log('\n[audioCloud — D25 清空音频后的读侧口径：正文仍可
   t('顶栏有「播放整本」按钮', rvSrc.includes('播放整本'))
   t('有 playWholeBook 处理器', /function playWholeBook\s*\(/.test(rvSrc))
   t('整本播放取音频队列第一首', rvSrc.includes('audioQueueItems[0]'))
-  t('整本播放复用 pendingAutoPlay', /pendingAutoPlay\.value\s*=\s*true/.test(rvSrc))
-  t('已在首章时直接 playFrom(0)', rvSrc.includes('playFrom(0)'))
+  const pbBody = (rvSrc.match(/function playWholeBook\(\) \{[\s\S]*?\n\}/) || [''])[0]
+  t('playWholeBook 函数体含队列首项与 setChapter', pbBody.includes('audioQueueItems[0]') && pbBody.includes('setChapter'))
+  t('playWholeBook 在首章直接 playFrom(0)', pbBody.includes('playFrom(0)'))
 }
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
