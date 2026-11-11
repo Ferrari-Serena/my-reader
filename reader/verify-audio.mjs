@@ -169,5 +169,14 @@ console.log('\n[audioCloud — D25 清空音频后的读侧口径：正文仍可
   }
 }
 
+{
+  console.log('\n[W-11 整本播放]')
+  const rvSrc = readFileSync(new URL('./src/views/ReaderView.vue', import.meta.url), 'utf8')
+  t('顶栏有「播放整本」按钮', rvSrc.includes('播放整本'))
+  t('有 playWholeBook 处理器', /function playWholeBook\s*\(/.test(rvSrc))
+  t('整本播放取音频队列第一首', rvSrc.includes('audioQueueItems[0]'))
+  t('整本播放复用 pendingAutoPlay', /pendingAutoPlay\.value\s*=\s*true/.test(rvSrc))
+  t('已在首章时直接 playFrom(0)', rvSrc.includes('playFrom(0)'))
+}
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
