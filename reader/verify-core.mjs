@@ -524,5 +524,13 @@ console.log('\n[utils/notes.js]')
 
 }
 
+{
+  console.log('\n[W-11 从本章播]')
+  const rvSrc2 = readFileSync(new URL('./src/views/ReaderView.vue', import.meta.url), 'utf8')
+  t('顶栏有「从本章播」按钮', rvSrc2.includes('从本章播'))
+  t('有 playFromCurrent 处理器', /function playFromCurrent\s*\(/.test(rvSrc2))
+  t('从本章播顺延到下一个有音频章', rvSrc2.includes('audioQueueItems.find'))
+  t('播放整本按钮显示章数', rvSrc2.includes('播放整本（{{ audioQueueSize }} 章）'))
+}
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
