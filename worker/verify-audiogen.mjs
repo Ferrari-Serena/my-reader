@@ -27,6 +27,7 @@ import {
   ROUTE_PREFIX, TICK_CRON, PURGE_CRON, BLOCK_CHARS, MAX_CHAPTER_CHARS, MAX_CHAPTER_BYTES,
   DAILY_CHAPTERS, DAILY_CHARS, MAX_ATTEMPTS, STALE_MS, K_PER_TICK,
   purgeBookTasks, isPendingStatus, TASK_PURGED, SQL_PURGE_BOOK_TASKS, SQL_TASK_REPURGE,
+  campaignMonth, campaignQuotaLeft, campaignQuotaUsed, SQL_CAMPAIGN_FOR_BOOK, SQL_CAMPAIGN_INSERT, SQL_CAMPAIGN_CANCEL,
 } from './src/audiogen.js'
 import { audioObjectKey, INDEX_FILE, handleBookAudio } from './src/bookaudio.js'
 import { bookObjectKey } from './src/booksync.js'
@@ -818,6 +819,59 @@ console.log('\n[audiogen — 存储闸：起跑前跳闸（任务留 pending，�
   t('任务留 pending、attempts 不涨（清空后下一 tick 自动续上，不是判死）',
     (() => { const r = one(db, "SELECT status, attempts FROM audio_tasks WHERE chapter_id='ch-02'"); return r.status === 'pending' && r.attempts === 0 })())
   t('跳闸时也回带 storage（调用方不必再列举一次）', !!tick.storage && tick.storage.full === true)
+
+console.log('\n[audiogen — 整本 campaign 表与配额（W11-1a）]')
+{
+  const { env, db } = await newEnv()
+  db.exec(readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8'))
+  const month = campaignMonth(NOW)
+  t('campaignMonth 是 Asia/Shanghai YYYY-MM', /^\d{4}-\d{2}$/.test(month))
+  const ins = db.prepare(SQL_CAMPAIGN_INSERT)
+  const add = (id, book) => ins.run(id, CODE_A, book, month, 'am_michael', 10, NOW, NOW)
+  add('c1', 'b1'); add('c2', 'b2'); add('c3', 'b3')
+  t('3 本后 booksUsed=3、booksLeft=0', eq(await campaignQuotaLeft(env, CODE_A, month), { booksUsed: 3, booksLeft: 0, month }))
+  let dup = false
+  try { add('c4', 'b1') } catch { dup = true }
+  t('同书同月 UNIQUE 拒绝（不新增计数）', dup && (await campaignQuotaUsed(env, CODE_A, month)) === 3)
+  await env.DB.prepare(SQL_CAMPAIGN_CANCEL).bind(NOW, 'c1', CODE_A, 'b1').run()
+  let cancelOk = true
+  try { await env.DB.prepare(SQL_CAMPAIGN_CANCEL).bind(NOW, 'c1', CODE_A, 'b1').run() } catch { cancelOk = false }
+  t('cancel 幂等（重复 cancel 不抛）', cancelOk)
+
+console.log('\n[audiogen — 整本 campaign 端点（W11-1b）]')
+{
+  const { env, db } = await newEnv()
+  db.exec(readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8'))
+  const post = (chapters, voice = 'am_michael', book = BID) =>
+    handleAudioGen(req('POST', genPath(book) + '/campaign', { cookie: TOKEN_A, body: JSON.stringify({ chapters, voice }) }), env)
+  let r = await post(['ch-01'])
+  const b = await r.json()
+  t('建 campaign 200 + campaignId', r.status === 200 && !!b.campaignId && b.status === 'queued')
+  const id = b.campaignId
+  r = await handleAudioGen(req('GET', genPath(BID), { cookie: TOKEN_A }), env)
+  const s = await r.json()
+  t('GET 带 campaign', r.status === 200 && s.campaign && s.campaign.id === id)
+  r = await handleAudioGen(req('POST', genPath(BID) + '/campaign/' + id + '/cancel', { cookie: TOKEN_A }), env)
+  t('cancel 200', r.status === 200)
+  r = await handleAudioGen(req('POST', genPath(BID) + '/campaign/' + id + '/cancel', { cookie: TOKEN_A }), env)
+  t('cancel 幂等', r.status === 200)
+  r = await post(Array.from({ length: 61 }, (_, i) => 'ch-' + String(i + 1).padStart(2, '0')))
+  t('61 章 400 TOO_MANY_CHAPTERS', r.status === 400 && (await r.json()).error === 'TOO_MANY_CHAPTERS')
+  r = await post(['ch-01'], 'nope')
+  t('坏 voice 400 BAD_VOICE', r.status === 400 && (await r.json()).error === 'BAD_VOICE')
+  const { env: env2, db: db2 } = await newEnv()
+  db2.exec(readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8'))
+  const month = campaignMonth(NOW)
+  const ins = db2.prepare(SQL_CAMPAIGN_INSERT)
+  ins.run('q1', CODE_A, 'b1', month, 'am_michael', 10, NOW, NOW)
+  ins.run('q2', CODE_A, 'b2', month, 'am_michael', 10, NOW, NOW)
+  ins.run('q3', CODE_A, 'b3', month, 'am_michael', 10, NOW, NOW)
+  r = await handleAudioGen(req('POST', genPath(BID) + '/campaign', { cookie: TOKEN_A, body: JSON.stringify({ chapters: ['ch-01'] }) }), env2)
+  t('3 本后第 4 本 403 CAMPAIGN_QUOTA_EXCEEDED', r.status === 403 && (await r.json()).error === 'CAMPAIGN_QUOTA_EXCEEDED')
+  r = await post(['ch-01'])
+  t('同书同月重复 409', r.status === 409)
+}
+}
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
