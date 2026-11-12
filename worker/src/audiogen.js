@@ -652,7 +652,7 @@ export async function handleAudioGen(request, env) {
 
   const raw = url.pathname.slice(ROUTE_PREFIX.length)
   const parts = raw.split('/')
-  if (parts.length !== 2 || parts[0] !== 'book') {
+  if (parts[0] !== 'book' || !parts[1]) {
     return json(cors, { error: 'invalid path' }, 400)
   }
   let bookId = parts[1]
@@ -661,8 +661,53 @@ export async function handleAudioGen(request, env) {
 
   const code = g.acct.code
   const now = Date.now()
+  if (parts[2] === 'campaign') {
+    return handleCampaign(request, env, cors, code, bookId, parts, now)
+  }
+  if (parts.length !== 2) return json(cors, { error: 'invalid path' }, 400)
   if (method === 'GET') return genStatus(env, cors, code, bookId, now)
   return genSubmit(request, env, cors, code, bookId, now)
+}
+
+async function handleCampaign(request, env, cors, code, bookId, parts, now) {
+  if (parts.length === 3 && request.method === 'POST') {
+    let payload
+    try { payload = await request.json() } catch { return json(cors, { error: 'invalid json' }, 400) }
+    const want = payload && payload.chapters
+    if (!Array.isArray(want) || want.length === 0) return json(cors, { error: 'EMPTY_CHAPTERS' }, 400)
+    if (want.length > 60) return json(cors, { error: 'TOO_MANY_CHAPTERS', max: 60 }, 400)
+    const ids = []
+    for (const v of want) {
+      const id = String(v || '')
+      if (!CHAPTER_ID_RE.test(id)) return json(cors, { error: 'BAD_CHAPTER_ID', chapterId: id }, 400)
+      if (!ids.includes(id)) ids.push(id)
+    }
+    const voice = String((payload && payload.voice) || DEFAULT_VOICE)
+    if (voice !== 'am_michael' && voice !== 'af_heart') return json(cors, { error: 'BAD_VOICE', voice }, 400)
+    const month = campaignMonth(now)
+    const existing = await env.DB.prepare(SQL_CAMPAIGN_FOR_BOOK).bind(code, bookId, month).first()
+    if (existing) {
+      return json(cors, {
+        campaignId: existing.id, status: existing.status, bookId,
+        chaptersTotal: existing.chapters_total, voice: existing.voice,
+        quota: await campaignQuotaLeft(env, code, month),
+      }, 409)
+    }
+    const quota = await campaignQuotaLeft(env, code, month)
+    if (quota.booksLeft <= 0) return json(cors, { error: 'CAMPAIGN_QUOTA_EXCEEDED', quota }, 403)
+    const id = 'cmp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+    await env.DB.prepare(SQL_CAMPAIGN_INSERT).bind(id, code, bookId, month, voice, ids.length, now, now).run()
+    return json(cors, {
+      campaignId: id, status: 'queued', bookId, chaptersTotal: ids.length, voice,
+      quota: await campaignQuotaLeft(env, code, month),
+    }, 200)
+  }
+  if (parts.length === 5 && parts[4] === 'cancel' && request.method === 'POST') {
+    const campaignId = parts[3]
+    await env.DB.prepare(SQL_CAMPAIGN_CANCEL).bind(now, campaignId, code, bookId).run()
+    return json(cors, { campaignId, status: 'cancelled' }, 200)
+  }
+  return json(cors, { error: 'invalid campaign path' }, 400)
 }
 
 /** GET /api/gen/book/<bookId> —— 服务端复读的进度 ＋ 排队位次 ＋ 剩余额度（D21-g） */
@@ -707,10 +752,15 @@ async function genStatus(env, cors, code, bookId, now) {
   }
   const quota = await quotaLeft(env, code, now)
   const storage = await storageState(env, code)
+  let campaign = null
+  try {
+    const c = await env.DB.prepare(SQL_CAMPAIGN_FOR_BOOK).bind(code, bookId, campaignMonth(now)).first()
+    if (c) campaign = { id: c.id, status: c.status, chaptersTotal: c.chapters_total, chaptersDone: c.chapters_done, voice: c.voice, month: c.month }
+  } catch { /* fail-open：campaign 是展示项 */ }
   return json(cors, {
     ok: true, bookId, chapters, summary,
     queue: { ahead: queueAhead, position: queueAhead + 1 },
-    quota, storage,
+    quota, storage, campaign,
   }, 200, { 'Cache-Control': NO_STORE })
 }
 
