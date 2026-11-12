@@ -27,3 +27,6 @@ generator/corpus/
 
 # Worker 私有部署配置（含真实资源标识；模板见 worker/wrangler.example.toml）
 worker/wrangler.toml
+
+# wrangler 本地状态
+worker/.wrangler/

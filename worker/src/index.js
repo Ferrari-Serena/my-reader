@@ -31,6 +31,7 @@ import { handleBookAudio } from './bookaudio.js'
 import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
 import { handleFeedback } from './feedback.js'
 import { handleAudioGen, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
+import { handleInputToken } from './inputtoken.js'
 import { handlePhraseConfig, handlePhraseResolve } from './phrase.js'
 import { parseRange } from './range.js'
 import { audioRequestPlan } from './audioalias.js'
@@ -110,6 +111,10 @@ async function handleRequest(request, env, url) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: cors })
     }
+
+    // 内部输入 fetch：/api/internal/audio/input-token（005）
+    const inputTokenRes = await handleInputToken(request, env)
+    if (inputTokenRes !== null) return inputTokenRes
 
     // 同步端点分发（匹配 /api/sync/*）
     const syncRes = await handleSync(request, env)
