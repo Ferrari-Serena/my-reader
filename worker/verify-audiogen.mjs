@@ -27,6 +27,7 @@ import {
   ROUTE_PREFIX, TICK_CRON, PURGE_CRON, BLOCK_CHARS, MAX_CHAPTER_CHARS, MAX_CHAPTER_BYTES,
   DAILY_CHAPTERS, DAILY_CHARS, MAX_ATTEMPTS, STALE_MS, K_PER_TICK,
   purgeBookTasks, isPendingStatus, TASK_PURGED, SQL_PURGE_BOOK_TASKS, SQL_TASK_REPURGE,
+  campaignMonth, campaignQuotaLeft, campaignQuotaUsed, SQL_CAMPAIGN_FOR_BOOK, SQL_CAMPAIGN_INSERT, SQL_CAMPAIGN_CANCEL,
 } from './src/audiogen.js'
 import { audioObjectKey, INDEX_FILE, handleBookAudio } from './src/bookaudio.js'
 import { bookObjectKey } from './src/booksync.js'
@@ -818,6 +819,25 @@ console.log('\n[audiogen — 存储闸：起跑前跳闸（任务留 pending，�
   t('任务留 pending、attempts 不涨（清空后下一 tick 自动续上，不是判死）',
     (() => { const r = one(db, "SELECT status, attempts FROM audio_tasks WHERE chapter_id='ch-02'"); return r.status === 'pending' && r.attempts === 0 })())
   t('跳闸时也回带 storage（调用方不必再列举一次）', !!tick.storage && tick.storage.full === true)
+
+console.log('\n[audiogen — 整本 campaign 表与配额（W11-1a）]')
+{
+  const { env, db } = await newEnv()
+  db.exec(readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8'))
+  const month = campaignMonth(NOW)
+  t('campaignMonth 是 Asia/Shanghai YYYY-MM', /^\d{4}-\d{2}$/.test(month))
+  const ins = db.prepare(SQL_CAMPAIGN_INSERT)
+  const add = (id, book) => ins.run(id, CODE_A, book, month, 'am_michael', 10, NOW, NOW)
+  add('c1', 'b1'); add('c2', 'b2'); add('c3', 'b3')
+  t('3 本后 booksUsed=3、booksLeft=0', eq(await campaignQuotaLeft(env, CODE_A, month), { booksUsed: 3, booksLeft: 0, month }))
+  let dup = false
+  try { add('c4', 'b1') } catch { dup = true }
+  t('同书同月 UNIQUE 拒绝（不新增计数）', dup && (await campaignQuotaUsed(env, CODE_A, month)) === 3)
+  await env.DB.prepare(SQL_CAMPAIGN_CANCEL).bind(NOW, 'c1', CODE_A, 'b1').run()
+  let cancelOk = true
+  try { await env.DB.prepare(SQL_CAMPAIGN_CANCEL).bind(NOW, 'c1', CODE_A, 'b1').run() } catch { cancelOk = false }
+  t('cancel 幂等（重复 cancel 不抛）', cancelOk)
+}
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

@@ -536,6 +536,32 @@ export async function quotaLeft(env, code, now) {
 
 // ── 清空音频 → 行作废（D25-f，2026-10-08 Ferrari 裁 A）────────────────────────
 
+// ── 整本 campaign（W11-1a：表＋配额 helpers；HTTP 端点见 W11-1b）──────────────
+export function campaignMonth(now = Date.now()) {
+  const d = new Date(Number(now) + 8 * 3600 * 1000)
+  return d.toISOString().slice(0, 7)
+}
+export const SQL_CAMPAIGN_FOR_BOOK = `SELECT * FROM audio_campaigns WHERE code = ? AND book_id = ? AND month = ?`
+export const SQL_CAMPAIGN_QUOTA = `SELECT COUNT(DISTINCT book_id) AS books FROM audio_campaigns WHERE code = ? AND month = ?`
+export const SQL_CAMPAIGN_INSERT = `INSERT INTO audio_campaigns
+  (id, code, book_id, month, status, voice, chapters_total, chapters_done, created_at, updated_at)
+  VALUES (?, ?, ?, ?, 'queued', ?, ?, 0, ?, ?)`
+export const SQL_CAMPAIGN_CANCEL = `UPDATE audio_campaigns SET status = 'cancelled', updated_at = ?
+  WHERE id = ? AND code = ? AND book_id = ? AND status IN ('queued','running')`
+export async function campaignQuotaUsed(env, code, month) {
+  try {
+    const row = await env.DB.prepare(SQL_CAMPAIGN_QUOTA).bind(code, month).first()
+    return Number(row && row.books) || 0
+  } catch (e) {
+    console.error('campaign quota read failed (fail-open):', e && e.message)
+    return 0
+  }
+}
+export async function campaignQuotaLeft(env, code, month) {
+  const booksUsed = await campaignQuotaUsed(env, code, month)
+  return { booksUsed, booksLeft: Math.max(0, 3 - booksUsed), month }
+}
+
 /**
  * 清空该书音频**之前**把 D1 的行作废。**恒不抛**。返回 `{ ok, refused, open, purged, error }`：
  *   · `refused: true`（`open > 0`：还有 pending／running）→ 调用方**不许清**（回 409）。
