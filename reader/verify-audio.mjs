@@ -123,6 +123,7 @@ console.log('\n[audioCloud — D25 清空音频后的读侧口径：正文仍可
   // 服务端 `DELETE /api/book/<bookId>/audio` 回写的那一份（worker/src/bookaudio.js 的 clearBookAudio）
   const cleared = { book: bid, withAudio: [], missing: {} }
   t('清空后的索引仍被认（book 对得上 → 不会当成拿错书）', indexUsable(cleared, bid) === true)
+  t('正常索引：tocMissingAudio 原样返回 missing 原因', eq(tocMissingAudio({ book: bid, withAudio: ['ch-01'], missing: { 'ch-02': 'front_matter' } }), { 'ch-02': 'front_matter' }))
   t('清空后的索引：不逐章标「无音频」（与「整本没音频」的老口径一致，章表不刷屏）',
     eq(tocMissingAudio(cleared), {}))
   t('清空后的索引：单章判定「不妄断」→ 仍按有音频处理（播放器去试 mp3，失败退回浏览器朗读）',
