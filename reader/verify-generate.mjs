@@ -334,6 +334,7 @@ t('navigator.gpu 在 → 算有 WebGPU', detectWebGPU({ gpu: {} }) === true)
 t('navigator.gpu 不在 → 不算', detectWebGPU({}) === false)
 t('没有 navigator → 不算（服务端/测试环境别报错）', detectWebGPU(null) === false)
 {
+  t('闸顺序：非 BYO 优先于未登录/无 GPU/已就绪', eq(shouldOfferGeneration({ isByo: false, loggedIn: false, hasWebGPU: false, alreadyReady: true }), { show: false, offer: false, reason: 'not-byo' }))
   t('不是 BYO 书 → 面板都不挂', eq(shouldOfferGeneration({ isByo: false, loggedIn: true, hasWebGPU: true, alreadyReady: false }), { show: false, offer: false, reason: 'not-byo' }))
   t('未登录 → 面板都不挂', eq(shouldOfferGeneration({ isByo: true, loggedIn: false, hasWebGPU: true, alreadyReady: false }), { show: false, offer: false, reason: 'not-logged-in' }))
   t('这章已就绪 → 不挂面板（没有活干）', eq(shouldOfferGeneration({ isByo: true, loggedIn: true, hasWebGPU: true, alreadyReady: true }), { show: false, offer: false, reason: 'already-ready' }))
