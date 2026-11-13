@@ -555,6 +555,16 @@ export const SQL_CAMPAIGN_INSERT = `INSERT INTO audio_campaigns
   VALUES (?, ?, ?, ?, 'queued', ?, ?, 0, ?, ?)`
 export const SQL_CAMPAIGN_CANCEL = `UPDATE audio_campaigns SET status = 'cancelled', updated_at = ?
   WHERE id = ? AND code = ? AND book_id = ? AND status IN ('queued','running')`
+/** W11-7：把请求的章 id 存下来，runner 才能精确生成（迁移 0013） */
+export const SQL_CAMPAIGN_SET_CHAPTERS = `UPDATE audio_campaigns SET chapters_json = ? WHERE id = ?`
+/** runner 取待办；只取 queued，按创建时间 */
+export const SQL_CAMPAIGN_LIST = `SELECT * FROM audio_campaigns WHERE status = ? ORDER BY created_at ASC LIMIT 10`
+/** runner 认领：queued → running，原子；返回 changes=0 表示已被别人领走 */
+export const SQL_CAMPAIGN_CLAIM = `UPDATE audio_campaigns SET status = 'running', updated_at = ?
+  WHERE id = ? AND status = 'queued'`
+/** runner 失败／阻塞收尾：只从 queued/running 落 */
+export const SQL_CAMPAIGN_STATUS = `UPDATE audio_campaigns SET status = ?, updated_at = ?
+  WHERE id = ? AND status IN ('queued','running')`
 
 // ── W11-4 转正（service token；路由 `/api/internal/audio/promote`）────────────
 export const SQL_CAMPAIGN_BY_ID = `SELECT * FROM audio_campaigns WHERE id = ?`
@@ -726,6 +736,12 @@ async function handleCampaign(request, env, cors, code, bookId, parts, now) {
     if (quota.booksLeft <= 0) return json(cors, { error: 'CAMPAIGN_QUOTA_EXCEEDED', quota }, 403)
     const id = 'cmp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
     await env.DB.prepare(SQL_CAMPAIGN_INSERT).bind(id, code, bookId, month, voice, ids.length, now, now).run()
+    // W11-7：记下请求的章 id；迁移 0013 未落时只告警，不阻断建单
+    try {
+      await env.DB.prepare(SQL_CAMPAIGN_SET_CHAPTERS).bind(JSON.stringify(ids), id).run()
+    } catch (e) {
+      console.error('campaign chapters persist failed:', e && e.message)
+    }
     return json(cors, {
       campaignId: id, status: 'queued', bookId, chaptersTotal: ids.length, voice,
       quota: await campaignQuotaLeft(env, code, month),
@@ -786,6 +802,72 @@ function promoteFail(env, campaign, now, error, status, extra = {}) {
  * 内部转正入口。匹配返回 Response，不匹配返回 null（主路由继续 fallthrough）。
  * 只接 POST；无 CORS（service-to-service，与 input-token／staging-token 同姿态）。
  */
+/** W11-7 runner 管理面：service token；campaigns 列表／claim／收尾 */
+function internalJson(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+  })
+}
+function campaignRowWithChapters(row) {
+  if (!row) return null
+  let chapters = null
+  try { chapters = row.chapters_json ? JSON.parse(row.chapters_json) : null } catch {}
+  return { ...row, chapters }
+}
+export async function handleAudioCampaignAdmin(request, env) {
+  const url = new URL(request.url)
+  if (!url.pathname.startsWith('/api/internal/audio/campaign')) return null
+  const auth = request.headers.get('authorization') || ''
+  if (!env.INTERNAL_TOKEN || auth !== 'Bearer ' + env.INTERNAL_TOKEN) {
+    return internalJson({ error: 'unauthorized' }, 401)
+  }
+  if (url.pathname === '/api/internal/audio/campaigns') {
+    if (request.method !== 'GET') return internalJson({ error: 'method not allowed' }, 405)
+    const status = url.searchParams.get('status') || 'queued'
+    if (status !== 'queued' && status !== 'running') return internalJson({ error: 'invalid status' }, 400)
+    let rows
+    try {
+      rows = ((await env.DB.prepare(SQL_CAMPAIGN_LIST).bind(status).all()).results) || []
+    } catch (e) {
+      console.error('campaign admin list failed:', e && e.message)
+      return internalJson({ error: 'db read failed' }, 500)
+    }
+    return internalJson({ ok: true, campaigns: rows.map(campaignRowWithChapters) })
+  }
+  const m = url.pathname.match(/^\/api\/internal\/audio\/campaign\/([^/]+)\/(claim|status)$/)
+  if (!m) return internalJson({ error: 'not found' }, 404)
+  const campaignId = m[1]
+  if (!isCampaignId(campaignId)) return internalJson({ error: 'invalid campaignId' }, 400)
+  if (m[2] === 'claim') {
+    if (request.method !== 'POST') return internalJson({ error: 'method not allowed' }, 405)
+    let r
+    try {
+      r = await env.DB.prepare(SQL_CAMPAIGN_CLAIM).bind(Date.now(), campaignId).run()
+    } catch (e) {
+      console.error('campaign admin claim failed:', e && e.message)
+      return internalJson({ error: 'db write failed' }, 500)
+    }
+    if (!(r && r.meta && r.meta.changes)) return internalJson({ error: 'CAMPAIGN_NOT_QUEUED' }, 409)
+    let row = null
+    try { row = await env.DB.prepare(SQL_CAMPAIGN_BY_ID).bind(campaignId).first() } catch {}
+    return internalJson({ ok: true, campaign: campaignRowWithChapters(row) })
+  }
+  if (request.method !== 'POST') return internalJson({ error: 'method not allowed' }, 405)
+  let body
+  try { body = await request.json() } catch { return internalJson({ error: 'invalid json' }, 400) }
+  const status = String((body && body.status) || '')
+  if (!['failed', 'blocked', 'cancelled'].includes(status)) return internalJson({ error: 'invalid status' }, 400)
+  let r
+  try {
+    r = await env.DB.prepare(SQL_CAMPAIGN_STATUS).bind(status, Date.now(), campaignId).run()
+  } catch (e) {
+    console.error('campaign admin status failed:', e && e.message)
+    return internalJson({ error: 'db write failed' }, 500)
+  }
+  return internalJson({ ok: true, changed: Number(r && r.meta && r.meta.changes) || 0 })
+}
+
 export async function handleAudioPromote(request, env) {
   const url = new URL(request.url)
   if (url.pathname !== PROMOTE_ROUTE) return null

@@ -8,7 +8,7 @@
  *
  * 用法：
  *   node hub-audio-campaign.mjs --campaign <id> [--input <book.json>] [--voice am_michael]
- *     [--max-chapters 60] [--fail-chapter ch-03] [--delete-input] [--out-root <dir>]
+ *     [--max-chapters 60] [--chapters ch-01,ch-02] [--fail-chapter ch-03] [--delete-input] [--out-root <dir>]
  *
  * 边界：不接 R2／索引；不打印正文；单章 3 次重试；断点续跑按 sha256。
  * 依赖：~/hub/bin/node_modules -> my-reader-deps/reader/node_modules；
@@ -54,6 +54,7 @@ if (!campaignId || !/^[A-Za-z0-9._-]{1,64}$/.test(campaignId)) {
 const inputPath = arg('--input') || path.join(SCRATCH, 'campaigns', campaignId, 'input/book.json')
 const outRoot = path.resolve(arg('--out-root') || ARCHIVE_ROOT)
 const failChapter = String(arg('--fail-chapter') || process.env.FAIL_CHAPTER || '')
+const chaptersArg = arg('--chapters')
 const baseCommit = arg('--base-commit') || process.env.BASE_COMMIT || 'local'
 const maxChapters = Math.min(Math.max(1, Number(arg('--max-chapters') || MAX_CHAPTERS_CAP)), MAX_CHAPTERS_CAP)
 
@@ -66,7 +67,16 @@ if (!Array.isArray(book.chapters) || book.chapters.length === 0) die(2, 'BAD_BOO
 const voice = String(arg('--voice') || process.env.VOICE || book.voice || 'am_michael')
 if (!VOICES.has(voice)) die(2, `BAD_VOICE：${voice}（允许 am_michael / af_heart）`)
 
-const selected = book.chapters.slice(0, maxChapters)
+const sourceChapters = (() => {
+  if (!chaptersArg) return book.chapters
+  const want = String(chaptersArg).split(',').map((s) => s.trim()).filter(Boolean)
+  if (!want.length) die(2, 'BAD_CHAPTERS：--chapters 为空')
+  const byId = new Map(book.chapters.map((c) => [String(c.id), c]))
+  const missing = want.filter((id) => !byId.has(String(id)))
+  if (missing.length) die(2, `CHAPTER_NOT_IN_BOOK：${missing.join(',')}`)
+  return want.map((id) => byId.get(String(id)))
+})()
+const selected = sourceChapters.slice(0, maxChapters)
 const capped = selected.length < book.chapters.length
 const order = selected.map((c) => String(c.id))
 const inputSha256 = crypto.createHash('sha256').update(fs.readFileSync(inputPath)).digest('hex')

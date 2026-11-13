@@ -23,13 +23,13 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import {
-  handleAudioGen, handleAudioPromote, runAudioGenTick, synthesizeChapter, chunkBlocks, chapterOfBook, chapterCharCount,
+  handleAudioGen, handleAudioPromote, handleAudioCampaignAdmin, runAudioGenTick, synthesizeChapter, chunkBlocks, chapterOfBook, chapterCharCount,
   frameSize, locateFrames, scanFrames, stripBlock, mergeAudioIndex, dayStart,
   ROUTE_PREFIX, TICK_CRON, PURGE_CRON, BLOCK_CHARS, MAX_CHAPTER_CHARS, MAX_CHAPTER_BYTES,
   DAILY_CHAPTERS, DAILY_CHARS, MAX_ATTEMPTS, STALE_MS, K_PER_TICK, CHAPTER_ID_RE,
   purgeBookTasks, isPendingStatus, TASK_PURGED, SQL_PURGE_BOOK_TASKS, SQL_TASK_REPURGE,
   campaignMonth, campaignQuotaLeft, campaignQuotaUsed, SQL_CAMPAIGN_FOR_BOOK, SQL_CAMPAIGN_INSERT, SQL_CAMPAIGN_CANCEL,
-  SQL_CAMPAIGN_BLOCK, SQL_TASK_PROMOTE, SQL_CAMPAIGN_PROMOTE_SET,
+  SQL_CAMPAIGN_BLOCK, SQL_TASK_PROMOTE, SQL_CAMPAIGN_PROMOTE_SET, SQL_CAMPAIGN_SET_CHAPTERS,
 } from './src/audiogen.js'
 import {
   audioObjectKey, INDEX_FILE, handleBookAudio,
@@ -49,6 +49,8 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const one = (db, sql, ...args) => db.prepare(sql).get(...args) || {}
 
 const SCHEMA = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
+const CAMPAIGN_SCHEMA = readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8')
+  + '\n' + readFileSync(new URL('./migrations/0013_audio_campaign_chapters.sql', import.meta.url), 'utf8')
 const BASE = 'https://my-reader.ferrari11.com'
 const NOW = Date.now()
 
@@ -847,7 +849,7 @@ console.log('\n[audiogen — 存储闸：起跑前跳闸（任务留 pending，�
 console.log('\n[audiogen — 整本 campaign 表与配额（W11-1a）]')
 {
   const { env, db } = await newEnv()
-  db.exec(readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8'))
+  db.exec(CAMPAIGN_SCHEMA)
   const month = campaignMonth(NOW)
   t('campaignMonth 是 Asia/Shanghai YYYY-MM', /^\d{4}-\d{2}$/.test(month))
   const ins = db.prepare(SQL_CAMPAIGN_INSERT)
@@ -865,7 +867,7 @@ console.log('\n[audiogen — 整本 campaign 表与配额（W11-1a）]')
 console.log('\n[audiogen — 整本 campaign 端点（W11-1b）]')
 {
   const { env, db } = await newEnv()
-  db.exec(readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8'))
+  db.exec(CAMPAIGN_SCHEMA)
   const post = (chapters, voice = 'am_michael', book = BID) =>
     handleAudioGen(req('POST', genPath(book) + '/campaign', { cookie: TOKEN_A, body: JSON.stringify({ chapters, voice }) }), env)
   let r = await post(['ch-01'])
@@ -884,7 +886,7 @@ console.log('\n[audiogen — 整本 campaign 端点（W11-1b）]')
   r = await post(['ch-01'], 'nope')
   t('坏 voice 400 BAD_VOICE', r.status === 400 && (await r.json()).error === 'BAD_VOICE')
   const { env: env2, db: db2 } = await newEnv()
-  db2.exec(readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8'))
+  db2.exec(CAMPAIGN_SCHEMA)
   const month = campaignMonth(NOW)
   const ins = db2.prepare(SQL_CAMPAIGN_INSERT)
   ins.run('q1', CODE_A, 'b1', month, 'am_michael', 10, NOW, NOW)
@@ -920,7 +922,7 @@ console.log('\n[audiogen — W11-4 转正：staging → 正式 R2／D1／索引]
   /** 一套转正环境：真 SQLite（含 0012）＋ 正式桶 AUDIO ＋ 独立 staging 桶 */
   async function promoFixture() {
     const ctx = await newEnv({ withBook: false })
-    ctx.db.exec(readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8'))
+    ctx.db.exec(CAMPAIGN_SCHEMA)
     ctx.env.INTERNAL_TOKEN = TOKEN_INTERNAL
     ctx.env.STAGING = r2()
     await ctx.bucket.put(bookObjectKey(CODE_A, BID), JSON.stringify(bookWithChars(2, 100)))
@@ -1161,6 +1163,43 @@ console.log('\n[audiogen — W11-4 转正：staging → 正式 R2／D1／索引]
   t('checksumHex：ArrayBuffer / Uint8Array 都能转小写 hex',
     checksumHex(new Uint8Array([0, 15, 255]).buffer) === '000fff'
     && checksumHex(new Uint8Array([0, 15, 255])) === '000fff')
+}
+
+console.log('\n[audiogen — W11-7 campaign runner 管理面]')
+{
+  const { env, db } = await newEnv()
+  db.exec(CAMPAIGN_SCHEMA)
+  env.INTERNAL_TOKEN = 'tok-admin'
+  const month = campaignMonth(NOW)
+  db.prepare(SQL_CAMPAIGN_INSERT).run('cmp_admin_1', CODE_A, 'b1', month, 'am_michael', 1, NOW, NOW)
+  db.prepare(SQL_CAMPAIGN_SET_CHAPTERS).run('["ch-01"]', 'cmp_admin_1')
+  const adminReq = (path, opts = {}) => new Request(BASE + path, {
+    method: opts.method || 'GET',
+    headers: {
+      ...(opts.auth === false ? {} : { authorization: 'Bearer tok-admin' }),
+      'content-type': 'application/json',
+    },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  })
+  let r = await handleAudioCampaignAdmin(adminReq('/api/internal/audio/campaigns', { auth: false }), env)
+  t('admin 无 auth → 401', r.status === 401)
+  r = await handleAudioCampaignAdmin(adminReq('/api/internal/audio/campaigns?status=queued'), env)
+  const list = await r.json()
+  t('admin 列 queued：1 条且带 chapters', r.status === 200 && list.campaigns.length === 1 && eq(list.campaigns[0].chapters, ['ch-01']))
+  r = await handleAudioCampaignAdmin(adminReq('/api/internal/audio/campaign/cmp_admin_1/claim', { method: 'POST' }), env)
+  const claim = await r.json()
+  t('claim → running', r.status === 200 && claim.campaign && claim.campaign.status === 'running')
+  r = await handleAudioCampaignAdmin(adminReq('/api/internal/audio/campaign/cmp_admin_1/claim', { method: 'POST' }), env)
+  t('重复 claim → 409', r.status === 409 && (await r.json()).error === 'CAMPAIGN_NOT_QUEUED')
+  r = await handleAudioCampaignAdmin(adminReq('/api/internal/audio/campaign/cmp_admin_1/status', { method: 'POST', body: { status: 'failed' } }), env)
+  t('runner 收尾 failed', r.status === 200 && one(db, 'SELECT status FROM audio_campaigns WHERE id=?', 'cmp_admin_1').status === 'failed')
+  r = await handleAudioCampaignAdmin(adminReq('/api/internal/audio/campaign/cmp_admin_1/status', { method: 'POST', body: { status: 'nope' } }), env)
+  t('非法收尾状态 → 400', r.status === 400)
+  {
+    const worker = (await import('./src/index.js')).default
+    const r2 = await worker.fetch(new Request(BASE + '/api/internal/audio/campaigns'), { INTERNAL_TOKEN: 'tok-admin' })
+    t('index.js 已接线：admin 无 Bearer → 401（路由不是孤儿）', r2.status === 401)
+  }
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

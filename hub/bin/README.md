@@ -45,6 +45,18 @@ node hub-audio-uploader.mjs --campaign <id> [--book <bk_...>] [--result <path>]
 - 回执写 `upload.json`；只写 staging 桶，不碰正式桶／索引。
 - `--test-fail-first <n>` 仅验收用；`--chapter/--limit` 便于单章重传。
 
+### `hub-campaign-runner.mjs`（W11-7）
+
+```bash
+node hub-campaign-runner.mjs --once
+```
+
+- 列 Worker 的 queued campaign → claim → `fetch`／`generate --chapters`／`upload`／`promote`。
+- 单次只处理一条；失败置 `failed`，promote 422/409 由 Worker 置 `blocked`。
+- 依赖 Worker 内部接口 `/api/internal/audio/campaigns…`（`INTERNAL_TOKEN`）。
+- cron 每 5 分钟，`pgrep` 防重叠：
+  `*/5 * * * * pgrep -f "[h]ub-campaign-runner.mjs" >/dev/null || /usr/bin/node ~/hub/bin/hub-campaign-runner.mjs --once >> ~/hub/_dispatch/log/campaign-runner.log 2>&1`
+
 ## 部署
 
 ```bash

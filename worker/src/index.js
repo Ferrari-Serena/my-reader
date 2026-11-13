@@ -31,7 +31,7 @@ import { handleBookSync } from './booksync.js'
 import { handleBookAudio } from './bookaudio.js'
 import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
 import { handleFeedback } from './feedback.js'
-import { handleAudioGen, handleAudioPromote, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
+import { handleAudioGen, handleAudioPromote, handleAudioCampaignAdmin, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
 import { handleInputToken } from './inputtoken.js'
 import { handleStagingToken } from './stagingtoken.js'
 import { handlePhraseConfig, handlePhraseResolve } from './phrase.js'
@@ -125,6 +125,10 @@ async function handleRequest(request, env, url) {
     // 内部转正：/api/internal/audio/promote（W11-4；service token，staging → 正式）
     const promoteRes = await handleAudioPromote(request, env)
     if (promoteRes !== null) return promoteRes
+
+    // 内部 campaign runner 管理面：/api/internal/audio/campaigns…（W11-7）
+    const campaignAdminRes = await handleAudioCampaignAdmin(request, env)
+    if (campaignAdminRes !== null) return campaignAdminRes
 
     // 同步端点分发（匹配 /api/sync/*）
     const syncRes = await handleSync(request, env)
