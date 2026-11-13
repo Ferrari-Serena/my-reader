@@ -32,6 +32,19 @@ node hub-audio-campaign.mjs --campaign <id> [--input <book.json>] [--voice am_mi
 - 不接 R2、不写索引、不打印正文。
 - `--fail-chapter` 只用于验收（C3）；`--delete-input` 按设计 §12.4a 清掉输入。
 
+### `hub-audio-uploader.mjs`（W11-3）
+
+```bash
+node hub-audio-uploader.mjs --campaign <id> [--book <bk_...>] [--result <path>]
+  [--ttl 1800] [--chapter ch-01] [--limit <n>] [--dry-run] [--no-proxy]
+```
+
+- 读 `result.json.outputs[]`，校验本地 `sha256`；调 `staging-token` 换临时写凭据。
+- `curl`＋SigV4 PUT 到 `staging/<campaignId>/<bookId>/<file>`；单文件最多 3 次。
+- 成功后用 `GET Range: bytes=0-0` 校验 `Content-Range`／`ETag`（R2 临时凭据下 HEAD 会 403）。
+- 回执写 `upload.json`；只写 staging 桶，不碰正式桶／索引。
+- `--test-fail-first <n>` 仅验收用；`--chapter/--limit` 便于单章重传。
+
 ## 部署
 
 ```bash
