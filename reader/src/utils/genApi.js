@@ -140,6 +140,8 @@ export function normalizeGenStatus(body, bookId = '') {
     queue: { ahead: num(q.ahead), position: num(q.position) },
     quota: normalizeQuota(b.quota),
     storage: normalizeStorage(b.storage),
+    /** 整本 campaign（W11-5b）：旧 worker 没这个字段 → null，不编一个空任务 */
+    campaign: normalizeCampaign(b.campaign),
   }
 }
 
@@ -505,6 +507,172 @@ export function clearResultText(book, result) {
   return { ok: false, text: `没清成（HTTP ${r.status}），音频没动 —— 稍后重试。` }
 }
 
+// ── 纯逻辑⑦ 整本 campaign（W11-5b；契约见设计 §12.1）──────────────────────────
+//
+// 整本不是「一次勾 60 章」的普通提交：它是一条 hub 沙箱 job（campaign），进度从
+// `GET /api/gen/book/<bookId>` 的 `campaign` 字段复读（`chaptersDone`／`chaptersTotal`）。
+// 这里只做归一、判定与文案；UI 负责画，**不自算百分比／秒数**（与 D21-g 同一取向）。
+
+/** 单本 campaign 硬上限 —— 与 worker 的 60 **同值手抄**（超了服务端回 400 TOO_MANY_CHAPTERS） */
+export const CAMPAIGN_MAX_CHAPTERS = 60
+/** 每账号每个自然月可开几本整本任务 —— 与 worker 的 3 **同值手抄** */
+export const CAMPAIGN_MONTH_BOOKS = 3
+
+/** `POST /api/gen/book/<bookId>/campaign`（建任务；同书同月已有 → 409） */
+export function campaignPath(bookId) { return `${genStatusPath(bookId)}/campaign` }
+/** `POST /api/gen/book/<bookId>/campaign/<campaignId>/cancel`（幂等） */
+export function campaignCancelPath(bookId, campaignId) {
+  return `${campaignPath(bookId)}/${encodeURIComponent(campaignId)}/cancel`
+}
+
+export const CAMPAIGN_STATUS = {
+  queued: 'queued',       // 已建任务，等 hub 接手
+  running: 'running',     // hub 沙箱在跑（可能已转正了前几章）
+  done: 'done',           // 全部章转正完成
+  failed: 'failed',       // 任务失败（已转正的章保留）
+  cancelled: 'cancelled', // 用户取消（已转正的章保留）
+  blocked: 'blocked',     // 转正校验没通过（checksum／路径／归属），任务停止
+}
+
+export const CAMPAIGN_STATUS_LABEL = {
+  [CAMPAIGN_STATUS.queued]: '排队中',
+  [CAMPAIGN_STATUS.running]: '生成中',
+  [CAMPAIGN_STATUS.done]: '已完成',
+  [CAMPAIGN_STATUS.failed]: '失败',
+  [CAMPAIGN_STATUS.cancelled]: '已取消',
+  [CAMPAIGN_STATUS.blocked]: '已停止',
+}
+
+/**
+ * campaign 归一（GET 的 `campaign` 与 POST 回执共用）。形状坏／没有 id → null：
+ * 旧 worker 没这个字段时，UI 应当退回「没有整本任务」，而不是编一个空任务。
+ * `chaptersDone` 封顶在 `chaptersTotal`（服务端累计值，前端不改写、只防「61/60」这种坏显示）。
+ */
+export function normalizeCampaign(c) {
+  const o = (c && typeof c === 'object' && !Array.isArray(c)) ? c : null
+  if (!o) return null
+  const id = String(o.id || o.campaignId || '')
+  if (!id) return null
+  const total = Math.max(0, num(o.chaptersTotal))
+  const doneRaw = Math.max(0, num(o.chaptersDone))
+  const q = (o.quota && typeof o.quota === 'object' && !Array.isArray(o.quota)) ? o.quota : null
+  return {
+    id,
+    status: String(o.status || ''),
+    chaptersTotal: total,
+    chaptersDone: total > 0 ? Math.min(doneRaw, total) : doneRaw,
+    /** 失败章（设计 §12.1 的可选字段；当前 worker 还没回，缺省空表，不编） */
+    failed: Array.isArray(o.failed) ? o.failed.map(String) : [],
+    voice: String(o.voice || ''),
+    month: String(o.month || ''),
+    quota: q ? { booksUsed: num(q.booksUsed), booksLeft: num(q.booksLeft), month: String(q.month || '') } : null,
+  }
+}
+
+/** 这条 campaign 还在排队／在跑吗（决定轮询要不要继续空转） */
+export function campaignActive(campaign) {
+  const st = String((campaign && campaign.status) || '')
+  return st === CAMPAIGN_STATUS.queued || st === CAMPAIGN_STATUS.running
+}
+
+export function campaignStatusLabel(campaign) {
+  const st = String((campaign && campaign.status) || '')
+  return CAMPAIGN_STATUS_LABEL[st] || '状态未知'
+}
+
+/** 「已完成 x/y 章」——数字全部来自服务端，前端不补也不估 */
+export function campaignProgressText(campaign) {
+  const c = normalizeCampaign(campaign)
+  if (!c) return ''
+  return `已完成 ${c.chaptersDone}/${c.chaptersTotal} 章`
+}
+
+/** 状态一句人话（只描述服务端状态，不承诺时间） */
+export function campaignNote(campaign) {
+  const c = normalizeCampaign(campaign)
+  if (!c) return ''
+  switch (c.status) {
+    case CAMPAIGN_STATUS.queued: return '任务已提交，正在等 hub 沙箱接手。'
+    case CAMPAIGN_STATUS.running: return 'hub 正在后台整本生成；进度来自服务端，关掉页面也会继续。'
+    case CAMPAIGN_STATUS.done: return '整本生成已完成。'
+    case CAMPAIGN_STATUS.cancelled: return '任务已取消 —— 已转正的章保留。'
+    case CAMPAIGN_STATUS.blocked: return '任务因转正校验没通过而停止 —— 已转正的章保留，其余章可以逐章提交。'
+    case CAMPAIGN_STATUS.failed: return '整本任务失败了 —— 已转正的章保留，其余章可以逐章提交。'
+    default: return '状态稍后刷新。'
+  }
+}
+
+/**
+ * 整本提交的勾选 → 载荷：去重、丢形状不对的、按 **60** 截断。
+ * 不复用 `selectionPayload`（那条上限是 5，专给逐章提交）。
+ */
+export function campaignSelectionPayload(chapterIds) {
+  const picked = []
+  let dropped = 0
+  for (const raw of Array.isArray(chapterIds) ? chapterIds : []) {
+    const id = String(raw || '')
+    if (!isValidChapterId(id)) { dropped++; continue }
+    if (picked.includes(id)) continue
+    if (picked.length >= CAMPAIGN_MAX_CHAPTERS) { dropped++; continue }
+    picked.push(id)
+  }
+  if (!picked.length) return { ok: false, chapters: [], dropped, error: '没有可提交的章节' }
+  return { ok: true, chapters: picked, dropped }
+}
+
+/** 错误码 → 一句人话（服务端 §12.1 的字典；未知码不吞，落到 HTTP 档） */
+export const CAMPAIGN_ERROR_HINT = {
+  TOO_MANY_CHAPTERS: `一次最多 ${CAMPAIGN_MAX_CHAPTERS} 章 —— 这本书超过整本生成上限。`,
+  BAD_CHAPTER_ID: '章节编号不对 —— 刷新页面再试。',
+  BAD_VOICE: '音色认不出来 —— 刷新页面再试。',
+  EMPTY_CHAPTERS: '没有可提交的章节。',
+  CAMPAIGN_EXISTS: '这本书本月已经有一个整本任务了 —— 同书同月只能有一个。',
+  CAMPAIGN_QUOTA_EXCEEDED: `本月 ${CAMPAIGN_MONTH_BOOKS} 本的整本额度已经用完了 —— 按北京时间自然月重置。`,
+}
+
+/**
+ * 整本提交没成 → 一句话。**403 有两张脸**（与逐章提交同一取向）：
+ * `CAMPAIGN_QUOTA_EXCEEDED` 是本月 3 本的账；`STORAGE_EXCEEDED` 是账号音频空间的账。
+ */
+export function campaignErrorText(result) {
+  const r = result || {}
+  const code = String(r.error || '')
+  if (code === 'STORAGE_EXCEEDED') {
+    const used = formatBytes(r.used)
+    const limit = formatBytes(r.limit)
+    const bit = used && limit ? `（已用 ${used} ／ 上限 ${limit}）` : ''
+    return `账号音频空间满了${bit} —— 在书架清空某本书的音频，就能继续。`
+  }
+  if (code && CAMPAIGN_ERROR_HINT[code]) return CAMPAIGN_ERROR_HINT[code]
+  if (r.status === 409) return '这本书本月已经有一个整本任务了 —— 同书同月只能有一个；进度见上方。'
+  if (r.status === 403) return '这次没提交成功（403：额度或空间不够）—— 稍后再试，或先腾空间。'
+  if (r.status === 401) return '登录状态过期了，请重新登录再试。'
+  if (!r.status) return `没提交成功（${r.reason === 'timeout' ? '超时' : '网络'}），稍后再试。`
+  return `没提交成功（HTTP ${r.status}），稍后再试。`
+}
+
+/** 整本提交成功 → 一句话 */
+export function campaignSubmitLine(campaign) {
+  const c = normalizeCampaign(campaign)
+  if (!c) return '整本任务已提交。'
+  return `整本任务已提交：${c.chaptersTotal} 章排队中。`
+}
+
+/** 取消整本的二次确认原话（写清「已转正的章保留」＋ 同月不能再开） */
+export function campaignCancelConfirm(title) {
+  const name = String(title || '').trim() || '这本书'
+  return `取消《${name}》的整本生成任务？\n\n已转正（已有音频）的章会保留；还没转正的章不再生成。取消后本月这本书不能再开新的整本任务。`
+}
+
+/** 取消的结果 → 一句话 */
+export function campaignCancelResultText(result) {
+  const r = result || {}
+  if (r.ok) return '整本任务已取消 —— 已转正的章保留。'
+  if (r.status === 401) return '登录已过期 —— 重新登录后再试。'
+  if (!r.status) return `没联系上服务端（${r.reason === 'timeout' ? '超时' : '网络'}），稍后再试。`
+  return `没取消成（HTTP ${r.status}），稍后再试。`
+}
+
 // ── 网络（恒不抛；拿不到就退回「没有在跑」）─────────────────────────────────
 
 async function requestJson(fetchImpl, url, init, timeoutMs) {
@@ -573,5 +741,48 @@ export async function clearBookAudioRemote(bookId, { fetchImpl = globalThis.fetc
     /** 409 回执里的「在跑／排队章数」（D4 那句要报真数字）。-1 ＝ 回执没这个字段 */
     open: num(r.body && r.body.open, -1),
     data: r.ok ? normalizeClear(r.body) : null,
+  }
+}
+
+/**
+ * 开一条整本 campaign（`POST /api/gen/book/<bookId>/campaign`）。**恒不抛**：
+ *   200 → `{ ok:true, data: campaign }`
+ *   409 → `{ ok:false, error:'CAMPAIGN_EXISTS' }`（同书同月已有任务；回执里也有已有任务的 id）
+ *   400／403 → 服务端错误码原样留给 `campaignErrorText`
+ * 客户端先按 60 截断／去重，别让用户白等一个 400。
+ */
+export async function submitBookCampaign(bookId, chapterIds, { fetchImpl = globalThis.fetch, timeoutMs = GEN_TIMEOUT_MS } = {}) {
+  const payload = campaignSelectionPayload(chapterIds)
+  if (!bookId) return { ok: false, status: 0, reason: 'bad-input', error: null, data: null }
+  if (!payload.ok) return { ok: false, status: 0, reason: 'bad-selection', error: payload.error, data: null }
+  const r = await requestJson(fetchImpl, campaignPath(bookId), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chapters: payload.chapters }),
+  }, timeoutMs)
+  return {
+    ok: r.ok, status: r.status, reason: r.reason || null,
+    /** worker 的 409 回执没有 `error` 字段（设计写的是 CAMPAIGN_EXISTS）——这里补上，文案才分得开 */
+    error: (r.body && r.body.error) || (r.status === 409 ? 'CAMPAIGN_EXISTS' : null),
+    used: num(r.body && r.body.used, -1),
+    limit: num(r.body && r.body.limit, -1),
+    data: r.ok ? normalizeCampaign(r.body) : null,
+  }
+}
+
+/** `POST` 的取消回执 → 归一形态 */
+export function normalizeCampaignCancel(body) {
+  const b = (body && typeof body === 'object' && !Array.isArray(body)) ? body : {}
+  return { campaignId: String(b.campaignId || ''), status: String(b.status || 'cancelled') }
+}
+
+/** 取消整本 campaign（幂等）。404／409 等错误原样带回，文案走 `campaignCancelResultText` */
+export async function cancelBookCampaign(bookId, campaignId, { fetchImpl = globalThis.fetch, timeoutMs = GEN_TIMEOUT_MS } = {}) {
+  if (!bookId || !campaignId) return { ok: false, status: 0, reason: 'bad-input', error: null, data: null }
+  const r = await requestJson(fetchImpl, campaignCancelPath(bookId, campaignId), { method: 'POST' }, timeoutMs)
+  return {
+    ok: r.ok, status: r.status, reason: r.reason || null,
+    error: (r.body && r.body.error) || null,
+    data: r.ok ? normalizeCampaignCancel(r.body) : null,
   }
 }

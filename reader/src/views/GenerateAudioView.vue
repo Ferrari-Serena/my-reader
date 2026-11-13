@@ -46,6 +46,49 @@
         <p class="gen-line gen-line-dim">关掉页面也会继续生成，回来时进度照旧。</p>
       </section>
 
+      <!-- 整本生成（W11-5a）：一条 campaign job 由 hub 后台跑完一本书，单本 ≤60 章。
+           进度只复读服务端 campaign 的 chaptersDone／chaptersTotal —— 不画百分比、不自算秒数。 -->
+      <section class="gen-card gen-campaign">
+        <div class="gen-campaign-head">
+          <strong class="gen-campaign-title">整本生成</strong>
+          <span v-if="campaign" class="gen-pill" :class="'gen-cmp-' + campaign.status">
+            {{ campaignStatusLabel(campaign) }}
+          </span>
+        </div>
+
+        <template v-if="campaign">
+          <p class="gen-line"><strong>{{ campaignProgressText(campaign) }}</strong></p>
+          <p class="gen-line">{{ campaignNote(campaign) }}</p>
+          <p v-if="campaign.failed.length" class="gen-line gen-line-bad">
+            失败章：{{ campaign.failed.join('、') }}
+          </p>
+          <p class="gen-line gen-line-dim">同书同月只能有一个整本任务；进度来自服务端，关掉页面也会继续。</p>
+          <div v-if="campaignLive" class="gen-campaign-actions">
+            <button type="button" class="gen-btn gen-btn-ghost" :disabled="campaignBusy" @click="cancelCampaign">
+              {{ campaignBusy ? '取消中…' : '取消整本任务' }}
+            </button>
+          </div>
+        </template>
+
+        <template v-else>
+          <p class="gen-line">
+            一次提交这本书里所有未生成的章（最多 {{ CAMPAIGN_MAX_CHAPTERS }} 章），由 hub 后台整本生成。
+          </p>
+          <p v-if="campaignTooMany" class="gen-line gen-line-bad">
+            这本书有 {{ chapters.length }} 章，超过整本生成上限 {{ CAMPAIGN_MAX_CHAPTERS }} 章 —— 请在下方逐章勾选。
+          </p>
+          <p v-else-if="!campaignPickCount" class="gen-line">这本书可生成的章已经没有了。</p>
+          <div class="gen-campaign-actions">
+            <button type="button" class="gen-btn" :disabled="!canStartCampaign" @click="startCampaign">
+              {{ campaignButtonText }}
+            </button>
+          </div>
+        </template>
+
+        <p v-if="campaignError" class="gen-msg gen-msg-bad">{{ campaignError }}</p>
+        <p v-if="campaignLine" class="gen-msg">{{ campaignLine }}</p>
+      </section>
+
       <!-- 章节多选（D21-c）：单章／多章／连续区间／全选未生成 -->
       <section class="gen-card">
         <div class="gen-tools">
@@ -126,6 +169,8 @@
  *   · **只引 `utils/genApi.js` ＋ `utils/`／`storage/`／`composables/`** —— `src/views/` 下不许
  *     静态引 `src/generate/`（`verify-generate.mjs` 的卫生断言，构建级会咬 chunk）；
  *   · **不画假进度**（D21-g）：所有数字都是服务端 `GET /api/gen/book/<id>` 复读的，前端不算秒；
+ *   · **整本 campaign**（W11-5a）：只对 ≤60 章的书开放；状态／进度同样只复读 GET 的
+ *     `campaign` 字段，提交／取消／错误文案全走 `utils/genApi.js`；
  *   · **不提供「重新生成」**（D21-l）：已就绪的章不可勾；要换就清空该书音频再来（D4）。
  *
  * 口径只在两处：服务端契约（`worker/src/audiogen.js`）与 `utils/genApi.js`。这里只负责画。
@@ -138,9 +183,13 @@ import { isBookId } from '../utils/bookId.js'
 import { useAuth } from '../composables/useAuth.js'
 import {
   CH_STATE, CH_STATE_LABEL, GEN_PAGE_NOTES, GEN_POLL_MS, MAX_CHAPTERS_PER_SUBMIT,
+  CAMPAIGN_MAX_CHAPTERS,
   chapterRowState, chapterSelectable, fetchGenStatus, normalizeQuota, quotaLeftText,
   queueLine, rangeSelection, skipReasonText, submitGenChapters, submitResultLine,
-  storageLine, submitErrorText, QUOTA_RESET_NOTE
+  storageLine, submitErrorText, QUOTA_RESET_NOTE,
+  campaignActive, campaignStatusLabel, campaignProgressText, campaignNote,
+  campaignErrorText, campaignSubmitLine, campaignCancelConfirm, campaignCancelResultText,
+  submitBookCampaign, cancelBookCampaign
 } from '../utils/genApi.js'
 
 const route = useRoute()
@@ -165,6 +214,12 @@ const submitting = ref(false)
 const submitLine = ref('')
 const skipLines = ref([])
 const submitError = ref('')
+
+// 整本 campaign（W11-5a）：提交／取消的忙碌态与两句反馈。进度本身不进这里 —— 它只从
+// `genStatus.campaign` 复读（轮询会刷新），前端不另存一份会漂开的副本。
+const campaignBusy = ref(false)
+const campaignError = ref('')
+const campaignLine = ref('')
 
 let pollTimer = null
 let pollBusy = false
@@ -191,6 +246,18 @@ const selectableIds = computed(() => rows.value.filter((r) => r.selectable).map(
 const runningIds = computed(() => rows.value.filter((r) => r.state === CH_STATE.running).map((r) => r.id))
 const queuedIds = computed(() => rows.value.filter((r) => r.state === CH_STATE.queued).map((r) => r.id))
 
+// ── 整本 campaign（W11-5a）──────────────────────────────────────────────────
+
+/** 服务端台账里的整本任务（每月一条；null ＝ 本月还没开过／旧 worker 没这个字段） */
+const campaign = computed(() => (genStatus.value && genStatus.value.campaign) || null)
+const campaignLive = computed(() => campaignActive(campaign.value))
+/** 单本 campaign 硬上限 60 章（与 worker 同值）；整本只对 ≤60 章的书开放 */
+const campaignTooMany = computed(() => chapters.value.length > CAMPAIGN_MAX_CHAPTERS)
+/** 「整本」勾的是所有还能生成的章（已生成／在跑／太长的不算，与章节表同一判定） */
+const campaignPickCount = computed(() => selectableIds.value.length)
+const campaignButtonText = computed(() =>
+  (campaignBusy.value ? '提交中…' : `整本生成（${campaignPickCount.value} 章）`))
+
 // ── 进度（服务端任务表：done／pending／running／failed 的行）──────────────────
 
 const summary = computed(() => (genStatus.value && genStatus.value.summary) || {
@@ -202,7 +269,8 @@ const activeTotal = computed(() =>
 const doneCount = computed(() => summary.value.done)
 const progressVisible = computed(() => !!genStatus.value && activeTotal.value > 0)
 const queueText = computed(() => queueLine(genStatus.value ? genStatus.value.queue : null))
-const inFlight = computed(() => (summary.value.pending + summary.value.running) > 0)
+/** 「有活要等」：逐章任务在跑 **或** 整本 campaign 还在排队／生成（后者没落 task 行时要靠它轮询） */
+const inFlight = computed(() => (summary.value.pending + summary.value.running) > 0 || campaignLive.value)
 
 // ── 额度（D21-e：只有数，不写死 5 章）────────────────────────────────────────
 
@@ -221,6 +289,10 @@ const storageText = computed(() => storageLine(genStatus.value ? genStatus.value
 const blockedByStorage = computed(() => !!(genStatus.value && genStatus.value.storage && genStatus.value.storage.full))
 const canSubmit = computed(() => (
   !submitting.value && !!selectedIds.value.length && !blockedByQuota.value && !blockedByStorage.value && !needLogin.value))
+/** 整本：≤60 章、还有可生成的章、本月这本书还没开过任务、空间没满 */
+const canStartCampaign = computed(() => (
+  !campaignBusy.value && !campaign.value && !campaignTooMany.value && campaignPickCount.value > 0
+  && !blockedByStorage.value && !needLogin.value))
 
 // ── 勾选（单章／多章／区间／全选未生成；一次最多 MAX_CHAPTERS_PER_SUBMIT 章）───
 
@@ -315,7 +387,8 @@ async function pollOnce() {
   pollBusy = true
   try {
     const d = await refreshStatus()
-    if (d && (d.summary.pending + d.summary.running) === 0) stopPoll() // 没有在跑的了 → 停表
+    // 逐章任务与整本 campaign 都没在跑 → 停表（campaign 排队时还没有 task 行，别只看 summary）
+    if (d && (d.summary.pending + d.summary.running) === 0 && !campaignActive(d.campaign)) stopPoll()
   } catch { /* 恒不抛：下个 tick 再来 */ } finally { pollBusy = false }
 }
 
@@ -351,6 +424,46 @@ async function submit() {
   pickNotice.value = ''
   await refreshStatus()
   if (inFlight.value) startPoll()
+}
+
+/**
+ * 整本生成：把**所有还能生成的章**交给 campaign（≤60 章由 canStartCampaign ＋ genApi 双重拦）。
+ * 409（同书同月已有任务）也刷新一次 —— 让上面那块把已有任务的真实进度画出来，而不是只说一句错。
+ */
+async function startCampaign() {
+  if (!canStartCampaign.value) return
+  const id = bookId.value
+  campaignBusy.value = true
+  campaignError.value = ''
+  campaignLine.value = ''
+  const r = await submitBookCampaign(id, selectableIds.value)
+  campaignBusy.value = false
+  if (id !== bookId.value) return
+  if (!r.ok) {
+    campaignError.value = campaignErrorText(r)
+    await refreshStatus()
+    return
+  }
+  campaignLine.value = campaignSubmitLine(r.data)
+  await refreshStatus()
+  if (inFlight.value) startPoll()
+}
+
+/** 取消整本任务（幂等；已转正的章保留 —— 原话只在 genApi 的 campaignCancelConfirm） */
+async function cancelCampaign() {
+  const c = campaign.value
+  if (!c || !campaignActive(c) || campaignBusy.value) return
+  if (typeof window !== 'undefined' && !window.confirm(campaignCancelConfirm(bookTitle.value))) return
+  const id = bookId.value
+  campaignBusy.value = true
+  campaignError.value = ''
+  campaignLine.value = ''
+  const r = await cancelBookCampaign(id, c.id)
+  campaignBusy.value = false
+  if (id !== bookId.value) return
+  if (r.ok) campaignLine.value = campaignCancelResultText(r)
+  else campaignError.value = campaignCancelResultText(r)
+  await refreshStatus()
 }
 
 // ── 装载 ─────────────────────────────────────────────────────────────────────
@@ -456,8 +569,19 @@ watch(() => auth.user.value, async (u) => {
 }
 .gen-pill-run { background: #e8f0fe; color: var(--accent-color, #1a73e8); }
 
+/* 整本生成：状态胶囊沿用 .gen-pill，只按 campaign 状态换色 */
+.gen-campaign-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.gen-campaign-title { font-size: 14px; color: var(--text-primary, #1d1d1f); }
+.gen-campaign-actions { margin-top: 8px; }
+.gen-campaign-actions .gen-btn { width: 100%; }
+.gen-cmp-queued, .gen-cmp-running { background: #e8f0fe; color: var(--accent-color, #1a73e8); }
+.gen-cmp-done { background: #e6f4ea; color: #137333; }
+.gen-cmp-failed, .gen-cmp-blocked { background: #fce8e6; color: #b3261e; }
+.gen-cmp-cancelled { background: var(--bg-secondary, #f5f5f5); color: var(--text-secondary, #6e6e73); }
+
 .gen-line { margin: 0 0 4px; font-size: 13px; color: var(--text-secondary, #6e6e73); line-height: 1.5; }
 .gen-line-dim { font-size: 12.5px; }
+.gen-line-bad { color: #b3261e; }
 
 .gen-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
 .gen-range { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-secondary, #6e6e73); }
@@ -537,4 +661,11 @@ watch(() => auth.user.value, async (u) => {
 .gen-msg { margin: 8px 0 0; font-size: 13px; color: var(--text-secondary, #6e6e73); line-height: 1.5; }
 .gen-msg-bad { color: #b3261e; }
 .gen-msg ul { margin: 0; padding-left: 18px; }
+
+/* 手机（390×844）：底部条折行、按钮占满一行 —— 章数文案不该把提交按钮挤出屏幕 */
+@media (max-width: 480px) {
+  .gen-view { padding: 12px 12px 32px; }
+  .gen-foot { flex-wrap: wrap; }
+  .gen-foot .gen-btn { width: 100%; }
+}
 </style>
