@@ -110,6 +110,185 @@ export function classifyFile(file) {
   return null
 }
 
+// ── W11-4 转正（staging → 正式桶）：路径闸 ＋ 单章搬运 ────────────────────────
+//
+// 正式桶的键**不由 manifest 决定**：一律 `user/<code>/<bookId>/<chapterId>.mp3`
+// （`audioObjectKey`）。manifest 里的路径只用来「要求它恰好等于我们算出来的那个键」——
+// 于是路径穿越／跨 book／跨 campaign 在结构上就写不进来（`allowed_paths` 的白名单形态）。
+// staging 键同理，只认 `staging/<campaignId>/<bookId>/<chapterId>.mp3|timings.json`。
+
+/** 内部转正路由（service token；handler 在 audiogen.js） */
+export const PROMOTE_ROUTE = '/api/internal/audio/promote'
+/** staging 键根（与 stagingtoken.js 签凭据时给的 prefix 同形） */
+export const STAGING_ROOT = 'staging/'
+/** 单本 campaign 硬上限（设计 §四：每本 ≤60 章） */
+export const PROMOTE_MAX_CHAPTERS = 60
+
+/** campaignId 形状（与 stagingtoken.js 一致；额外拒绝 `..`，免得拼前缀时穿越） */
+export function isCampaignId(v) {
+  return typeof v === 'string'
+    && /^[A-Za-z0-9._-]{1,64}$/.test(v)
+    && !v.includes('..')
+    && v !== '.' && v !== '..'
+}
+
+/** `staging/<campaignId>/<bookId>/`（唯一合法前缀；调用方传的前缀必须逐字等于它） */
+export function stagingPrefixFor(campaignId, bookId) {
+  return STAGING_ROOT + campaignId + '/' + bookId + '/'
+}
+
+/** 章产物文件名（只由 chapterId ＋ kind 决定；chapterId 已过 `^ch-[0-9]+$`） */
+export function promoteFileFor(chapterId, kind) {
+  return kind === 'mp3' ? chapterId + '.mp3' : chapterId + '.timings.json'
+}
+
+/**
+ * manifest 路径 → 只允许两种形态：
+ *   ① 裸文件名（hub manifest 的写法：`ch-01.mp3`）
+ *   ② 完整 staging 键（`staging/<campaignId>/<bookId>/ch-01.mp3`）
+ * 其余一律拒 —— 含 `..`／绝对路径／反斜杠／百分号编码／scheme／别的 campaign·book。
+ * 返回 `{ ok:true, file, key }` 或 `{ ok:false, error }`（error ∈ PATH_TRAVERSAL /
+ * PATH_NOT_ALLOWED / BAD_FILE_KIND）。
+ */
+export function resolvePromotePath(raw, chapterId, kind, stagingPrefix) {
+  const file = promoteFileFor(chapterId, kind)
+  const expectedKind = kind === 'mp3' ? 'mp3' : 'timings'
+  if (raw === undefined || raw === null || raw === '') return { ok: true, file, key: stagingPrefix + file }
+  const s = String(raw)
+  if (!s || s.length > 512 || /[\x00-\x1f]/.test(s)) return { ok: false, error: 'PATH_NOT_ALLOWED' }
+  if (s.includes('\\') || s.includes('%') || s.startsWith('/') || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(s)) {
+    return { ok: false, error: 'PATH_NOT_ALLOWED' }
+  }
+  if (s.split('/').some((seg) => seg === '..' || seg === '.')) return { ok: false, error: 'PATH_TRAVERSAL' }
+  if (s !== file && s !== stagingPrefix + file) return { ok: false, error: 'PATH_NOT_ALLOWED' }
+  const cls = classifyFile(file)
+  if (!cls || cls.kind !== expectedKind) return { ok: false, error: 'BAD_FILE_KIND' }
+  return { ok: true, file, key: stagingPrefix + file }
+}
+
+/** R2 checksums.sha256（ArrayBuffer）→ 小写 hex；没有就 null（＝需要自己算） */
+export function checksumHex(value) {
+  if (!value) return null
+  let u8
+  if (value instanceof ArrayBuffer) u8 = new Uint8Array(value)
+  else if (ArrayBuffer.isView(value)) u8 = new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  else return null
+  let out = ''
+  for (const b of u8) out += b.toString(16).padStart(2, '0')
+  return out
+}
+
+/** WebCrypto SHA-256 → 小写 hex（R2 没带原生 checksum 时的兜底；Workers / Node 都有 crypto.subtle） */
+export async function sha256Hex(bytes) {
+  const u8 = bytes instanceof Uint8Array
+    ? bytes
+    : new Uint8Array(bytes instanceof ArrayBuffer ? bytes : bytes.buffer, bytes.byteOffset || 0, bytes.byteLength)
+  const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
+  const digest = await crypto.subtle.digest('SHA-256', buf)
+  return checksumHex(digest)
+}
+
+/** 是否是 MP3 字节流（ID3v2 头或首个 MPEG 帧同步字）—— 用它验「content-type」比看元数据可靠 */
+export function isMp3Bytes(u8) {
+  if (!u8 || u8.length < 4) return false
+  if (u8[0] === 0x49 && u8[1] === 0x44 && u8[2] === 0x33) return true // 'ID3'
+  return u8[0] === 0xff && (u8[1] & 0xe0) === 0xe0
+}
+
+/**
+ * 搬一章：staging `<ch>.mp3` ＋ `<ch>.timings.json` → 正式 `user/<code>/<bookId>/<ch>.*`。
+ *
+ * 校验顺序（先验后写；本章校验不过就一个正式对象都不写）：
+ *   ① 对象存在、size > 0、≤ 8 MB（与上传端点同一上限）；
+ *   ② SHA-256：**优先用 R2 原生 `checksums.sha256`**；对象没带 checksum 时（uploader 走
+ *      curl / S3 PUT，没设 `x-amz-checksum-sha256`）才对字节算一次 —— `checksumSource`
+ *      如实回报是 `r2` 还是 `computed`，不把兜底伪装成原生；
+ *   ③ mp3 字节头 / timings JSON 形状（content-type 的实质校验）。
+ * 返回 `{ ok:true, bytes, sha256, checksumSource, audioMs }` 或 `{ ok:false, error, status, detail }`。
+ * **恒不抛**。
+ */
+export async function promoteStagedChapter(env, o) {
+  const { stagingPrefix, code, bookId, chapterId } = o
+  const fail = (error, status = 422, detail) => ({ ok: false, error, status, detail: detail || null })
+  const expectedSha = String(o.sha256 || '').toLowerCase()
+
+  // ① mp3
+  let obj
+  try {
+    obj = await env.STAGING.get(stagingPrefix + promoteFileFor(chapterId, 'mp3'))
+  } catch (e) {
+    return fail('STORAGE_READ_FAILED', 502, String((e && e.message) || e))
+  }
+  if (!obj) return fail('STAGING_MISSING')
+  const size = Number(obj.size)
+  if (!Number.isFinite(size) || size <= 0) return fail('SIZE_MISMATCH')
+  if (size > MAX_AUDIO_FILE_BYTES) return fail('SIZE_TOO_LARGE', 422, { size, max: MAX_AUDIO_FILE_BYTES })
+  if (o.bytes !== undefined && Number(o.bytes) !== size) return fail('SIZE_MISMATCH', 422, { expected: o.bytes, actual: size })
+
+  let bytes
+  try { bytes = new Uint8Array(await obj.arrayBuffer()) } catch (e) { return fail('STORAGE_READ_FAILED', 502) }
+  if (bytes.length !== size) return fail('SIZE_MISMATCH', 422, { expected: size, actual: bytes.length })
+
+  const native = checksumHex(obj.checksums && obj.checksums.sha256)
+  const actualSha = native || await sha256Hex(bytes)
+  const checksumSource = native ? 'r2' : 'computed'
+  if (!expectedSha || actualSha !== expectedSha) {
+    return fail('CHECKSUM_MISMATCH', 422, { expected: expectedSha || null, actual: actualSha, source: checksumSource })
+  }
+  if (!isMp3Bytes(bytes)) return fail('INVALID_MP3')
+
+  // ② timings
+  let tmObj
+  try {
+    tmObj = await env.STAGING.get(stagingPrefix + promoteFileFor(chapterId, 'timings'))
+  } catch (e) {
+    return fail('STORAGE_READ_FAILED', 502, String((e && e.message) || e))
+  }
+  if (!tmObj) return fail('STAGING_MISSING', 422, { file: promoteFileFor(chapterId, 'timings') })
+  const tmSize = Number(tmObj.size)
+  if (!Number.isFinite(tmSize) || tmSize <= 0) return fail('SIZE_MISMATCH')
+  if (tmSize > MAX_AUDIO_FILE_BYTES) return fail('SIZE_TOO_LARGE', 422, { size: tmSize, max: MAX_AUDIO_FILE_BYTES })
+  if (o.timingsBytes !== undefined && Number(o.timingsBytes) !== tmSize) {
+    return fail('SIZE_MISMATCH', 422, { expected: o.timingsBytes, actual: tmSize })
+  }
+  let tmBytes
+  try { tmBytes = new Uint8Array(await tmObj.arrayBuffer()) } catch { return fail('STORAGE_READ_FAILED', 502) }
+  const tmNative = checksumHex(tmObj.checksums && tmObj.checksums.sha256)
+  if (o.timingsSha256) {
+    const tmSha = tmNative || await sha256Hex(tmBytes)
+    if (tmSha !== String(o.timingsSha256).toLowerCase()) return fail('CHECKSUM_MISMATCH', 422, { file: 'timings' })
+  }
+  let timings
+  try { timings = JSON.parse(new TextDecoder().decode(tmBytes)) } catch { return fail('INVALID_TIMINGS') }
+  if (!timings || typeof timings !== 'object' || Array.isArray(timings)
+    || typeof timings.duration !== 'number' || !timings.paragraphs
+    || typeof timings.paragraphs !== 'object' || Array.isArray(timings.paragraphs)) {
+    return fail('INVALID_TIMINGS')
+  }
+
+  // ③ 写正式桶（键由 code/book/chapter 算出，manifest 路径改不了它）
+  try {
+    await env.AUDIO.put(audioObjectKey(code, bookId, promoteFileFor(chapterId, 'mp3')), bytes, {
+      httpMetadata: { contentType: 'audio/mpeg' },
+    })
+    await env.AUDIO.put(
+      audioObjectKey(code, bookId, promoteFileFor(chapterId, 'timings')),
+      JSON.stringify(timings),
+      { httpMetadata: { contentType: 'application/json' } },
+    )
+  } catch (e) {
+    return fail('STORAGE_WRITE_FAILED', 502, String((e && e.message) || e))
+  }
+
+  return {
+    ok: true,
+    bytes: size,
+    sha256: actualSha,
+    checksumSource,
+    audioMs: Math.round(timings.duration * 1000),
+  }
+}
+
 
 function json(cors, data, status = 200, extra = {}) {
   return new Response(JSON.stringify(data), {

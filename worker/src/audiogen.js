@@ -9,6 +9,8 @@
  *   POST /api/gen/book/<bookId>   提交章节（JSON `{ chapters: ["ch-01", …] }`）→ 写任务表、立即返回
  *   GET  /api/gen/book/<bookId>   状态（章级 + 排队位次 + 剩余额度）—— 服务端复读，关页再回来仍在
  * 两条都**不含 code**（租户由会话反推 `users.sync_code`）；带 `?code=` → 400。
+ * 另有 W11-4 内部转正（service token，不在这里的 /api/gen 前缀下）：
+ *   POST /api/internal/audio/promote  staging → 正式 R2／audio_tasks／audio-index；见 handleAudioPromote。
  *
  * 合成管线（主路 B · 并块、不插静音）：
  *   取章正文（R2 `books/<code>/<bookId>.json` 的 chapters[].paragraphs[].text）
@@ -41,7 +43,11 @@ import { corsFor } from './cors.js'
 import { sessionTenant } from './syncgate.js'
 import { isBookId } from './sync.js'
 import { bookObjectKey } from './booksync.js'
-import { audioObjectKey, INDEX_FILE, storageState } from './bookaudio.js'
+import {
+  audioObjectKey, INDEX_FILE, storageState,
+  PROMOTE_ROUTE, PROMOTE_MAX_CHAPTERS, isCampaignId, stagingPrefixFor,
+  resolvePromotePath, promoteStagedChapter,
+} from './bookaudio.js'
 
 export const ROUTE_PREFIX = '/api/gen/'
 
@@ -77,7 +83,8 @@ export const DEFAULT_SPEED = 1
 export const DI_URL = 'https://api.deepinfra.com/v1/inference/hexgrad/Kokoro-82M'
 
 const NO_STORE = 'no-store'
-const CHAPTER_ID_RE = /^ch-[0-9]+$/
+/** 章 id 形状（提交／转正共用；转正另按 `PROMOTE_MAX_CHAPTERS` 限本数） */
+export const CHAPTER_ID_RE = /^ch-[0-9]+$/
 
 // ── 任务状态（行落在 audio_tasks；表与两列的头注见 migrations/0005、0006）────────
 
@@ -548,6 +555,28 @@ export const SQL_CAMPAIGN_INSERT = `INSERT INTO audio_campaigns
   VALUES (?, ?, ?, ?, 'queued', ?, ?, 0, ?, ?)`
 export const SQL_CAMPAIGN_CANCEL = `UPDATE audio_campaigns SET status = 'cancelled', updated_at = ?
   WHERE id = ? AND code = ? AND book_id = ? AND status IN ('queued','running')`
+
+// ── W11-4 转正（service token；路由 `/api/internal/audio/promote`）────────────
+export const SQL_CAMPAIGN_BY_ID = `SELECT * FROM audio_campaigns WHERE id = ?`
+/** 校验失败 ⇒ campaign `blocked`（只从 queued/running 落，已 done／cancelled 不回头） */
+export const SQL_CAMPAIGN_BLOCK = `UPDATE audio_campaigns SET status = 'blocked', updated_at = ?
+  WHERE id = ? AND code = ? AND book_id = ? AND status IN ('queued','running')`
+/** 转正成功：累计 chapters_done（封顶 chapters_total），满额翻 done */
+export const SQL_CAMPAIGN_PROMOTE_SET = `UPDATE audio_campaigns
+  SET chapters_done = ?, status = ?, updated_at = ?
+  WHERE id = ? AND code = ? AND book_id = ?`
+/** 转正写 D1：一章一行、直接 done。
+ *  **`created_at = 0` 是有意的** —— 日配额（SQL_QUOTA_SUM）只算 `[今天 0 点, 明天 0 点)` 的行，
+ *  local 生成不吃 DeepInfra 的「5 章/80k/天」那本账（设计 §三：成本闸只留给云端路径）。
+ *  冲突时保留原 `created_at`（不把云端的配额记录改写成 0）；状态／产物字段以本次为准。 */
+export const SQL_TASK_PROMOTE = `INSERT INTO audio_tasks
+  (code, book_id, chapter_id, title, char_count, status, attempts,
+   created_at, updated_at, started_at, finished_at, error, bytes, audio_ms)
+  VALUES (?, ?, ?, ?, ?, 'done', 0, 0, ?, ?, ?, NULL, ?, ?)
+  ON CONFLICT(code, book_id, chapter_id) DO UPDATE SET
+    status = 'done', updated_at = excluded.updated_at, started_at = excluded.started_at,
+    finished_at = excluded.finished_at, error = NULL, purged_at = NULL, bytes = excluded.bytes,
+    audio_ms = excluded.audio_ms, title = excluded.title, char_count = excluded.char_count`
 export async function campaignQuotaUsed(env, code, month) {
   try {
     const row = await env.DB.prepare(SQL_CAMPAIGN_QUOTA).bind(code, month).first()
@@ -708,6 +737,256 @@ async function handleCampaign(request, env, cors, code, bookId, parts, now) {
     return json(cors, { campaignId, status: 'cancelled' }, 200)
   }
   return json(cors, { error: 'invalid campaign path' }, 400)
+}
+
+// ── W11-4 Worker 转正 ────────────────────────────────────────────────────────
+//
+// POST /api/internal/audio/promote
+//   Authorization: Bearer <INTERNAL_TOKEN>（与 input-token／staging-token 同一把 service token）
+//   body: { campaignId, bookId, chapters[], stagingPrefix }
+//   chapters[] = hub manifest 的章条目：{ chapterId, mp3, timings, sha256, bytes, chars?, status? }
+//
+// 边界（设计 §12.5）：
+//   · **R2 原生 SHA-256 vs manifest**（对象没带 checksum 才算一次兜底，回报 source）；
+//   · `allowed_paths`：staging 键只认 `staging/<campaignId>/<bookId>/<file>`，正式键只由
+//     `audioObjectKey(code, bookId, file)` 算出 —— manifest 路径只能「恰好等于」，不能指路；
+//   · chapter id 正则（`CHAPTER_ID_RE`）、≤60 章、size／content-type（按字节验，不信元数据）；
+//   · book 归属：campaign.book_id === body.bookId，且章必须真的在该书书体里。
+//
+// 写入顺序：正式 R2（逐章）→ D1 `audio_tasks` → `audio-index.json`（最后）→ campaign 计数。
+// 校验失败 ⇒ 409／422，**不写索引**，campaign 置 `blocked`（只从 queued/running 落）。
+// 已搬完的前几章留在正式桶里（不回滚），重试幂等；索引没写 ⇒ 客户端不会把它们当就绪。
+// 传输／D1／R2 抖动（502／500）**不**置 blocked —— 那是可重试的，不是内容不合法。
+
+/** 把 campaign 置 blocked；恒不抛 */
+async function markCampaignBlocked(env, campaign, now) {
+  try {
+    await env.DB.prepare(SQL_CAMPAIGN_BLOCK)
+      .bind(now, campaign.id, campaign.code, campaign.book_id).run()
+  } catch (e) {
+    console.error('promote campaign block failed:', e && e.message)
+  }
+}
+
+/** 转正失败的统一出口：`block` 决定要不要把 campaign 置 blocked */
+function promoteFail(env, campaign, now, error, status, extra = {}) {
+  if (campaign && (status === 409 || status === 422)) {
+    return markCampaignBlocked(env, campaign, now).then(() => json({}, {
+      ok: false, error, campaignId: campaign.id, bookId: campaign.book_id,
+      indexWritten: false, ...extra,
+    }, status))
+  }
+  return json({}, {
+    ok: false, error, campaignId: campaign ? campaign.id : null,
+    bookId: campaign ? campaign.book_id : null, indexWritten: false, ...extra,
+  }, status)
+}
+
+/**
+ * 内部转正入口。匹配返回 Response，不匹配返回 null（主路由继续 fallthrough）。
+ * 只接 POST；无 CORS（service-to-service，与 input-token／staging-token 同姿态）。
+ */
+export async function handleAudioPromote(request, env) {
+  const url = new URL(request.url)
+  if (url.pathname !== PROMOTE_ROUTE) return null
+  if (request.method !== 'POST') return json({}, { error: 'method not allowed' }, 405)
+
+  const auth = request.headers.get('authorization') || ''
+  if (!env.INTERNAL_TOKEN || auth !== 'Bearer ' + env.INTERNAL_TOKEN) {
+    return json({}, { error: 'unauthorized' }, 401)
+  }
+  if (!env.STAGING) return json({}, { error: 'staging not configured' }, 500)
+
+  let body
+  try { body = await request.json() } catch { return json({}, { error: 'invalid json' }, 400) }
+  const campaignId = String((body && body.campaignId) || '')
+  const bookId = String((body && body.bookId) || '')
+  const want = body && body.chapters
+  if (!isCampaignId(campaignId)) return json({}, { error: 'invalid campaignId' }, 400)
+  if (!isBookId(bookId)) return json({}, { error: 'invalid bookId' }, 400)
+  if (!Array.isArray(want) || want.length === 0) return json({}, { error: 'EMPTY_CHAPTERS' }, 400)
+  if (want.length > PROMOTE_MAX_CHAPTERS) {
+    return json({}, { error: 'TOO_MANY_CHAPTERS', max: PROMOTE_MAX_CHAPTERS }, 400)
+  }
+
+  const now = Date.now()
+
+  // ① campaign 归属（id 与 bookId 必须对上；code 只从 D1 行取，客户端不传）
+  let campaign
+  try {
+    campaign = await env.DB.prepare(SQL_CAMPAIGN_BY_ID).bind(campaignId).first()
+  } catch (e) {
+    console.error('promote campaign read failed:', e && e.message)
+    return promoteFail(env, null, now, 'db read failed', 500)
+  }
+  if (!campaign) return promoteFail(env, null, now, 'CAMPAIGN_NOT_FOUND', 404)
+  if (String(campaign.book_id) !== bookId) {
+    return promoteFail(env, campaign, now, 'CROSS_BOOK', 409, {
+      detail: { campaignBookId: String(campaign.book_id), bodyBookId: bookId },
+    })
+  }
+  if (String(campaign.status) === 'cancelled') {
+    return promoteFail(env, campaign, now, 'CAMPAIGN_CANCELLED', 409)
+  }
+  const code = String(campaign.code)
+
+  // ② stagingPrefix 必须逐字等于我们算出来的前缀
+  const stagingPrefix = stagingPrefixFor(campaignId, bookId)
+  const givenPrefix = String((body && body.stagingPrefix) || '')
+  if (givenPrefix !== stagingPrefix && givenPrefix !== stagingPrefix.slice(0, -1)) {
+    return promoteFail(env, campaign, now, 'PATH_NOT_ALLOWED', 422, {
+      detail: { expectedPrefix: stagingPrefix },
+    })
+  }
+
+  // ③ 章条目：id 正则、去重、manifest 路径白名单、sha/size 形状
+  const entries = []
+  for (const v of want) {
+    const e = (typeof v === 'string') ? { chapterId: v } : (v || {})
+    const chapterId = String(e.chapterId || '')
+    if (!CHAPTER_ID_RE.test(chapterId)) {
+      return promoteFail(env, campaign, now, 'BAD_CHAPTER_ID', 422, { chapterId })
+    }
+    if (entries.some((x) => x.chapterId === chapterId)) continue
+    if (e.status !== undefined && String(e.status) !== 'done') {
+      return promoteFail(env, campaign, now, 'CHAPTER_NOT_DONE', 422, { chapterId })
+    }
+    const sha256 = String(e.sha256 || '').toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(sha256)) {
+      return promoteFail(env, campaign, now, 'CHECKSUM_MISSING', 422, { chapterId })
+    }
+    const mp3 = resolvePromotePath(e.mp3, chapterId, 'mp3', stagingPrefix)
+    if (!mp3.ok) return promoteFail(env, campaign, now, mp3.error, 422, { chapterId, file: 'mp3' })
+    const timings = resolvePromotePath(e.timings, chapterId, 'timings', stagingPrefix)
+    if (!timings.ok) return promoteFail(env, campaign, now, timings.error, 422, { chapterId, file: 'timings' })
+    const bytes = (e.bytes === undefined || e.bytes === null) ? undefined : Number(e.bytes)
+    if (bytes !== undefined && (!Number.isInteger(bytes) || bytes <= 0)) {
+      return promoteFail(env, campaign, now, 'SIZE_MISMATCH', 422, { chapterId })
+    }
+    const timingsBytes = (e.timingsBytes === undefined || e.timingsBytes === null) ? undefined : Number(e.timingsBytes)
+    if (timingsBytes !== undefined && (!Number.isInteger(timingsBytes) || timingsBytes <= 0)) {
+      return promoteFail(env, campaign, now, 'SIZE_MISMATCH', 422, { chapterId, file: 'timings' })
+    }
+    const timingsSha256 = e.timingsSha256 ? String(e.timingsSha256).toLowerCase() : ''
+    if (timingsSha256 && !/^[0-9a-f]{64}$/.test(timingsSha256)) {
+      return promoteFail(env, campaign, now, 'CHECKSUM_MISSING', 422, { chapterId, file: 'timings' })
+    }
+    entries.push({
+      chapterId, sha256, mp3Key: mp3.key, timingsKey: timings.key,
+      bytes, timingsBytes, timingsSha256,
+      chars: Number.isInteger(e.chars) && e.chars > 0 ? e.chars : 0,
+      title: '',
+    })
+  }
+  if (entries.length === 0) return promoteFail(env, campaign, now, 'EMPTY_CHAPTERS', 400)
+
+  // ④ book 归属：书体必须读得到，且每个章 id 真的在这本书里
+  const bookBody = await readBookBody(env, code, bookId)
+  if (bookBody === null) return promoteFail(env, campaign, now, 'BOOK_NOT_FOUND', 422)
+  if (bookBody && bookBody.error) return promoteFail(env, campaign, now, 'BOOK_UNREADABLE', 422, { detail: bookBody.error })
+  if (bookBody && bookBody.bad) return promoteFail(env, campaign, now, 'BOOK_UNREADABLE', 422)
+  for (const e of entries) {
+    const ch = chapterOfBook(bookBody, e.chapterId)
+    if (!ch) return promoteFail(env, campaign, now, 'CHAPTER_NOT_IN_BOOK', 422, { chapterId: e.chapterId })
+    e.title = ch.title
+    if (!e.chars) e.chars = chapterCharCount(ch)
+  }
+
+  // ⑤ 已有任务行：还在云路径跑／排队的章不能被转正抢走（会双写）
+  let existing = []
+  try {
+    existing = ((await env.DB.prepare(SQL_TASKS_FOR_BOOK).bind(code, bookId).all()).results) || []
+  } catch (e) {
+    console.error('promote task read failed:', e && e.message)
+    return promoteFail(env, campaign, now, 'db read failed', 500)
+  }
+  const byId = new Map(existing.map((r) => [String(r.chapter_id), r]))
+  for (const e of entries) {
+    const prev = byId.get(e.chapterId)
+    if (prev && isPendingStatus(prev.status)) {
+      return promoteFail(env, campaign, now, 'TASK_RUNNING', 409, { chapterId: e.chapterId })
+    }
+  }
+
+  // ⑥ 逐章搬（校验＋写正式 R2）。任何一章内容不合法 ⇒ 停、blocked、不写索引。
+  const promoted = []
+  for (const e of entries) {
+    const r = await promoteStagedChapter(env, {
+      stagingPrefix, code, bookId, chapterId: e.chapterId,
+      sha256: e.sha256, bytes: e.bytes,
+      timingsBytes: e.timingsBytes, timingsSha256: e.timingsSha256,
+    })
+    if (!r.ok) {
+      return promoteFail(env, campaign, now, r.error, r.status || 422, {
+        chapterId: e.chapterId, detail: r.detail || null,
+      })
+    }
+    promoted.push({
+      chapterId: e.chapterId, bytes: r.bytes, sha256: r.sha256,
+      checksumSource: r.checksumSource, audioMs: r.audioMs,
+    })
+  }
+
+  // ⑦ D1 `audio_tasks`（全部章都搬成功后才写，避免「索引没写、任务却 done」半截账）
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i]
+    const p = promoted[i]
+    try {
+      await env.DB.prepare(SQL_TASK_PROMOTE)
+        .bind(code, bookId, e.chapterId, e.title, e.chars, now, now, now, p.bytes, p.audioMs)
+        .run()
+    } catch (err) {
+      console.error('promote task write failed:', err && err.message)
+      return promoteFail(env, campaign, now, 'TASK_WRITE_FAILED', 500)
+    }
+  }
+
+  // ⑧ 索引最后写（与 processOne 同向：对象齐了才让客户端看见就绪）
+  const ixKey = audioObjectKey(code, bookId, INDEX_FILE)
+  let index = null
+  try {
+    const idxObj = await env.AUDIO.get(ixKey)
+    if (idxObj) {
+      try { index = JSON.parse(await idxObj.text()) } catch { index = null }
+    }
+  } catch (e) {
+    console.error('promote index read failed:', e && e.message)
+    return promoteFail(env, campaign, now, 'INDEX_READ_FAILED', 502)
+  }
+  let merged = mergeAudioIndex(index, '', bookId)
+  for (const e of entries) merged = mergeAudioIndex(merged, e.chapterId, bookId)
+  try {
+    await env.AUDIO.put(ixKey, JSON.stringify(merged), {
+      httpMetadata: { contentType: 'application/json' },
+    })
+  } catch (e) {
+    console.error('promote index write failed:', e && e.message)
+    return promoteFail(env, campaign, now, 'INDEX_WRITE_FAILED', 502)
+  }
+
+  // ⑨ campaign 计数：满额 → done，否则 running。
+  //    `entries.length` 兜住「上一次已经把任务写成 done、但计数没落」的重试（幂等）。
+  const total = Number(campaign.chapters_total) || 0
+  const prevDone = Number(campaign.chapters_done) || 0
+  const newlyDone = entries.filter((e) => {
+    const prev = byId.get(e.chapterId)
+    return !prev || String(prev.status) !== 'done'
+  }).length
+  const nextDone = Math.min(total, Math.max(prevDone + newlyDone, entries.length))
+  const nextStatus = total > 0 && nextDone >= total ? 'done' : 'running'
+  try {
+    await env.DB.prepare(SQL_CAMPAIGN_PROMOTE_SET)
+      .bind(nextDone, nextStatus, now, campaignId, code, bookId).run()
+  } catch (e) {
+    console.error('promote campaign update failed:', e && e.message)
+    return promoteFail(env, campaign, now, 'CAMPAIGN_WRITE_FAILED', 500)
+  }
+
+  return json({}, {
+    ok: true, campaignId, bookId, code,
+    chaptersDone: nextDone, chaptersTotal: total, status: nextStatus,
+    promoted, index: { withAudio: merged.withAudio, missing: merged.missing },
+  }, 200, { 'Cache-Control': NO_STORE })
 }
 
 /** GET /api/gen/book/<bookId> —— 服务端复读的进度 ＋ 排队位次 ＋ 剩余额度（D21-g） */

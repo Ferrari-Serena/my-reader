@@ -15,6 +15,7 @@
  * PUT/GET /api/book/<bookId>/audio/<file> → BYO 朗读音频（需有效会话；见 bookaudio.js）
  * DELETE /api/book/<bookId>/audio → **清空该书音频**（只删音频、正文保留，D25）
  * POST/GET /api/gen/book/<bookId> → 服务端合成（提交章节 / 查进度；需有效会话；见 audiogen.js）
+ * POST /api/internal/audio/promote → W11-4 staging → 正式 R2／D1／索引（service token；见 audiogen.js）
  * POST /api/feedback     → 反馈提交（**免登录**；诊断走白名单，见 feedback.js）
  * GET /api/feedback      → 后台只读列表（Bearer = METRICS_TOKEN；未配一律 404）
  * GET /api/feedback/mine → 我提过的（登录按会话／未登录按 ?key= 本机匿名键）
@@ -30,7 +31,7 @@ import { handleBookSync } from './booksync.js'
 import { handleBookAudio } from './bookaudio.js'
 import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
 import { handleFeedback } from './feedback.js'
-import { handleAudioGen, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
+import { handleAudioGen, handleAudioPromote, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
 import { handleInputToken } from './inputtoken.js'
 import { handleStagingToken } from './stagingtoken.js'
 import { handlePhraseConfig, handlePhraseResolve } from './phrase.js'
@@ -120,6 +121,10 @@ async function handleRequest(request, env, url) {
     // 内部 staging 上传：/api/internal/audio/staging-token（W11-3）
     const stagingTokenRes = await handleStagingToken(request, env)
     if (stagingTokenRes !== null) return stagingTokenRes
+
+    // 内部转正：/api/internal/audio/promote（W11-4；service token，staging → 正式）
+    const promoteRes = await handleAudioPromote(request, env)
+    if (promoteRes !== null) return promoteRes
 
     // 同步端点分发（匹配 /api/sync/*）
     const syncRes = await handleSync(request, env)

@@ -21,15 +21,21 @@
 
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import {
-  handleAudioGen, runAudioGenTick, synthesizeChapter, chunkBlocks, chapterOfBook, chapterCharCount,
+  handleAudioGen, handleAudioPromote, runAudioGenTick, synthesizeChapter, chunkBlocks, chapterOfBook, chapterCharCount,
   frameSize, locateFrames, scanFrames, stripBlock, mergeAudioIndex, dayStart,
   ROUTE_PREFIX, TICK_CRON, PURGE_CRON, BLOCK_CHARS, MAX_CHAPTER_CHARS, MAX_CHAPTER_BYTES,
-  DAILY_CHAPTERS, DAILY_CHARS, MAX_ATTEMPTS, STALE_MS, K_PER_TICK,
+  DAILY_CHAPTERS, DAILY_CHARS, MAX_ATTEMPTS, STALE_MS, K_PER_TICK, CHAPTER_ID_RE,
   purgeBookTasks, isPendingStatus, TASK_PURGED, SQL_PURGE_BOOK_TASKS, SQL_TASK_REPURGE,
   campaignMonth, campaignQuotaLeft, campaignQuotaUsed, SQL_CAMPAIGN_FOR_BOOK, SQL_CAMPAIGN_INSERT, SQL_CAMPAIGN_CANCEL,
+  SQL_CAMPAIGN_BLOCK, SQL_TASK_PROMOTE, SQL_CAMPAIGN_PROMOTE_SET,
 } from './src/audiogen.js'
-import { audioObjectKey, INDEX_FILE, handleBookAudio } from './src/bookaudio.js'
+import {
+  audioObjectKey, INDEX_FILE, handleBookAudio,
+  PROMOTE_ROUTE, PROMOTE_MAX_CHAPTERS,
+  stagingPrefixFor, promoteFileFor, resolvePromotePath, checksumHex,
+} from './src/bookaudio.js'
 import { bookObjectKey } from './src/booksync.js'
 import { tokenHash } from './src/auth.js'
 
@@ -78,21 +84,39 @@ function r2(pageLimit = 1000) {
     if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength))
     return new TextEncoder().encode(String(value))
   }
+  const sha256buf = (u8) => {
+    const h = createHash('sha256').update(u8).digest()
+    return h.buffer.slice(h.byteOffset, h.byteOffset + h.byteLength)
+  }
   return {
     keys() { return [...store.keys()] },
     raw(key) { return store.get(key) },
-    async put(key, value) { store.set(key, { bytes: toBytes(value) }); return { key, size: store.get(key).bytes.length } },
+    async put(key, value, opts = {}) {
+      const bytes = toBytes(value)
+      const httpMetadata = opts && opts.httpMetadata ? { ...opts.httpMetadata } : undefined
+      store.set(key, { bytes, checksums: { sha256: sha256buf(bytes) }, httpMetadata })
+      return { key, size: bytes.length }
+    },
     async get(key) {
       const e = store.get(key)
       if (!e) return null
       return {
         key, size: e.bytes.length,
+        httpMetadata: e.httpMetadata,
+        checksums: e.checksums ? { sha256: e.checksums.sha256.slice(0) } : undefined,
         text: async () => new TextDecoder().decode(e.bytes),
         arrayBuffer: async () => e.bytes.slice().buffer,
         body: new Response(e.bytes).body,
       }
     },
-    async head(key) { const e = store.get(key); return e ? { key, size: e.bytes.length } : null },
+    async head(key) {
+      const e = store.get(key)
+      return e ? {
+        key, size: e.bytes.length,
+        httpMetadata: e.httpMetadata,
+        checksums: e.checksums ? { sha256: e.checksums.sha256.slice(0) } : undefined,
+      } : null
+    },
     async delete(keyOrKeys) { for (const k of (Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys])) store.delete(k) },
     async list(opts = {}) {
       const prefix = opts.prefix || ''
@@ -872,6 +896,271 @@ console.log('\n[audiogen — 整本 campaign 端点（W11-1b）]')
   t('同书同月重复 409', r.status === 409)
 }
 }
+}
+
+// ═══ ⑨ W11-4 Worker 转正（§12.5）════════════════════════════════════════════
+// staging 桶 → 正式 R2＋audio_tasks＋audio-index；R2 原生 SHA-256／allowed_paths／
+// chapter id／book 归属；负测各自断言「不写索引 ＋ campaign blocked」。
+
+console.log('\n[audiogen — W11-4 转正：staging → 正式 R2／D1／索引]')
+{
+  const CID = 'cmp_promote_001'
+  const BID2 = 'bk_0011223344556677'
+  const TOKEN_INTERNAL = 'tok-internal-promote'
+  const TM = { duration: 0.12, paragraphs: { 'p-01-001': 0, 'p-01-002': 0.08 } }
+  const shaOf = (u8) => createHash('sha256').update(u8).digest('hex')
+  const ixKey = audioObjectKey(CODE_A, BID, INDEX_FILE)
+  const ixOf = (bucket) => {
+    const e = bucket.raw(ixKey)
+    return e ? JSON.parse(new TextDecoder().decode(e.bytes)) : null
+  }
+  const campaignOf = (db) => one(db, 'SELECT status, chapters_done FROM audio_campaigns WHERE id=?', CID)
+  const FORMAL = (file) => audioObjectKey(CODE_A, BID, file)
+
+  /** 一套转正环境：真 SQLite（含 0012）＋ 正式桶 AUDIO ＋ 独立 staging 桶 */
+  async function promoFixture() {
+    const ctx = await newEnv({ withBook: false })
+    ctx.db.exec(readFileSync(new URL('./migrations/0012_audio_campaigns.sql', import.meta.url), 'utf8'))
+    ctx.env.INTERNAL_TOKEN = TOKEN_INTERNAL
+    ctx.env.STAGING = r2()
+    await ctx.bucket.put(bookObjectKey(CODE_A, BID), JSON.stringify(bookWithChars(2, 100)))
+    ctx.db.prepare(SQL_CAMPAIGN_INSERT)
+      .run(CID, CODE_A, BID, campaignMonth(NOW), 'am_michael', 2, NOW, NOW)
+    return { ...ctx, staging: ctx.env.STAGING }
+  }
+
+  /** 把一章的 mp3/timings 放进 staging，返回 manifest 章条目 */
+  async function seed(staging, chapterId, opts = {}) {
+    const mp3 = opts.garbage ? new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]) : makeMp3(opts.frames === undefined ? 5 : opts.frames)
+    const prefix = stagingPrefixFor(CID, BID)
+    await staging.put(prefix + chapterId + '.mp3', mp3)
+    await staging.put(prefix + chapterId + '.timings.json', JSON.stringify(opts.timings || TM))
+    const entry = staging.raw(prefix + chapterId + '.mp3')
+    if (opts.noChecksums) delete entry.checksums
+    if (opts.corruptChecksum) entry.checksums = { sha256: new Uint8Array(32).buffer }
+    return {
+      chapterId, mp3: chapterId + '.mp3', timings: chapterId + '.timings.json',
+      sha256: shaOf(mp3), bytes: mp3.length, status: 'done',
+    }
+  }
+
+  const promoteReq = (env, o = {}) => {
+    const campaignId = o.campaignId === undefined ? CID : o.campaignId
+    const bookId = o.bookId === undefined ? BID : o.bookId
+    const stagingPrefix = o.stagingPrefix === undefined ? stagingPrefixFor(campaignId, bookId) : o.stagingPrefix
+    const body = { campaignId, bookId, stagingPrefix, chapters: o.chapters === undefined ? [] : o.chapters }
+    const headers = o.noAuth ? {} : { Authorization: 'Bearer ' + TOKEN_INTERNAL }
+    return handleAudioPromote(
+      req('POST', o.path || PROMOTE_ROUTE, { headers, body: JSON.stringify(o.body === undefined ? body : o.body) }),
+      env,
+    )
+  }
+
+  // ── 正控：两章 → 正式 R2／D1／索引；计数与状态 ──
+  {
+    const { env, db, bucket, staging } = await promoFixture()
+    const c1 = await seed(staging, 'ch-01')
+    let r = await promoteReq(env, { chapters: [c1] })
+    let b = await r.json()
+    t('转正 1/2 章：200、promoted、checksum 来源＝R2 原生',
+      r.status === 200 && b.ok === true && b.promoted.length === 1 && b.promoted[0].checksumSource === 'r2')
+    t('正式 R2：mp3 与 timings 落到 user/<code>/<bookId>/（键由代码算出，不是 manifest 路径）',
+      (() => {
+        const mp3 = bucket.raw(FORMAL('ch-01.mp3'))
+        const tm = bucket.raw(FORMAL('ch-01.timings.json'))
+        return !!mp3 && !!tm && mp3.bytes.length === makeMp3(5).length
+          && JSON.parse(new TextDecoder().decode(tm.bytes)).duration === 0.12
+      })())
+    t('audio_tasks：done、bytes/audio_ms 落值；created_at=0（local 路径不吃云端日配额）',
+      (() => {
+        const row = one(db, "SELECT status, bytes, audio_ms, created_at, attempts FROM audio_tasks WHERE code=? AND chapter_id='ch-01'", CODE_A)
+        return row.status === 'done' && row.bytes === makeMp3(5).length && row.audio_ms === 120 && row.created_at === 0 && row.attempts === 0
+      })())
+    t('索引已写：withAudio=["ch-01"]、book 对、missing 空', (() => {
+      const ix = ixOf(bucket)
+      return ix && ix.book === BID && eq(ix.withAudio, ['ch-01']) && eq(ix.missing, {})
+    })())
+    t('campaign 1/2：chapters_done=1、status=running', (() => {
+      const c = campaignOf(db)
+      return c.chapters_done === 1 && c.status === 'running'
+    })())
+
+    const c2 = await seed(staging, 'ch-02')
+    r = await promoteReq(env, { chapters: [c2] })
+    b = await r.json()
+    t('转正 2/2 章：campaign done、索引两章', r.status === 200
+      && (() => {
+        const c = campaignOf(db)
+        const ix = ixOf(bucket)
+        return c.chapters_done === 2 && c.status === 'done'
+          && eq(ix.withAudio, ['ch-01', 'ch-02']) && eq(b.promoted.map((p) => p.chapterId), ['ch-02'])
+      })())
+
+    r = await promoteReq(env, { chapters: [c1] })
+    t('重复转正同一章（幂等）：200、campaign 仍 2 章、index 不重复',
+      r.status === 200 && (() => {
+        const c = campaignOf(db)
+        const ix = ixOf(bucket)
+        return c.chapters_done === 2 && c.status === 'done' && eq(ix.withAudio, ['ch-01', 'ch-02'])
+      })())
+  }
+
+  // ── checksum：manifest 不符 / R2 原生不符 / 无原生时兜底 ──
+  {
+    const { env, db, bucket, staging } = await promoFixture()
+    const bad = await seed(staging, 'ch-01')
+    bad.sha256 = '0'.repeat(64)
+    const r = await promoteReq(env, { chapters: [bad] })
+    const b = await r.json()
+    t('checksum 不符 → 422 CHECKSUM_MISMATCH、不写索引、campaign blocked',
+      r.status === 422 && b.error === 'CHECKSUM_MISMATCH' && b.indexWritten === false
+      && bucket.raw(ixKey) === undefined && campaignOf(db).status === 'blocked')
+    t('checksum 不过时正式对象一个都没写（先验后写）', bucket.raw(FORMAL('ch-01.mp3')) === undefined)
+  }
+  {
+    const { env, db, bucket, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01', { corruptChecksum: true }) // 字节对、R2 原生 checksum 错
+    const r = await promoteReq(env, { chapters: [c] })
+    const b = await r.json()
+    t('R2 原生 checksum 错（manifest sha 对）→ 422，且 detail.source=r2（证明用的是原生，不是重算兜底）',
+      r.status === 422 && b.error === 'CHECKSUM_MISMATCH' && b.detail && b.detail.source === 'r2'
+      && bucket.raw(ixKey) === undefined && campaignOf(db).status === 'blocked')
+  }
+  {
+    const { env, bucket, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01', { noChecksums: true }) // 对象没带原生 checksum
+    const r = await promoteReq(env, { chapters: [c] })
+    const b = await r.json()
+    t('对象无原生 checksum → 对字节算一次兜底，checksumSource=computed（不伪装成原生）',
+      r.status === 200 && b.promoted[0].checksumSource === 'computed'
+      && !!bucket.raw(FORMAL('ch-01.mp3')))
+  }
+
+  // ── allowed_paths：穿越／绝对路径／跨 book／错前缀 ──
+  {
+    const { env, db, bucket, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01')
+    c.mp3 = '../evil.mp3'
+    const r = await promoteReq(env, { chapters: [c] })
+    const b = await r.json()
+    t('路径穿越（../）→ 422 PATH_TRAVERSAL、不写索引、campaign blocked',
+      r.status === 422 && b.error === 'PATH_TRAVERSAL' && bucket.raw(ixKey) === undefined
+      && campaignOf(db).status === 'blocked')
+    t('路径穿越时连前几章的正式对象都没写（章条目在搬之前就过闸）',
+      bucket.raw(FORMAL('ch-01.mp3')) === undefined)
+  }
+  {
+    const { env, bucket, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01')
+    c.timings = '/tmp/ch-01.timings.json'
+    const r = await promoteReq(env, { chapters: [c] })
+    t('绝对路径 → 422 PATH_NOT_ALLOWED', r.status === 422 && (await r.json()).error === 'PATH_NOT_ALLOWED')
+  }
+  {
+    const { env, bucket, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01')
+    c.mp3 = `staging/${CID}/${BID2}/ch-01.mp3`
+    const r = await promoteReq(env, { chapters: [c] })
+    t('只换 book 段的 staging 键 → 422 PATH_NOT_ALLOWED（跨 book 写不进来）',
+      r.status === 422 && (await r.json()).error === 'PATH_NOT_ALLOWED' && bucket.raw(ixKey) === undefined)
+  }
+  {
+    const { env, db, bucket, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01')
+    const r = await promoteReq(env, { chapters: [c], stagingPrefix: `staging/${CID}/${BID2}/` })
+    t('stagingPrefix 与 campaign/book 不符 → 422 PATH_NOT_ALLOWED、campaign blocked',
+      r.status === 422 && (await r.json()).error === 'PATH_NOT_ALLOWED' && campaignOf(db).status === 'blocked')
+  }
+  {
+    const { env, db, bucket, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01')
+    const r = await promoteReq(env, { chapters: [c], bookId: BID2 })
+    const b = await r.json()
+    t('body bookId ≠ campaign.book_id → 409 CROSS_BOOK、不写索引、campaign blocked',
+      r.status === 409 && b.error === 'CROSS_BOOK' && bucket.raw(ixKey) === undefined
+      && campaignOf(db).status === 'blocked')
+  }
+
+  // ── id／size／content-type／book 归属／任务让路 ──
+  {
+    const { env, db, bucket, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01')
+    const r = await promoteReq(env, { chapters: [{ ...c, chapterId: 'p-01-001' }] })
+    t('chapter id 不合正则 → 422 BAD_CHAPTER_ID、campaign blocked',
+      r.status === 422 && (await r.json()).error === 'BAD_CHAPTER_ID' && campaignOf(db).status === 'blocked')
+    const r2 = await promoteReq(env, { chapters: [{ chapterId: 'ch-01' }] })
+    t('manifest 缺 sha256 → 422 CHECKSUM_MISSING', r2.status === 422 && (await r2.json()).error === 'CHECKSUM_MISSING')
+  }
+  {
+    const { env, db, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01')
+    const r = await promoteReq(env, { chapters: [{ ...c, bytes: c.bytes - 1 }] })
+    t('manifest bytes 与对象 size 不符 → 422 SIZE_MISMATCH、campaign blocked',
+      r.status === 422 && (await r.json()).error === 'SIZE_MISMATCH' && campaignOf(db).status === 'blocked')
+  }
+  {
+    const { env, db, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01', { garbage: true }) // sha 对得上，但不是 mp3
+    const r = await promoteReq(env, { chapters: [c] })
+    t('字节不是 MP3（ID3／帧同步都没有）→ 422 INVALID_MP3（content-type 按实质验）',
+      r.status === 422 && (await r.json()).error === 'INVALID_MP3' && campaignOf(db).status === 'blocked')
+  }
+  {
+    const { env, db, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-99') // staging 里真有这一章，只是不在书体里
+    const r = await promoteReq(env, { chapters: [c] })
+    t('章不在该书书体里 → 422 CHAPTER_NOT_IN_BOOK、campaign blocked',
+      r.status === 422 && (await r.json()).error === 'CHAPTER_NOT_IN_BOOK' && campaignOf(db).status === 'blocked')
+  }
+  {
+    const { env, db, bucket, staging } = await promoFixture()
+    const c = await seed(staging, 'ch-01')
+    db.prepare(`INSERT INTO audio_tasks (code, book_id, chapter_id, title, char_count, status, attempts, created_at, updated_at)
+        VALUES (?, ?, 'ch-01', 'C', 100, 'running', 1, ?, ?)`).run(CODE_A, BID, NOW, NOW)
+    const r = await promoteReq(env, { chapters: [c] })
+    t('云路径还在跑（running）的章不许被转正抢走 → 409 TASK_RUNNING、blocked、不写索引',
+      r.status === 409 && (await r.json()).error === 'TASK_RUNNING' && bucket.raw(ixKey) === undefined
+      && campaignOf(db).status === 'blocked')
+  }
+
+  // ── 鉴权／方法／形状 ──
+  {
+    const { env } = await promoFixture()
+    const noAuth = await promoteReq(env, { chapters: [{ chapterId: 'ch-01', sha256: '0'.repeat(64) }], noAuth: true })
+    t('无 Bearer → 401', noAuth.status === 401)
+    const get = await handleAudioPromote(req('GET', PROMOTE_ROUTE), env)
+    t('非 POST → 405', get.status === 405)
+    t('别的路径 → null（继续 fallthrough）', (await handleAudioPromote(req('POST', '/api/internal/audio/other'), env)) === null)
+    const empty = await promoteReq(env, { chapters: [] })
+    t('chapters 空 → 400 EMPTY_CHAPTERS', empty.status === 400 && (await empty.json()).error === 'EMPTY_CHAPTERS')
+    const many = await promoteReq(env, { chapters: Array.from({ length: PROMOTE_MAX_CHAPTERS + 1 }, (_, i) => 'ch-' + (i + 1)) })
+    t('超过 60 章 → 400 TOO_MANY_CHAPTERS', many.status === 400 && (await many.json()).error === 'TOO_MANY_CHAPTERS')
+  }
+  {
+    // 路由确实接在 index.js 上（不是只导出 handler）
+    const worker = (await import('./src/index.js')).default
+    const r = await worker.fetch(new Request(BASE + PROMOTE_ROUTE, { method: 'POST' }), { INTERNAL_TOKEN: TOKEN_INTERNAL })
+    t('index.js 已接线：promote 无 Bearer → 401（路由不是孤儿）', r.status === 401)
+  }
+
+  // ── 纯函数形状（allowed_paths 白名单与 SQL）──
+  t('allowed_paths：裸文件名／完整 staging 键放行；../、绝对、跨 book、%2e 编码、错后缀拒',
+    resolvePromotePath('ch-01.mp3', 'ch-01', 'mp3', stagingPrefixFor(CID, BID)).ok
+    && resolvePromotePath(stagingPrefixFor(CID, BID) + 'ch-01.mp3', 'ch-01', 'mp3', stagingPrefixFor(CID, BID)).ok
+    && resolvePromotePath('../ch-01.mp3', 'ch-01', 'mp3', stagingPrefixFor(CID, BID)).error === 'PATH_TRAVERSAL'
+    && resolvePromotePath('/ch-01.mp3', 'ch-01', 'mp3', stagingPrefixFor(CID, BID)).error === 'PATH_NOT_ALLOWED'
+    && resolvePromotePath(`staging/${CID}/${BID2}/ch-01.mp3`, 'ch-01', 'mp3', stagingPrefixFor(CID, BID)).error === 'PATH_NOT_ALLOWED'
+    && resolvePromotePath('%2e%2e/ch-01.mp3', 'ch-01', 'mp3', stagingPrefixFor(CID, BID)).error === 'PATH_NOT_ALLOWED'
+    && resolvePromotePath('ch-02.mp3', 'ch-01', 'mp3', stagingPrefixFor(CID, BID)).error === 'PATH_NOT_ALLOWED'
+    && resolvePromotePath('ch-01.timings.json', 'ch-01', 'mp3', stagingPrefixFor(CID, BID)).error === 'PATH_NOT_ALLOWED')
+  t('转正常量与 SQL 形状：≤60 章、章 id 正则、upsert 保留 created_at、block 只从 queued/running 落',
+    PROMOTE_MAX_CHAPTERS === 60 && CHAPTER_ID_RE.test('ch-01') && !CHAPTER_ID_RE.test('p-01-001')
+    && SQL_TASK_PROMOTE.includes('ON CONFLICT') && SQL_TASK_PROMOTE.includes('created_at')
+    && SQL_CAMPAIGN_BLOCK.includes("status IN ('queued','running')")
+    && SQL_CAMPAIGN_PROMOTE_SET.includes('chapters_done'))
+  t('checksumHex：ArrayBuffer / Uint8Array 都能转小写 hex',
+    checksumHex(new Uint8Array([0, 15, 255]).buffer) === '000fff'
+    && checksumHex(new Uint8Array([0, 15, 255])) === '000fff')
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
