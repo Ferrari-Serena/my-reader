@@ -1,6 +1,7 @@
 /**
  * 第 17 步块 D —— 服务端合成的**客户端**（`utils/genApi.js`）的验证（不依赖浏览器、不触网）
  *   utils/genApi.js — 提交章节 / 查状态 / 清空该书音频 ＋ 章级状态、入口三态、文案
+ *   W11-5b 起：整本 campaign 的提交／状态／取消与错误码归一（契约见设计 §12.1）
  * 为什么单开一个文件：这段在**主包**里（播放器每次开书都要问一次「有没有章在排队」），
  * 与 `verify-generate.mjs`（懒加载的生成侧）是两侧；判定与文案都只有这一份，UI 只负责画。
  * 用法: node verify-genui.mjs
@@ -25,6 +26,12 @@ import {
   clearAudioConfirm, clearEntryState, clearResultText,
   CLEAR_AUDIO_LABEL, CLEAR_AUDIO_BUSY_LABEL,
   QUOTA_RESET_NOTE, SPACE_VS_QUOTA_NOTE, storageLine, submitErrorText, formatBytes, normalizeStorage,
+  CAMPAIGN_MAX_CHAPTERS, CAMPAIGN_MONTH_BOOKS, CAMPAIGN_STATUS, CAMPAIGN_STATUS_LABEL, CAMPAIGN_ERROR_HINT,
+  campaignPath, campaignCancelPath, normalizeCampaign, normalizeCampaignQuota,
+  campaignErrorCode, normalizeCampaignError, campaignActive, campaignStatusLabel,
+  campaignProgressText, campaignNote, campaignSelectionPayload, campaignErrorText,
+  campaignSubmitLine, campaignCancelConfirm, campaignCancelResultText,
+  normalizeCampaignCancel, submitBookCampaign, cancelBookCampaign,
 } from './src/utils/genApi.js'
 import { AUDIO_ROUTE } from './src/utils/audioCloud.js'
 
@@ -621,6 +628,212 @@ t('确认框三件事都在：只删音频／可重新生成／不退额度',
   t('submitGenChapters：403 的 used／limit 读得到（否则报不出「已用 X ／ 上限 Y」）',
     r2.ok === false && r2.status === 403 && r2.used === 200 && r2.limit === 100
     && r2.error === 'audio storage limit reached')
+}
+
+// ═══ ⑭ 整本 campaign（W11-5b；契约见设计 §12.1）═══
+// 纯函数＋网络两头都查：状态归一不能编数字、409 的「已有任务」不能丢、错误码要分得开
+// （403 两本账：本月 3 本 ≠ 音频空间）。UI 只负责画，判定与文案都从 genApi 取。
+console.log('\n[genApi — W11-5b 整本 campaign：提交／状态／取消／错误码归一]')
+{
+  t('上限与月度额度与 worker 同值手抄：60 章、3 本',
+    CAMPAIGN_MAX_CHAPTERS === 60 && CAMPAIGN_MONTH_BOOKS === 3)
+  t('campaign 路径：状态路径后接 /campaign；取消再接 /<campaignId>/cancel（不含 code）',
+    campaignPath(BID) === `/api/gen/book/${BID}/campaign`
+    && campaignCancelPath(BID, 'cmp_abc') === `/api/gen/book/${BID}/campaign/cmp_abc/cancel`
+    && !campaignPath(BID).includes('code=') && !campaignCancelPath(BID, 'cmp_abc').includes('code='))
+  t('campaignId 走 encodeURIComponent（不给路径注入留口子）',
+    campaignCancelPath(BID, 'a/b c') === `/api/gen/book/${BID}/campaign/a%2Fb%20c/cancel`)
+}
+{
+  t('形状坏／没有 id → null（旧 worker 没这个字段时不编一个空任务）',
+    normalizeCampaign(null) === null && normalizeCampaign({}) === null
+    && normalizeCampaign('garbage') === null && normalizeCampaign({ status: 'queued' }) === null)
+  const post = normalizeCampaign({
+    campaignId: 'cmp_1', status: 'queued', bookId: BID, chaptersTotal: 60,
+    voice: 'am_michael', quota: { booksUsed: 1, booksLeft: 2, month: '2026-11' },
+  })
+  t('POST 200 回执归一：campaignId→id、bookId、chaptersDone 缺省 0、month 从 quota 兜底',
+    post.id === 'cmp_1' && post.status === 'queued' && post.bookId === BID
+    && post.chaptersTotal === 60 && post.chaptersDone === 0 && post.voice === 'am_michael'
+    && post.month === '2026-11' && post.quota.booksUsed === 1 && post.quota.booksLeft === 2)
+  const get = normalizeCampaign({
+    id: 'cmp_2', status: 'running', chaptersTotal: 60, chaptersDone: 61,
+    failed: ['ch-03'], voice: 'af_heart', month: '2026-12',
+  })
+  t('GET 的 campaign：进度封顶（61/60 → 60/60）＋ failed 章表 ＋ 月份',
+    get.id === 'cmp_2' && get.chaptersDone === 60 && eq(get.failed, ['ch-03']) && get.month === '2026-12')
+  t('坏数字 → 0（不出现 NaN；也不把坏行当真）',
+    (() => {
+      const c = normalizeCampaign({ id: 'cmp_3', chaptersTotal: 'x', chaptersDone: NaN })
+      return c.chaptersTotal === 0 && c.chaptersDone === 0
+    })())
+  t('月度额度归一：形状坏 → null（不编 0 本）；有值照原样',
+    normalizeCampaignQuota(null) === null && normalizeCampaignQuota('x') === null
+    && eq(normalizeCampaignQuota({ booksUsed: '2', booksLeft: 1, month: '2026-11' }),
+      { booksUsed: 2, booksLeft: 1, month: '2026-11' }))
+  t('GET 状态归一里带 campaign（旧 worker 没有 → null）',
+    normalizeGenStatus({ campaign: { id: 'cmp_1', status: 'running', chaptersTotal: 60, chaptersDone: 5 } }, BID)
+      .campaign.chaptersDone === 5
+    && normalizeGenStatus({}, BID).campaign === null)
+}
+{
+  t('在跑判定只认 queued／running（done 之后停轮询）',
+    campaignActive({ id: 'c', status: 'queued' }) && campaignActive({ id: 'c', status: 'running' })
+    && !campaignActive({ id: 'c', status: 'done' }) && !campaignActive({ id: 'c', status: 'failed' })
+    && !campaignActive({ id: 'c', status: 'cancelled' }) && !campaignActive({ id: 'c', status: 'blocked' })
+    && !campaignActive(null))
+  t('状态徽标覆盖全部状态；未知 → 状态未知（不画空白）',
+    Object.values(CAMPAIGN_STATUS).every((k) => !!CAMPAIGN_STATUS_LABEL[k])
+    && campaignStatusLabel({ id: 'c', status: 'running' }) === '生成中'
+    && campaignStatusLabel({ id: 'c', status: 'weird' }) === '状态未知')
+  t('进度只复读服务端数字（x/y）；没有任务 → 空串',
+    campaignProgressText({ id: 'c', chaptersTotal: 60, chaptersDone: 12 }) === '已完成 12/60 章'
+    && campaignProgressText(null) === '')
+  t('状态说明各有话说；取消／失败／停止三类都写明「已转正的章保留」',
+    campaignNote({ id: 'c', status: 'queued' }).includes('hub')
+    && campaignNote({ id: 'c', status: 'running' }).includes('关掉页面')
+    && campaignNote({ id: 'c', status: 'done' }).includes('完成')
+    && campaignNote({ id: 'c', status: 'cancelled' }).includes('已转正的章保留')
+    && campaignNote({ id: 'c', status: 'blocked' }).includes('已转正的章保留')
+    && campaignNote({ id: 'c', status: 'failed' }).includes('已转正的章保留')
+    && campaignNote(null) === '')
+}
+{
+  const many = Array.from({ length: 62 }, (_, i) => `ch-${String(i + 1).padStart(2, '0')}`)
+  const r = campaignSelectionPayload([...many, 'oops', 'ch-01'])
+  t('整本勾选：去重／丢坏形状／按 60 截断（dropped 如实报）',
+    r.ok === true && r.chapters.length === 60 && r.chapters[59] === 'ch-60' && r.dropped === 3)
+  t('一章没有／全坏形状 → ok:false 且带一句提示',
+    campaignSelectionPayload([]).ok === false && campaignSelectionPayload(['oops']).ok === false
+    && campaignSelectionPayload(null).ok === false && !!campaignSelectionPayload(null).error)
+}
+{
+  t('错误码归一：服务端的码原样留；409 无 error → CAMPAIGN_EXISTS（§12.1）',
+    campaignErrorCode({ error: 'TOO_MANY_CHAPTERS' }, 400) === 'TOO_MANY_CHAPTERS'
+    && campaignErrorCode({ error: 'CAMPAIGN_QUOTA_EXCEEDED' }, 403) === 'CAMPAIGN_QUOTA_EXCEEDED'
+    && campaignErrorCode({ campaignId: 'cmp_1' }, 409) === 'CAMPAIGN_EXISTS'
+    && campaignErrorCode({}, 400) === null)
+  t('取消不启用 409 兜底（幂等路由没有「已有任务」这个语义）',
+    campaignErrorCode({ campaignId: 'cmp_1' }, 409, { existsOn409: false }) === null)
+  t('错误回执归一：used／limit 缺省 -1、quota 透传、409 的已有任务本体归一出来',
+    (() => {
+      const e = normalizeCampaignError({ campaignId: 'cmp_9', status: 'running', chaptersTotal: 60, chaptersDone: 9 }, 409)
+      const s = normalizeCampaignError({ error: 'STORAGE_EXCEEDED', used: 200, limit: 100 }, 403)
+      const q = normalizeCampaignError({ error: 'CAMPAIGN_QUOTA_EXCEEDED', quota: { booksUsed: 3, booksLeft: 0, month: '2026-11' } }, 403)
+      return e.error === 'CAMPAIGN_EXISTS' && e.campaign && e.campaign.id === 'cmp_9' && e.campaign.chaptersDone === 9
+        && s.used === 200 && s.limit === 100 && s.quota === null
+        && q.quota.booksLeft === 0 && q.quota.month === '2026-11'
+        && normalizeCampaignError(null, 0).used === -1
+    })())
+  t('错误码字典覆盖 §12.1 的六条（少一条就是落回「HTTP 400」）',
+    ['TOO_MANY_CHAPTERS', 'BAD_CHAPTER_ID', 'BAD_VOICE', 'EMPTY_CHAPTERS', 'CAMPAIGN_EXISTS', 'CAMPAIGN_QUOTA_EXCEEDED']
+      .every((k) => typeof CAMPAIGN_ERROR_HINT[k] === 'string' && CAMPAIGN_ERROR_HINT[k].length > 0))
+  t('提交错误文案：400 四个码各有对应说法（上限／章 id／音色／空表）',
+    campaignErrorText({ status: 400, error: 'TOO_MANY_CHAPTERS' }).includes('60 章')
+    && campaignErrorText({ status: 400, error: 'BAD_CHAPTER_ID' }).includes('章节编号')
+    && campaignErrorText({ status: 400, error: 'BAD_VOICE' }).includes('音色')
+    && campaignErrorText({ status: 400, error: 'EMPTY_CHAPTERS' }).includes('没有可提交'))
+  t('提交错误文案：403 两张脸分开（本月 3 本 ≠ 账号音频空间）',
+    campaignErrorText({ status: 403, error: 'CAMPAIGN_QUOTA_EXCEEDED' }).includes('本月')
+    && campaignErrorText({ status: 403, error: 'CAMPAIGN_QUOTA_EXCEEDED' }).includes('3 本')
+    && campaignErrorText({ status: 403, error: 'STORAGE_EXCEEDED', used: 1073741824, limit: 1073741824 }).includes('空间满了')
+    && campaignErrorText({ status: 403, error: 'STORAGE_EXCEEDED', used: 1073741824, limit: 1073741824 }).includes('已用 1.0 GB'))
+  t('提交错误文案：409 → 同书同月已有任务（指向看进度）',
+    campaignErrorText({ status: 409, error: 'CAMPAIGN_EXISTS' }).includes('同书同月'))
+  t('提交错误文案：客户端先拦的两种不说成「网络」；401／超时／其它 HTTP 各说各的',
+    campaignErrorText({ status: 0, reason: 'bad-selection', error: '没有可提交的章节' }).includes('没有可提交')
+    && campaignErrorText({ status: 0, reason: 'bad-input' }).includes('不在本机')
+    && campaignErrorText({ status: 401 }).includes('重新登录')
+    && campaignErrorText({ status: 0, reason: 'timeout' }).includes('超时')
+    && campaignErrorText({ status: 500 }).includes('500'))
+  t('提交成功一句话报服务端给的章数；没有任务本体也给得出',
+    campaignSubmitLine({ id: 'c', chaptersTotal: 60, status: 'queued' }) === '整本任务已提交：60 章排队中。'
+    && campaignSubmitLine(null) === '整本任务已提交。')
+  t('取消确认：书名／已转正保留／同月不能再开，三件都写清',
+    (() => {
+      const x = campaignCancelConfirm('The Giver')
+      return x.includes('The Giver') && x.includes('已转正') && x.includes('保留') && x.includes('不能再开')
+    })())
+  t('取消结果：成功／未登录／超时／HTTP 码／bad-input 各说各的',
+    campaignCancelResultText({ ok: true }).includes('已取消')
+    && campaignCancelResultText({ status: 401 }).includes('重新登录')
+    && campaignCancelResultText({ status: 0, reason: 'timeout' }).includes('超时')
+    && campaignCancelResultText({ status: 500 }).includes('500')
+    && campaignCancelResultText({ status: 0, reason: 'bad-input' }).includes('刷新页面'))
+}
+{
+  const f = fakeFetch(() => mkRes(200, {
+    campaignId: 'cmp_1', status: 'queued', bookId: BID, chaptersTotal: 2,
+    voice: 'am_michael', quota: { booksUsed: 1, booksLeft: 2, month: '2026-11' },
+  }))
+  const r = await submitBookCampaign(BID, ['ch-01', 'ch-02'], { fetchImpl: f })
+  t('提交 200 → POST /campaign ＋ 归一 campaign（URL 不含 code）',
+    r.ok === true && f.calls[0].method === 'POST' && f.calls[0].url === campaignPath(BID)
+    && !f.calls[0].url.includes('code=') && r.data.id === 'cmp_1' && r.data.chaptersTotal === 2
+    && eq(JSON.parse(f.calls[0].body), { chapters: ['ch-01', 'ch-02'] }))
+}
+{
+  const f = fakeFetch(() => mkRes(409, {
+    campaignId: 'cmp_old', status: 'running', bookId: BID, chaptersTotal: 60,
+    voice: 'am_michael', quota: { booksUsed: 1, booksLeft: 2, month: '2026-11' },
+  }))
+  const r = await submitBookCampaign(BID, ['ch-01'], { fetchImpl: f })
+  t('409 → error CAMPAIGN_EXISTS ＋ 已有任务归一（UI 可切去看进度）＋ data 仍为 null',
+    r.ok === false && r.status === 409 && r.error === 'CAMPAIGN_EXISTS'
+    && r.campaign && r.campaign.id === 'cmp_old' && r.campaign.status === 'running'
+    && r.data === null)
+}
+{
+  const r = await submitBookCampaign(BID, ['ch-01'], {
+    fetchImpl: fakeFetch(() => mkRes(403, {
+      error: 'CAMPAIGN_QUOTA_EXCEEDED', quota: { booksUsed: 3, booksLeft: 0, month: '2026-11' },
+    })),
+  })
+  t('403 月度额度 → 码与 quota 都带回来（否则 UI 报不出「本月还剩几本」）',
+    r.ok === false && r.error === 'CAMPAIGN_QUOTA_EXCEEDED'
+    && r.quota.booksLeft === 0 && r.quota.booksUsed === 3)
+}
+{
+  const f = fakeFetch(() => mkRes(200, {}))
+  const r = await submitBookCampaign(BID, ['oops'], { fetchImpl: f })
+  t('整本勾选不合格 → bad-selection 且**一发不发**（别让用户白等一个 400）',
+    r.ok === false && r.reason === 'bad-selection' && f.calls.length === 0)
+  const many = Array.from({ length: 61 }, (_, i) => `ch-${String(i + 1).padStart(2, '0')}`)
+  const r2 = await submitBookCampaign(BID, many, { fetchImpl: f })
+  t('超过 60 章在客户端就截断成 60',
+    r2.ok === true && JSON.parse(f.calls[0].body).chapters.length === 60)
+  const r3 = await submitBookCampaign(BID, ['ch-01'], { fetchImpl: async () => { throw new Error('net') } })
+  t('提交网络错 → status 0 ／ reason network（恒不抛）', r3.ok === false && r3.status === 0 && r3.reason === 'network')
+  const f4 = fakeFetch(() => mkRes(200, {}))
+  const r4 = await submitBookCampaign('', ['ch-01'], { fetchImpl: f4 })
+  t('空 bookId → bad-input 且不发请求', r4.reason === 'bad-input' && f4.calls.length === 0)
+}
+{
+  const f = fakeFetch(() => mkRes(200, { campaignId: 'cmp_1', status: 'cancelled' }))
+  const r = await cancelBookCampaign(BID, 'cmp_1', { fetchImpl: f })
+  t('取消 200 → POST /campaign/<id>/cancel ＋ 回执归一',
+    r.ok === true && f.calls[0].method === 'POST'
+    && f.calls[0].url === `/api/gen/book/${BID}/campaign/cmp_1/cancel`
+    && r.data.campaignId === 'cmp_1' && r.data.status === 'cancelled')
+}
+{
+  const r = await cancelBookCampaign(BID, 'cmp_1', { fetchImpl: fakeFetch(() => mkRes(200, { status: 'cancelled' })) })
+  t('取消幂等：再取消一次仍 200；回执缺 campaignId 也不炸',
+    r.ok === true && r.data.status === 'cancelled' && r.data.campaignId === '')
+  const f = fakeFetch(() => mkRes(200, {}))
+  const r2 = await cancelBookCampaign(BID, '', { fetchImpl: f })
+  t('缺 campaignId → bad-input 且不发请求', r2.reason === 'bad-input' && f.calls.length === 0)
+  const r3 = await cancelBookCampaign(BID, 'cmp_1', { fetchImpl: async () => { throw new Error('net') } })
+  t('取消网络错 → status 0 ／ reason network（恒不抛）', r3.status === 0 && r3.reason === 'network')
+  const r4 = await cancelBookCampaign(BID, 'cmp_1', { fetchImpl: fakeFetch(() => mkRes(409, { campaignId: 'cmp_1' })) })
+  t('取消遇到 409 不乱贴 CAMPAIGN_EXISTS', r4.ok === false && r4.error === null)
+}
+{
+  t('取消回执归一：campaignId 原样、status 缺省 cancelled（幂等成功才有这一档）',
+    eq(normalizeCampaignCancel({ campaignId: 'cmp_1', status: 'cancelled' }),
+      { campaignId: 'cmp_1', status: 'cancelled' })
+    && normalizeCampaignCancel({ campaignId: 'cmp_1' }).status === 'cancelled'
+    && normalizeCampaignCancel(null).campaignId === '')
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

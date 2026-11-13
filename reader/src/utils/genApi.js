@@ -543,10 +543,18 @@ export const CAMPAIGN_STATUS_LABEL = {
   [CAMPAIGN_STATUS.blocked]: '已停止',
 }
 
+/** 月度整本额度归一（§12.1 的 `quota:{booksUsed,booksLeft,month}`；形状坏 → null，不编 0） */
+export function normalizeCampaignQuota(q) {
+  const o = (q && typeof q === 'object' && !Array.isArray(q)) ? q : null
+  if (!o) return null
+  return { booksUsed: num(o.booksUsed), booksLeft: num(o.booksLeft), month: String(o.month || '') }
+}
+
 /**
  * campaign 归一（GET 的 `campaign` 与 POST 回执共用）。形状坏／没有 id → null：
  * 旧 worker 没这个字段时，UI 应当退回「没有整本任务」，而不是编一个空任务。
  * `chaptersDone` 封顶在 `chaptersTotal`（服务端累计值，前端不改写、只防「61/60」这种坏显示）。
+ * `month`：GET 在顶层给，POST 只在 `quota.month` 里给 —— 后者兜底，不另编。
  */
 export function normalizeCampaign(c) {
   const o = (c && typeof c === 'object' && !Array.isArray(c)) ? c : null
@@ -555,17 +563,55 @@ export function normalizeCampaign(c) {
   if (!id) return null
   const total = Math.max(0, num(o.chaptersTotal))
   const doneRaw = Math.max(0, num(o.chaptersDone))
-  const q = (o.quota && typeof o.quota === 'object' && !Array.isArray(o.quota)) ? o.quota : null
+  const q = normalizeCampaignQuota(o.quota)
   return {
     id,
     status: String(o.status || ''),
+    bookId: String(o.bookId || ''),
     chaptersTotal: total,
     chaptersDone: total > 0 ? Math.min(doneRaw, total) : doneRaw,
     /** 失败章（设计 §12.1 的可选字段；当前 worker 还没回，缺省空表，不编） */
     failed: Array.isArray(o.failed) ? o.failed.map(String) : [],
     voice: String(o.voice || ''),
-    month: String(o.month || ''),
-    quota: q ? { booksUsed: num(q.booksUsed), booksLeft: num(q.booksLeft), month: String(q.month || '') } : null,
+    month: String(o.month || (q && q.month) || ''),
+    quota: q,
+  }
+}
+
+// ── 错误码归一（§12.1 的字典；提交／取消共用）────────────────────────────────
+
+/**
+ * 回执 → 规范错误码。服务端的码**原样**留下（不吞、不改大小写），只补一处坑：
+ * `409` 的 worker 回执是**已有任务本体**（`campaignId`／`status`／`chaptersTotal`…），
+ * **没有** `error` 字段 —— 设计 §12.1 写的却是 `CAMPAIGN_EXISTS`，这里补上，文案才分得开。
+ * `existsOn409:false` 给取消用（取消是幂等的，409 不代表「已有任务」）。
+ */
+export function campaignErrorCode(body, status, { existsOn409 = true } = {}) {
+  const b = (body && typeof body === 'object' && !Array.isArray(body)) ? body : {}
+  const code = String(b.error || '')
+  if (code) return code
+  return existsOn409 && num(status) === 409 ? 'CAMPAIGN_EXISTS' : null
+}
+
+/**
+ * 失败回执 → 归一形态（`error`／`used`／`limit`／`quota`／`campaign`），提交与取消共用。
+ *   · `used`／`limit`：403 `STORAGE_EXCEEDED` 要报「已用 X ／ 上限 Y」，缺省 -1（不编 0）；
+ *   · `quota`：403 `CAMPAIGN_QUOTA_EXCEEDED` 的月度账（booksUsed／booksLeft／month）；
+ *   · `campaign`：409 的已有任务本体 → 归一出来，UI 可以直接切去展示它，不必再拉一次。
+ * 形状坏 → 全空壳（error null、数字 -1），**不抛**。
+ */
+export function normalizeCampaignError(body, status, options = {}) {
+  const b = (body && typeof body === 'object' && !Array.isArray(body)) ? body : {}
+  const st = num(status)
+  const nested = (b.campaign && typeof b.campaign === 'object' && !Array.isArray(b.campaign)) ? b.campaign : null
+  const existsOn409 = options.existsOn409 !== false
+  const existing = nested || (existsOn409 && st === 409 ? b : null)
+  return {
+    error: campaignErrorCode(b, st, { existsOn409 }),
+    used: num(b.used, -1),
+    limit: num(b.limit, -1),
+    quota: normalizeCampaignQuota(b.quota),
+    campaign: normalizeCampaign(existing),
   }
 }
 
@@ -637,6 +683,9 @@ export const CAMPAIGN_ERROR_HINT = {
 export function campaignErrorText(result) {
   const r = result || {}
   const code = String(r.error || '')
+  /** 客户端先拦下的两种（没发请求）：别把它们说成「网络抖动」 */
+  if (r.reason === 'bad-selection') return String(r.error || '没有可提交的章节。')
+  if (r.reason === 'bad-input') return '这本书不在本机 —— 刷新页面再试。'
   if (code === 'STORAGE_EXCEEDED') {
     const used = formatBytes(r.used)
     const limit = formatBytes(r.limit)
@@ -668,6 +717,7 @@ export function campaignCancelConfirm(title) {
 export function campaignCancelResultText(result) {
   const r = result || {}
   if (r.ok) return '整本任务已取消 —— 已转正的章保留。'
+  if (r.reason === 'bad-input') return '任务信息不完整 —— 刷新页面再试。'
   if (r.status === 401) return '登录已过期 —— 重新登录后再试。'
   if (!r.status) return `没联系上服务端（${r.reason === 'timeout' ? '超时' : '网络'}），稍后再试。`
   return `没取消成（HTTP ${r.status}），稍后再试。`
@@ -760,12 +810,17 @@ export async function submitBookCampaign(bookId, chapterIds, { fetchImpl = globa
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chapters: payload.chapters }),
   }, timeoutMs)
+  /** 错误码／两条账的回执字段全部走同一份归一（见 `normalizeCampaignError`） */
+  const e = normalizeCampaignError(r.body, r.status)
   return {
     ok: r.ok, status: r.status, reason: r.reason || null,
-    /** worker 的 409 回执没有 `error` 字段（设计写的是 CAMPAIGN_EXISTS）——这里补上，文案才分得开 */
-    error: (r.body && r.body.error) || (r.status === 409 ? 'CAMPAIGN_EXISTS' : null),
-    used: num(r.body && r.body.used, -1),
-    limit: num(r.body && r.body.limit, -1),
+    error: e.error,
+    used: e.used,
+    limit: e.limit,
+    /** 403 的月度整本额度（booksUsed／booksLeft／month）；null ＝ 回执没带，不编 */
+    quota: e.quota,
+    /** 409 时 worker 回的是**已有任务本体** —— 归一出来给 UI 直接展示 */
+    campaign: e.campaign,
     data: r.ok ? normalizeCampaign(r.body) : null,
   }
 }
@@ -780,9 +835,11 @@ export function normalizeCampaignCancel(body) {
 export async function cancelBookCampaign(bookId, campaignId, { fetchImpl = globalThis.fetch, timeoutMs = GEN_TIMEOUT_MS } = {}) {
   if (!bookId || !campaignId) return { ok: false, status: 0, reason: 'bad-input', error: null, data: null }
   const r = await requestJson(fetchImpl, campaignCancelPath(bookId, campaignId), { method: 'POST' }, timeoutMs)
+  /** 取消是幂等的：409 不代表 `CAMPAIGN_EXISTS`，所以这里不启用 409 兜底 */
+  const e = normalizeCampaignError(r.body, r.status, { existsOn409: false })
   return {
     ok: r.ok, status: r.status, reason: r.reason || null,
-    error: (r.body && r.body.error) || null,
+    error: e.error,
     data: r.ok ? normalizeCampaignCancel(r.body) : null,
   }
 }
