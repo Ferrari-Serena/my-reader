@@ -15,12 +15,10 @@ binding = "AUDIO"
 bucket_name = "REPLACE_WITH_R2_BUCKET_NAME"
 
 # W11-3／W11-4：上传先落 staging，Worker 校验后再转正到 AUDIO
-# 注意：STAGING 桶必须被 parent R2 token 覆盖；未覆盖时可暂用 AUDIO 桶 + staging/ 前缀
-#       （此时不需要 STAGING 绑定，W11-4 用 AUDIO 绑定读 staging/ 前缀）。
-# 独立 staging 桶就绪后，再加：
-# [[r2_buckets]]
-# binding = "STAGING"
-# bucket_name = "REPLACE_WITH_R2_STAGING_BUCKET_NAME"
+# 注意：STAGING 桶必须被 parent R2 token 覆盖，否则临时凭据签发会 403。
+[[r2_buckets]]
+binding = "STAGING"
+bucket_name = "REPLACE_WITH_R2_STAGING_BUCKET_NAME"
 
 # 所需 vars：CF_ACCOUNT_ID / AUDIO_BUCKET / STAGING_BUCKET（见 src/inputtoken.js、src/stagingtoken.js）。
 

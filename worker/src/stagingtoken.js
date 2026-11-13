@@ -12,8 +12,7 @@
  *   · 凭据只绑 staging 桶 + 前缀 `staging/<campaignId>/<bookId>/`，TTL 默认 1800s（上限 3600s）。
  *   · Cloudflare 临时凭据 API 只有 object-read-write / object-read-only 两档；
  *     没有 object-write-only。故这里用 object-read-write，靠独立 staging 桶 + 前缀 + 短 TTL 收窄。
- *   · 2026-11-13 现状：parent R2 key 只覆盖 my-reader-audio，STAGING_BUCKET 暂等于 AUDIO_BUCKET；
- *     上传面仍由 `staging/<campaignId>/<bookId>/` 前缀与正式对象隔开。parent key 扩容后再切独立桶。
+ *   · 2026-11-13：parent R2 key 已扩到 my-reader-audio-staging，STAGING_BUCKET 指向独立桶。
  *   · 不碰正式 AUDIO 桶、不写索引。
  */
 
