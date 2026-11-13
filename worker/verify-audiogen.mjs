@@ -33,7 +33,7 @@ import {
 } from './src/audiogen.js'
 import {
   audioObjectKey, INDEX_FILE, handleBookAudio,
-  PROMOTE_ROUTE, PROMOTE_MAX_CHAPTERS,
+  PROMOTE_ROUTE, PROMOTE_MAX_CHAPTERS, PROMOTE_MAX_FILE_BYTES,
   stagingPrefixFor, promoteFileFor, resolvePromotePath, checksumHex,
 } from './src/bookaudio.js'
 import { bookObjectKey } from './src/booksync.js'
@@ -1163,6 +1163,7 @@ console.log('\n[audiogen — W11-4 转正：staging → 正式 R2／D1／索引]
   t('checksumHex：ArrayBuffer / Uint8Array 都能转小写 hex',
     checksumHex(new Uint8Array([0, 15, 255]).buffer) === '000fff'
     && checksumHex(new Uint8Array([0, 15, 255])) === '000fff')
+  t('转正单文件上限 32 MB（用户上传仍 8 MB）', PROMOTE_MAX_FILE_BYTES === 32 * 1024 * 1024)
 }
 
 console.log('\n[audiogen — W11-7 campaign runner 管理面]')

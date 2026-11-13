@@ -80,6 +80,9 @@ export { USER_PREFIX, audioObjectKey }
 export const INDEX_FILE = 'audio-index.json'
 /** 单个上传文件大小上限：一章 48 kbps mp3 ≈ 5 MB；8 MB 留余量，同时挡住当网盘用（手抄 MAX_BOOK_BYTES） */
 export const MAX_AUDIO_FILE_BYTES = 8 * 1024 * 1024
+/** 转正单文件上限：长章 48 kbps mp3 可超 8 MB（20–30 MB）；内部 promote 路径放宽到 32 MB。
+ *  用户上传端点仍用 MAX_AUDIO_FILE_BYTES（8 MB），不放宽。 */
+export const PROMOTE_MAX_FILE_BYTES = 32 * 1024 * 1024
 /** 单账号音频总量上限（§13.7 R9；D23 由 500 MiB → 1 GiB；**W-14（2026-10-31）1 → 5 GiB**；可 env.AUDIO_MAX_ACCOUNT_BYTES 覆盖） */
 export const DEFAULT_MAX_ACCOUNT_BYTES = 5 * 1024 * 1024 * 1024
 /** 单账号「有音频的书」本数上限（§13.7 R9；可 env.AUDIO_MAX_BOOKS 覆盖）—— 「有音频」＝至少有 mp3／timings，只有空索引不算（D25-b 裁 A） */
@@ -199,7 +202,7 @@ export function isMp3Bytes(u8) {
  * 搬一章：staging `<ch>.mp3` ＋ `<ch>.timings.json` → 正式 `user/<code>/<bookId>/<ch>.*`。
  *
  * 校验顺序（先验后写；本章校验不过就一个正式对象都不写）：
- *   ① 对象存在、size > 0、≤ 8 MB（与上传端点同一上限）；
+ *   ① 对象存在、size > 0、≤ 32 MB（转正路径单独放宽；用户上传仍是 8 MB）；
  *   ② SHA-256：**优先用 R2 原生 `checksums.sha256`**；对象没带 checksum 时（uploader 走
  *      curl / S3 PUT，没设 `x-amz-checksum-sha256`）才对字节算一次 —— `checksumSource`
  *      如实回报是 `r2` 还是 `computed`，不把兜底伪装成原生；
@@ -222,7 +225,7 @@ export async function promoteStagedChapter(env, o) {
   if (!obj) return fail('STAGING_MISSING')
   const size = Number(obj.size)
   if (!Number.isFinite(size) || size <= 0) return fail('SIZE_MISMATCH')
-  if (size > MAX_AUDIO_FILE_BYTES) return fail('SIZE_TOO_LARGE', 422, { size, max: MAX_AUDIO_FILE_BYTES })
+  if (size > PROMOTE_MAX_FILE_BYTES) return fail('SIZE_TOO_LARGE', 422, { size, max: PROMOTE_MAX_FILE_BYTES })
   if (o.bytes !== undefined && Number(o.bytes) !== size) return fail('SIZE_MISMATCH', 422, { expected: o.bytes, actual: size })
 
   let bytes
@@ -247,7 +250,7 @@ export async function promoteStagedChapter(env, o) {
   if (!tmObj) return fail('STAGING_MISSING', 422, { file: promoteFileFor(chapterId, 'timings') })
   const tmSize = Number(tmObj.size)
   if (!Number.isFinite(tmSize) || tmSize <= 0) return fail('SIZE_MISMATCH')
-  if (tmSize > MAX_AUDIO_FILE_BYTES) return fail('SIZE_TOO_LARGE', 422, { size: tmSize, max: MAX_AUDIO_FILE_BYTES })
+  if (tmSize > PROMOTE_MAX_FILE_BYTES) return fail('SIZE_TOO_LARGE', 422, { size: tmSize, max: PROMOTE_MAX_FILE_BYTES })
   if (o.timingsBytes !== undefined && Number(o.timingsBytes) !== tmSize) {
     return fail('SIZE_MISMATCH', 422, { expected: o.timingsBytes, actual: tmSize })
   }
