@@ -32,6 +32,7 @@ import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
 import { handleFeedback } from './feedback.js'
 import { handleAudioGen, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
 import { handleInputToken } from './inputtoken.js'
+import { handleStagingToken } from './stagingtoken.js'
 import { handlePhraseConfig, handlePhraseResolve } from './phrase.js'
 import { parseRange } from './range.js'
 import { audioRequestPlan } from './audioalias.js'
@@ -115,6 +116,10 @@ async function handleRequest(request, env, url) {
     // 内部输入 fetch：/api/internal/audio/input-token（005）
     const inputTokenRes = await handleInputToken(request, env)
     if (inputTokenRes !== null) return inputTokenRes
+
+    // 内部 staging 上传：/api/internal/audio/staging-token（W11-3）
+    const stagingTokenRes = await handleStagingToken(request, env)
+    if (stagingTokenRes !== null) return stagingTokenRes
 
     // 同步端点分发（匹配 /api/sync/*）
     const syncRes = await handleSync(request, env)

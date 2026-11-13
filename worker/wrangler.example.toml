@@ -14,6 +14,16 @@ database_id = "REPLACE_WITH_D1_DATABASE_ID"
 binding = "AUDIO"
 bucket_name = "REPLACE_WITH_R2_BUCKET_NAME"
 
+# W11-3／W11-4：上传先落 staging，Worker 校验后再转正到 AUDIO
+# 注意：STAGING 桶必须被 parent R2 token 覆盖；未覆盖时可暂用 AUDIO 桶 + staging/ 前缀
+#       （此时不需要 STAGING 绑定，W11-4 用 AUDIO 绑定读 staging/ 前缀）。
+# 独立 staging 桶就绪后，再加：
+# [[r2_buckets]]
+# binding = "STAGING"
+# bucket_name = "REPLACE_WITH_R2_STAGING_BUCKET_NAME"
+
+# 所需 vars：CF_ACCOUNT_ID / AUDIO_BUCKET / STAGING_BUCKET（见 src/inputtoken.js、src/stagingtoken.js）。
+
 # 所需 secret 在 Cloudflare 控制台（或 `wrangler secret put`）配置。
 # 具体名称见 worker/src 中读取的 env.*；本模板不列真实 secret 名。
 #
