@@ -6,7 +6,9 @@
  *   - `lookup` 用替身 fetch 驱动 manifest／片／irregular／网络失败／deadline；
  *   - 六态组合直接跑 `src/utils/zhState.js`（ReaderView 实际调用的同一份决策函数），
  *     读 `lookupState`／`dictEntry`／`zhReason`／`isOffline`；
- *   - ReaderView／WordPopup 的插入点与接线按本仓既有「来源级」检查读源码。
+ *   - ReaderView／WordPopup 的插入点与接线按本仓既有「来源级」检查读源码；
+ *   - `src/utils/zhEvents.js` 直接驱动导出：session 复用、四事件载荷、满 20／1000 ms
+ *     合批、哈希注入（含异步与坏形状）、网络失败与 429 丢弃（§五客户端前置／§六新增模块）。
  *
  * 用法: node verify-zhdict.mjs
  */
@@ -23,11 +25,27 @@ import {
   resolveOnlineOutcome,
 } from './src/utils/zhState.js'
 import { lookup } from './src/utils/zhDict.js'
+import {
+  ZH_EVENTS_ROUTE,
+  SESSION_STORAGE,
+  SESSION_RE,
+  MAX_QUEUE,
+  MAX_BATCH,
+  FLUSH_DELAY_MS,
+  currentSession,
+  emit,
+  flush,
+  resetZhEvents,
+  setFetch,
+  setHashWord,
+  setLogger,
+} from './src/utils/zhEvents.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const read = (rel) => readFileSync(join(__dirname, rel), 'utf8')
 const rv = read('src/views/ReaderView.vue')
 const popup = read('src/components/WordPopup.vue')
+const zhEventsSrc = read('src/utils/zhEvents.js')
 const at = (s, needle) => s.indexOf(needle)
 
 let pass = 0, fail = 0
@@ -297,6 +315,16 @@ t('闭弹窗改走 closeWordPopup（不再内联 selectedWord=null）',
   /@close="closeWordPopup"/.test(rv) && !/@close="selectedWord = null"/.test(rv))
 t('没有新建 /api/zh/events 服务端调用（只由 zhEvents 模块发）',
   !/fetch\(['"`]\/api\/zh\/events/.test(rv))
+t('zh_enter 三支顺序：note → phrase → 单词（byo|builtin）',
+  at(rv, "emitEnter(word, 'note')") > 0 &&
+  at(rv, "emitEnter(word, 'note')") < at(rv, "emitEnter(word, 'phrase')") &&
+  at(rv, "emitEnter(word, 'phrase')") < at(rv, 'emitEnter(word, isBookId(bookId.value)'))
+t('zh_lookup result 取四值、ms 为点击起算实测值',
+  /result: zh\.status === 'hit' \? zh\.result : zh\.reason,\s*ms: Date\.now\(\) - startedAt,/.test(rv))
+t('closeWordPopup：先发 zh_action(close) 再清 selectedWord',
+  /function closeWordPopup\(\) \{\s*emitAction\('close'\)\s*selectedWord\.value = null\s*\}/.test(rv))
+t('hashWord 拿不到 crypto.subtle 时返回空串（由 zhEvents 丢弃，不回退原词）',
+  /if \(!subtle\) return ''/.test(rv) && /catch \{\s*return ''\s*\}/.test(rv))
 
 // ═══════════════════════════════════════════════════════════════════
 // ④ WordPopup 插入点：六态只进 v-else，且在三支之后
@@ -330,6 +358,176 @@ t('error 文案给「稍后重试」，在线查词只出现在 miss／error（�
 t('speak／online 动作回调向 ReaderView 发事件',
   /emit\('speak'\)/.test(popup) && /emit\('online'\)/.test(popup) &&
   /defineEmits\(\['close', 'add-vocab', 'remove-vocab', 'speak', 'online'\]\)/.test(popup))
+
+// ═══════════════════════════════════════════════════════════════════
+// ⑤ zhEvents 行为（冻结包 §五／§六：session、批量队列、哈希注入、失败丢弃）
+// 只驱动模块导出，不挂载组件、不触网；fetch 由 setFetch 注入替身。
+// ═══════════════════════════════════════════════════════════════════
+console.log('\n[zhEvents — session／批量队列／哈希注入／失败丢弃]')
+
+const HASH_HEX = '0123456789abcdef'.repeat(4) // 64 位小写 hex，与 BE 入参校验同形
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+/** 收请求的 fetch 替身；body 解析出来直接给断言看 */
+function captureFetch(status = 202) {
+  const reqs = []
+  const fn = (url, init = {}) => {
+    reqs.push({ url: String(url), init, body: init.body ? JSON.parse(init.body) : null })
+    return Promise.resolve({ ok: status >= 200 && status < 300, status })
+  }
+  fn.reqs = reqs
+  return fn
+}
+
+// Node 没有 sessionStorage：注入内存版，验证「重载保留」这一段
+const sessionStore = new Map()
+try {
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    configurable: true,
+    value: {
+      getItem: (k) => (sessionStore.has(k) ? sessionStore.get(k) : null),
+      setItem: (k, v) => { sessionStore.set(k, String(v)) },
+    },
+  })
+} catch { /* 覆盖不了就只测内存复用 */ }
+
+setLogger(() => {}) // 测试期静默（非 Vite 构建本来也不 warn）
+
+t('常量对齐 §五／§六：路由、session 键、队列 50／批 20／1000 ms',
+  ZH_EVENTS_ROUTE === '/api/zh/events' && SESSION_STORAGE === 'mr-zh-session' &&
+  MAX_QUEUE === 50 && MAX_BATCH === 20 && FLUSH_DELAY_MS === 1000)
+t('队列满 50 丢最旧（splice 头部），不无限增长',
+  /queue\.splice\(0, excess\)/.test(zhEventsSrc))
+t('生命周期：pagehide／visibilitychange(hidden) 用 keepalive 补发',
+  /addEventListener\('pagehide'[\s\S]{0,200}flush\(\{ keepalive: true \}\)/.test(zhEventsSrc) &&
+  /visibilitychange[\s\S]{0,400}flush\(\{ keepalive: true \}\)/.test(zhEventsSrc))
+
+{
+  resetZhEvents()
+  const s1 = currentSession()
+  const s2 = currentSession()
+  t('session：randomUUID 形状、标签页内复用、落到 mr-zh-session',
+    SESSION_RE.test(s1) && s1 === s2 && sessionStore.get(SESSION_STORAGE) === s1)
+  resetZhEvents()
+  t('session：重载（内存清空）后从 sessionStorage 读回同一 id',
+    currentSession() === s1)
+}
+
+{
+  // 一次把四事件送完：字段名／枚举／原词边界逐项对 §五 契约
+  resetZhEvents()
+  const f = captureFetch()
+  setFetch(f)
+  setHashWord(() => HASH_HEX)
+  const ok = [
+    emit('zh_enter', { word: 'Zebra', via: 'byo' }),
+    emit('zh_lookup', { word: 'Zebra', result: 'miss_dict', ms: 12.6 }),
+    emit('zh_shown', { word: 'Zebra', result: 'direct', defsCount: 3 }),
+    emit('zh_action', { word: 'Zebra', action: 'save', source: 'zh', dwellMs: 1234 }),
+  ]
+  const sent = flush()
+  const req = f.reqs[0]
+  const body = req?.body
+  const evs = body?.events || []
+  const byName = Object.fromEntries(evs.map(x => [x.e, x]))
+  const wire = JSON.stringify(body || {})
+  t('四事件同批：一次 POST、anon 空串、session 合形、原词不出设备',
+    ok.every(Boolean) && sent === 4 && f.reqs.length === 1 &&
+    req.url === ZH_EVENTS_ROUTE && req.init.method === 'POST' &&
+    body.anon === '' && SESSION_RE.test(body.session) &&
+    !wire.includes('Zebra') && !wire.includes('zebra'))
+  t('载荷严格按 §五：word_hash 64 hex、via／result+ms／defs_count／action+source+dwell_ms',
+    evs.length === 4 &&
+    evs.every(x => /^[0-9a-f]{64}$/.test(x.word_hash) && Number.isFinite(x.ts)) &&
+    byName.zh_enter.via === 'byo' && !('result' in byName.zh_enter) &&
+    byName.zh_lookup.result === 'miss_dict' && byName.zh_lookup.ms === 13 &&
+    !('via' in byName.zh_lookup) &&
+    byName.zh_shown.result === 'direct' && byName.zh_shown.defs_count === 3 &&
+    byName.zh_action.action === 'save' && byName.zh_action.source === 'zh' &&
+    byName.zh_action.dwell_ms === 1234)
+}
+
+{
+  // 异步注入：调用方不等；哈希落定后才入队；原词只活在闭包里
+  resetZhEvents()
+  const f = captureFetch()
+  setFetch(f)
+  let calls = 0
+  setHashWord(async () => { calls++; return HASH_HEX })
+  const ok = emit('zh_enter', { word: 'zebra', via: 'builtin' })
+  const before = f.reqs.length
+  await sleep(0)
+  const sent = flush()
+  t('hashWord 异步：emit 不 await、完成后才入队、只送哈希',
+    ok === true && calls === 1 && before === 0 && sent === 1 &&
+    f.reqs[0].body.events[0].word_hash === HASH_HEX)
+}
+
+{
+  resetZhEvents()
+  const f = captureFetch()
+  setFetch(f)
+  setHashWord(() => 'ABC') // 不是 64 位小写 hex
+  t('哈希形状不对：单条丢弃、不入队',
+    emit('zh_enter', { word: 'zebra', via: 'byo' }) === false &&
+    flush() === 0 && f.reqs.length === 0)
+  resetZhEvents()
+  t('未注入 hashWord：不发（宁缺勿错，绝不回退传原词）',
+    emit('zh_enter', { word: 'zebra', via: 'byo' }) === false && flush() === 0)
+}
+
+{
+  resetZhEvents()
+  const f = captureFetch()
+  setFetch(f)
+  setHashWord(() => HASH_HEX)
+  for (let i = 0; i < MAX_BATCH; i++) {
+    emit('zh_lookup', { word: `w${i}`, result: 'direct', ms: i })
+  }
+  t('满 20 条立即 flush：一次请求 20 条，不等 1000 ms',
+    f.reqs.length === 1 && f.reqs[0].body.events.length === MAX_BATCH && flush() === 0)
+}
+
+{
+  resetZhEvents()
+  const f = captureFetch()
+  setFetch(f)
+  setHashWord(() => HASH_HEX)
+  emit('zh_enter', { word: 'zebra', via: 'byo' })
+  const immediately = f.reqs.length
+  await sleep(FLUSH_DELAY_MS + 150)
+  t('首条入队：1000 ms 内不合批，到点发 1 条',
+    immediately === 0 && f.reqs.length === 1 && f.reqs[0].body.events.length === 1)
+}
+
+{
+  resetZhEvents()
+  let attempts = 0
+  setFetch(() => { attempts++; return Promise.reject(new TypeError('network down')) })
+  setHashWord(() => HASH_HEX)
+  for (let i = 0; i < MAX_BATCH; i++) {
+    emit('zh_lookup', { word: `w${i}`, result: 'direct', ms: i })
+  }
+  await sleep(20)
+  t('发送失败：不重试、不抛给调用方、队列已丢弃',
+    attempts === 1 && flush() === 0)
+}
+
+{
+  resetZhEvents()
+  let attempts = 0
+  setFetch(() => { attempts++; return Promise.resolve({ ok: false, status: 429 }) })
+  setHashWord(() => HASH_HEX)
+  for (let i = 0; i < MAX_BATCH; i++) {
+    emit('zh_enter', { word: `w${i}`, via: 'byo' })
+  }
+  await sleep(10)
+  const after = emit('zh_enter', { word: 'later', via: 'byo' })
+  const sentAfter = flush()
+  await sleep(10)
+  t('429：停本会话后续上报（之后的 emit 直接丢弃）',
+    attempts === 1 && after === false && sentAfter === 0)
+}
 
 // ═══════════════════════════════════════════════════════════════════
 console.log(`\n[zhdict] pass=${pass} fail=${fail}`)
