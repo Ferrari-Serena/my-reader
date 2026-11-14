@@ -30,3 +30,6 @@ worker/wrangler.toml
 
 # wrangler 本地状态
 worker/.wrangler/
+
+# OCR b1 spike 样本（2026-11-14；不落生产仓）
+_scratch/ocr-b1/
