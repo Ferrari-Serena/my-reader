@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://my-reader.ferrari11.com/schema/sense-schema.v1.json",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "senses": {
+            "contains": {
+              "properties": {
+                "examples": {
+                  "type": "array",
+                  "maxItems": 0
+                }
+              },
+              "required": ["examples"]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "flags": {
+            "contains": { "const": "no_example" }
+          }
+        },
+        "required": ["flags"]
+      }
+    }
+  ],
+  "title": "Flash-sense batch record (A4 top500)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "word",
+    "source",
+    "phonetic",
+    "senses",
+    "confidence",
+    "flags",
+    "model",
+    "prompt_version",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "word": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shard",
+        "source_commit",
+        "raw_t_index",
+        "raw_span"
+      ],
+      "properties": {
+        "shard": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "source_commit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "raw_t_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "raw_span": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "phonetic": {
+      "type": "string",
+      "minLength": 0,
+      "maxLength": 128
+    },
+    "senses": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sense_id",
+          "pos",
+          "zh_gloss",
+          "en_gloss",
+          "register",
+          "domain",
+          "examples",
+          "review_status"
+        ],
+        "properties": {
+          "sense_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "pos": {
+            "type": "string",
+            "enum": [
+              "n.",
+              "v.",
+              "adj.",
+              "adv.",
+              "prep.",
+              "conj.",
+              "pron.",
+              "art.",
+              "num.",
+              "interj.",
+              "aux.",
+              "abbr."
+            ]
+          },
+          "zh_gloss": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "en_gloss": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "register": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "domain": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "examples": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "en",
+                "zh"
+              ],
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "zh": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                }
+              }
+            }
+          },
+          "review_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "reviewed",
+              "approved",
+              "rejected"
+            ]
+          }
+        }
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "flags": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "enum": [
+          "uncertain_pos",
+          "obscure_sense",
+          "duplicate_sense",
+          "proper_noun",
+          "abbreviation",
+          "no_example"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "prompt_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  },
+  "x-examples": [
+    {
+      "note": "valid: complete record with one example",
+      "valid": true,
+      "record": {
+        "schema_version": 1,
+        "word": "run",
+        "source": {
+          "shard": "top500-a4",
+          "source_commit": "a1b2c3d4",
+          "raw_t_index": 12,
+          "raw_span": "run"
+        },
+        "phonetic": "/rʌn/",
+        "senses": [
+          {
+            "sense_id": "run-1",
+            "pos": "v.",
+            "zh_gloss": "跑；奔跑",
+            "en_gloss": "to move quickly on foot",
+            "register": "neutral",
+            "domain": "general",
+            "examples": [
+              {
+                "en": "She runs every morning.",
+                "zh": "她每天早上跑步。"
+              }
+            ],
+            "review_status": "draft"
+          }
+        ],
+        "confidence": 0.93,
+        "flags": [],
+        "model": "flash",
+        "prompt_version": "v1.2",
+        "generated_at": "2024-01-01T00:00:00Z"
+      }
+    },
+    {
+      "note": "valid: no reliable example, flags contains no_example",
+      "valid": true,
+      "record": {
+        "schema_version": 1,
+        "word": "serendipity",
+        "source": {
+          "shard": "top500-a4",
+          "source_commit": "deadbeef",
+          "raw_t_index": 7,
+          "raw_span": "serendipity"
+        },
+        "phonetic": "/ˌsɛrənˈdɪpɪti/",
+        "senses": [
+          {
+            "sense_id": "serendipity-1",
+            "pos": "n.",
+            "zh_gloss": "意外发现珍奇事物的才能",
+            "en_gloss": "the faculty of making fortunate discoveries",
+            "register": "formal",
+            "domain": "general",
+            "examples": [],
+            "review_status": "reviewed"
+          }
+        ],
+        "confidence": 0.81,
+        "flags": [
+          "no_example"
+        ],
+        "model": "flash",
+        "prompt_version": "v1.2",
+        "generated_at": "2024-01-02T00:00:00Z"
+      }
+    },
+    {
+      "note": "invalid: pos not in enum and missing required source fields",
+      "valid": false,
+      "record": {
+        "schema_version": 1,
+        "word": "bad",
+        "source": {
+          "shard": "top500-a4"
+        },
+        "phonetic": "/bæd/",
+        "senses": [
+          {
+            "sense_id": "bad-1",
+            "pos": "noun",
+            "zh_gloss": "坏的",
+            "en_gloss": "not good",
+            "register": "neutral",
+            "domain": "general",
+            "examples": [],
+            "review_status": "draft"
+          }
+        ],
+        "confidence": 0.5,
+        "flags": [
+          "no_example"
+        ],
+        "model": "flash",
+        "prompt_version": "v1.2",
+        "generated_at": "2024-01-03T00:00:00Z"
+      }
+    }
+  ]
+}
