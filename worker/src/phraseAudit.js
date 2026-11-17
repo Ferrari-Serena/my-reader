@@ -73,20 +73,20 @@ export function buildRetractAudit(input) {
     return fail('answerRank 必须是非负整数')
   }
   if (!batch || typeof batch !== 'object') return fail('batch 必须是对象')
+  const batchVals = {}
   for (const field of BATCH_FIELDS) {
-    if (!isNonEmptyString(batch[field])) return fail(`batch.${field} 不能为空`)
+    const v = batch[field]
+    if (v !== undefined && v !== null && typeof v !== 'string') return fail(`batch.${field} 必须是字符串或 null`)
+    batchVals[field] = v == null || String(v).trim() === '' ? null : String(v)
   }
   if (!isNonEmptyString(reason)) return fail('reason 不能为空')
   if (!isNonEmptyString(operator)) return fail('operator 不能为空')
 
   let when
-  if (retractedAt === undefined || retractedAt === null) {
-    when = new Date().toISOString()
-  } else if (isNonEmptyString(retractedAt) && !Number.isNaN(Date.parse(retractedAt))) {
-    when = retractedAt
-  } else {
-    return fail('retractedAt 必须是可解析的时间字符串')
-  }
+  if (retractedAt === undefined || retractedAt === null) when = Date.now()
+  else if (typeof retractedAt === 'number' && Number.isFinite(retractedAt)) when = retractedAt
+  else if (isNonEmptyString(retractedAt) && !Number.isNaN(Date.parse(retractedAt))) when = Date.parse(retractedAt)
+  else return fail('retractedAt 必须是毫秒数或可解析时间字符串')
 
   // 键顺序 = RETRACT_LOG_COLUMNS 去掉 id
   const row = {
@@ -96,10 +96,10 @@ export function buildRetractAudit(input) {
     book_id: bookId,
     phrase_hash: phraseHash,
     answer_rank: answerRank,
-    schema_ver: batch.schema_ver,
-    model_ver: batch.model_ver,
-    prompt_ver: batch.prompt_ver,
-    lexicon_ver: batch.lexicon_ver,
+    schema_ver: batchVals.schema_ver,
+    model_ver: batchVals.model_ver,
+    prompt_ver: batchVals.prompt_ver,
+    lexicon_ver: batchVals.lexicon_ver,
     reason,
     operator,
   }
