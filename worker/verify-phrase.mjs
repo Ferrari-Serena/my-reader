@@ -18,6 +18,9 @@ import {
   CACHE_SCHEMA_VERSION,
   PROMPT_VERSION,
   LEXICON_VERSION,
+  PHRASE_CACHE_TTL_MS,
+  PHRASE_CACHE_TTL_CRON,
+  runPhraseCacheTtl,
   SYSTEM_PROMPT,
   USER_PROMPT_TEMPLATE,
   phraseLlmConfig,
@@ -250,13 +253,16 @@ console.log('\n[handlePhraseResolve — 路由闸]')
 {
   const fakeDb = ({ cacheRow = null, cacheError = false, rateRow = { ip_n: 0, day_n: 0, user_n: 0 }, rateError = false, insertError = false } = {}) => {
     const bumps = []
+    const calls = []
     return {
       bumps,
+      calls,
       prepare(sql) {
         let args = []
         const stmt = {
           bind(...a) { args = a; return stmt },
           async first() {
+            calls.push({ sql, args, op: 'first' })
             if (sql.includes('FROM phrase_cloud_cache')) {
               if (cacheError) throw new Error('cache down')
               return cacheRow
@@ -268,6 +274,7 @@ console.log('\n[handlePhraseResolve — 路由闸]')
             return null
           },
           async run() {
+            calls.push({ sql, args, op: 'run' })
             if (insertError && sql.includes('INSERT INTO phrase_rate_events')) throw new Error('insert down')
             if (sql.includes('INSERT INTO metric_counters')) bumps.push(args[1])
             return { meta: { changes: 1 } }
@@ -335,6 +342,7 @@ console.log('\n[handlePhraseResolve — 路由闸]')
     t('缓存命中不调模型', modelCalls === 0)
     t('缓存命中 +cache_hits，且不 +model_calls（负测）',
       dbHit.bumps.filter(n => n === 'cache_hits').length === 1 && !dbHit.bumps.includes('model_calls'))
+    t('缓存读带 90 天 cutoff', dbHit.calls.some(c => c.sql.includes('created_at >= ?') && c.args.length === 2 && typeof c.args[1] === 'number'))
 
     const modernHit = await handlePhraseResolve(req(ROUTE_PATH, 'POST', MODERN_BODY), {
       ...authEnv,
@@ -353,6 +361,7 @@ console.log('\n[handlePhraseResolve — 路由闸]')
     t('真正调模型一次', modelCalls === 1)
     t('模型调用 +model_calls 恰好一次（重试不双计）',
       dbFresh.bumps.filter(n => n === 'model_calls').length === 1 && !dbFresh.bumps.includes('cache_hits'))
+    t('缓存写改 UPSERT', dbFresh.calls.some(c => c.sql.includes('ON CONFLICT(cache_key) DO UPDATE')))
 
     const modernFresh = await handlePhraseResolve(req(ROUTE_PATH, 'POST', MODERN_BODY), authEnv)
     const modernFreshBody = await modernFresh.json()
@@ -457,6 +466,35 @@ console.log('\n[index.js 接线 — 真入口分发到 /api/phrase/resolve]')
   t('非 POST 从真入口进来 → 405', noModel.status === 405)
   const configBody = await config.json()
   t('配置端点从真入口进来 → 200 + 内置版本', config.status === 200 && configBody.versions.schema === CACHE_SCHEMA_VERSION)
+}
+console.log('\n[phrase cache TTL — 常量与清理]')
+{
+  const fake = ({ changes = [], count = 0 } = {}) => {
+    const calls = []
+    let i = 0
+    return {
+      calls,
+      prepare(sql) {
+        let args = []
+        const stmt = {
+          bind(...a) { args = a; return stmt },
+          async first() { calls.push({ sql, args, op: 'first' }); return { n: count } },
+          async run() { calls.push({ sql, args, op: 'run' }); return { meta: { changes: changes[i++] ?? 0 } } },
+        }
+        return stmt
+      },
+    }
+  }
+  t('TTL 常量 90 天', PHRASE_CACHE_TTL_MS === 90 * 24 * 60 * 60 * 1000)
+  t('TTL cron 04:43', PHRASE_CACHE_TTL_CRON === '43 4 * * *')
+  const db = fake({ changes: [500, 500, 200], count: 1200 })
+  const r = await runPhraseCacheTtl({ DB: db }, 1_800_000_000_000)
+  t('清理：3 批 / 1200 行', r.deleted === 1200 && r.batches === 3)
+  t('清理：用 cutoff 和 500 批量',
+    db.calls.some(c => c.op === 'run' && c.sql.includes('created_at < ?') && c.args[1] === 500))
+  const one = fake({ changes: [3], count: 3 })
+  const r2 = await runPhraseCacheTtl({ DB: one }, 0)
+  t('清理：changes<500 提前停', r2.deleted === 3 && r2.batches === 1)
 }
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

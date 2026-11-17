@@ -34,7 +34,7 @@ import { handleFeedback } from './feedback.js'
 import { handleAudioGen, handleAudioPromote, handleAudioCampaignAdmin, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
 import { handleInputToken } from './inputtoken.js'
 import { handleStagingToken } from './stagingtoken.js'
-import { handlePhraseConfig, handlePhraseResolve } from './phrase.js'
+import { handlePhraseConfig, handlePhraseResolve, PHRASE_CACHE_TTL_CRON, runPhraseCacheTtl } from './phrase.js'
 import { parseRange } from './range.js'
 import { audioRequestPlan } from './audioalias.js'
 import { corsFor } from './cors.js'
@@ -95,6 +95,15 @@ export default {
         console.log('scheduled audio gen:', JSON.stringify(r))
       } catch (e) {
         console.error('scheduled audio gen failed:', e && e.message, e && e.stack)
+      }
+      return
+    }
+    if (cron === PHRASE_CACHE_TTL_CRON) {
+      try {
+        const r = await runPhraseCacheTtl(env, Date.now())
+        console.log('scheduled phrase cache ttl:', JSON.stringify(r))
+      } catch (e) {
+        console.error('scheduled phrase cache ttl failed:', e && e.message, e && e.stack)
       }
       return
     }
