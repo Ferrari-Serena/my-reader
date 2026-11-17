@@ -35,6 +35,67 @@ import { handleAudioGen, handleAudioPromote, handleAudioCampaignAdmin, runAudioG
 import { handleInputToken } from './inputtoken.js'
 import { handleStagingToken } from './stagingtoken.js'
 import { handlePhraseConfig, handlePhraseResolve, PHRASE_CACHE_TTL_CRON, runPhraseCacheTtl } from './phrase.js'
+import { parseRetractRequest, retractCacheKey } from './phraseAdmin.js'
+import { buildRetractAudit } from './phraseAudit.js'
+
+// A1 retract endpoint: validate body, retract cache row, write audit log to D1.
+async function handlePhraseRetract(request, env) {
+  let body
+  try {
+    const text = await request.text()
+    if (text.length > 4096) return json({ status: 'invalid', error: 'body too large' }, 400)
+    body = JSON.parse(text)
+  } catch {
+    return json({ status: 'invalid', error: 'invalid json' }, 400)
+  }
+  const parsed = parseRetractRequest(body)
+  if (!parsed || !parsed.ok) return json({ status: 'invalid', error: (parsed && parsed.error) || 'invalid request' }, 400)
+  const req = parsed.value || parsed
+  if (req.dryRun === true) return json({ status: 'invalid', error: 'dryRun not implemented' }, 400)
+
+  const scope = req.scope
+  const answerHash = req.answerHash
+  const reason = req.reason
+  const operator = req.operator
+  const cacheKey = retractCacheKey(scope, answerHash)
+  const cacheKeyHash = cacheKey
+  const db = env.PHRASE_DB
+
+  try {
+    const row = await db
+      .prepare('SELECT rank,book_id,phrase_hash,schema_ver,model_ver,prompt_ver,lexicon_ver FROM phrase_cloud_cache WHERE cache_key=?')
+      .bind(cacheKey)
+      .first()
+    if (!row) return json({ status: 'not_found', cacheKeyHash }, 404)
+
+    const del = await db.prepare('DELETE FROM phrase_cloud_cache WHERE cache_key=?').bind(cacheKey).run()
+    if (!del || del.changes !== 1) return json({ status: 'db_error' }, 500)
+
+    const audit = buildRetractAudit({ row, scope, reason, operator })
+    const retractedAt = Date.now()
+    await db
+      .prepare('INSERT INTO phrase_retract_log (retracted_at,cache_key_hash,scope_kind,book_id,phrase_hash,answer_rank,schema_ver,model_ver,prompt_ver,lexicon_ver,reason,operator) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+      .bind(
+        retractedAt,
+        cacheKeyHash,
+        audit.scope_kind,
+        row.book_id,
+        row.phrase_hash,
+        row.rank,
+        row.schema_ver,
+        row.model_ver,
+        row.prompt_ver,
+        row.lexicon_ver,
+        reason,
+        operator,
+      )
+      .run()
+
+    return json({ status: 'retracted', cacheKeyHash, answerRank: row.rank, retractedAt, metadataVerified: false }, 200)
+  } catch {
+    return json({ status: 'db_error' }, 500)
+  }
+}
 import { parseRange } from './range.js'
 import { audioRequestPlan } from './audioalias.js'
 import { corsFor } from './cors.js'
