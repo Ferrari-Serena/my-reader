@@ -1,6 +1,33 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.com/sense-schema.v1.json",
+  "$id": "https://my-reader.ferrari11.com/schema/sense-schema.v1.json",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "senses": {
+            "contains": {
+              "properties": {
+                "examples": {
+                  "type": "array",
+                  "maxItems": 0
+                }
+              },
+              "required": ["examples"]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "flags": {
+            "contains": { "const": "no_example" }
+          }
+        },
+        "required": ["flags"]
+      }
+    }
+  ],
   "title": "Flash-sense batch record (A4 top500)",
   "type": "object",
   "additionalProperties": false,
@@ -44,7 +71,8 @@
         "source_commit": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{7,40}$"
         },
         "raw_t_index": {
           "type": "integer",
