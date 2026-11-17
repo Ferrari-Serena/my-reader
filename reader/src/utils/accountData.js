@@ -17,7 +17,6 @@ export const GIB = 1024 ** 3
 
 export const RETRY_NOTE = '失败章节可重试：同一行重新排队，不额外占用当日额度。'
 export const REGEN_NOTE = '清空后重新生成按一次新生成计算，占用当日额度。'
-export const EXPORT_NOTE = '导出将在协议与隐私定稿后开放（UI-22）。'
 
 /** 额度：`used + left` 就是服务端当日的上限（env 可改），不写死 5。 */
 export function quotaSummary(quota) {

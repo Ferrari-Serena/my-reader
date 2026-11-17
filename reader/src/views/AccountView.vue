@@ -84,11 +84,22 @@
         <div class="sub" style="margin-top: 8px">{{ REGEN_NOTE }}</div>
       </div>
 
-      <!-- 数据导出（入口先占位，实现归 UI-22） -->
+      <!-- 数据导出（UI-22）：本机生成，不上传 -->
       <div class="sec"><b>数据导出</b><span></span></div>
       <div class="blk">
-        <div class="krow"><span>笔记与卡片</span><span class="muted">暂不可用</span></div>
-        <div class="sub">{{ EXPORT_NOTE }}</div>
+        <div class="krow">
+          <span>笔记与卡片</span>
+          <button class="lnk" type="button" :disabled="exportEmpty || exporting" @click="doExport">
+            {{ exporting ? '导出中…' : '导出 JSON' }}
+          </button>
+        </div>
+        <div class="sub">
+          {{ exportEmpty ? '暂无可导出的笔记或卡片。' : exportCountsText({ counts: exportCounts }) }}
+        </div>
+        <div class="sub">
+          {{ lastExport ? '上次导出：' + formatWhen(lastExport) : '尚未导出过。文件含笔记与卡片，不含音频。' }}
+        </div>
+        <p v-if="exportError" class="error">{{ exportError }}</p>
       </div>
 
       <!-- 邮箱验证 -->
@@ -186,18 +197,24 @@ import { ref, computed, watch } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
 import { useSync } from '../composables/useSync.js'
 import { useBookShelf } from '../composables/useBookShelf.js'
+import { useNotes } from '../composables/useNotes.js'
+import { loadVocabulary } from '../storage/index.js'
 import { bookSyncState } from '../sync/bookSync.js'
 import {
   fetchGenStatus, submitGenChapters, submitErrorText, campaignStatusLabel,
 } from '../utils/genApi.js'
 import {
-  RECENT_BOOK_LIMIT, RETRY_NOTE, REGEN_NOTE, EXPORT_NOTE,
-  quotaSummary, storageSummary, recentTasks, taskTitle,
+  RECENT_BOOK_LIMIT, RETRY_NOTE, REGEN_NOTE,
+  quotaSummary, storageSummary, recentTasks, taskTitle, formatWhen,
 } from '../utils/accountData.js'
+import {
+  buildExport, exportFileName, exportCountsText, isEmptyExport, downloadJson, LAST_EXPORT_KEY,
+} from '../utils/exportData.js'
 
 const auth = useAuth()
 const sync = useSync()
 const shelf = useBookShelf()
+const notes = useNotes()
 
 const confirmingOut = ref(false)
 const confirmingDelete = ref(false)
@@ -205,6 +222,10 @@ const deletePassword = ref('')
 const restorePassword = ref('')
 const retrying = ref('')
 const retryError = ref('')
+const exportCounts = ref({ notes: 0, cards: 0 })
+const exporting = ref(false)
+const exportError = ref('')
+const lastExport = ref('')
 
 const statuses = ref([])     // 每本书的归一 status（最多 RECENT_BOOK_LIMIT 本）
 const quotaRaw = ref(null)
@@ -280,7 +301,42 @@ async function loadAccountData() {
   dataState.value = ok.length ? 'ready' : 'error'
 }
 
+const exportEmpty = computed(() => exportCounts.value.notes + exportCounts.value.cards === 0)
+
+async function refreshExportMeta() {
+  let vocab = null
+  try { vocab = await loadVocabulary() } catch { /* 读不到就按空处理，导出时再报错 */ }
+  try {
+    exportCounts.value = buildExport({ notes: notes.all(), vocab }).counts
+  } catch {
+    exportCounts.value = { notes: 0, cards: 0 }
+  }
+  try { lastExport.value = localStorage.getItem(LAST_EXPORT_KEY) || '' } catch { lastExport.value = '' }
+}
+
+async function doExport() {
+  exportError.value = ''
+  exporting.value = true
+  try {
+    const vocab = await loadVocabulary()
+    const data = buildExport({ notes: notes.all(), vocab, exportedAt: new Date().toISOString() })
+    if (isEmptyExport(data)) {
+      exportError.value = '暂无可导出的笔记或卡片。'
+      return
+    }
+    if (!downloadJson(exportFileName(data.exportedAt), data)) throw new Error('download-unavailable')
+    exportCounts.value = data.counts
+    try { localStorage.setItem(LAST_EXPORT_KEY, data.exportedAt) } catch { /* 私密模式：不记时间也不影响文件 */ }
+    lastExport.value = data.exportedAt
+  } catch {
+    exportError.value = '导出失败，请稍后再试。'
+  } finally {
+    exporting.value = false
+  }
+}
+
 watch(() => auth.user.value, loadAccountData, { immediate: true })
+watch(() => auth.user.value, refreshExportMeta, { immediate: true })
 
 async function retryTask(row) {
   retrying.value = row.chapterId
