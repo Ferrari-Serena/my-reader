@@ -25,6 +25,7 @@ const state = reactive({
   user: null,   // { id, email, emailVerified } | null
   csrf: '',     // 会话派生令牌（只存内存）
   ready: false, // 首次 me() 是否已回来
+  authUnknown: false, // me() 网络失败/超时：守卫必须放行，不得误送注册页
   busy: false,
   error: '',
   notice: '',
@@ -69,9 +70,14 @@ export async function loadMe() {
   if (r.status === 200 && r.data.user) {
     state.user = r.data.user
     state.csrf = r.data.csrf || ''
+    state.authUnknown = false
   } else if (r.status === 401) {
     state.user = null
     state.csrf = ''
+    state.authUnknown = false
+  } else if (r.status === 0) {
+    // 网络失败/超时：第三态 unknown —— 放行本机阅读，不弹注册墙。
+    state.authUnknown = true
   }
   state.ready = true
   return state.user
@@ -100,6 +106,7 @@ export async function signIn(email, password) {
     state.user = r.data.user
     state.csrf = r.data.csrf || ''
     state.ready = true
+    state.authUnknown = false
   } else if (r.ok && r.data.pendingDeletion) {
     // 凭据对、但账号在冷静期：服务端**不下发会话**，只报告 —— 交给界面引导「撤销注销」
     state.pendingDeletion = {
@@ -220,6 +227,7 @@ export function useAuth() {
     user: computed(() => state.user),
     csrf: computed(() => state.csrf),
     ready: computed(() => state.ready),
+    authUnknown: computed(() => state.authUnknown),
     busy: computed(() => state.busy),
     error: computed(() => state.error),
     notice: computed(() => state.notice),

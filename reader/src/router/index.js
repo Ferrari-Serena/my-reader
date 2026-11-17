@@ -52,6 +52,12 @@ const routes = [
     component: () => import('../views/FeedbackView.vue')
   },
   {
+    // UI-09：独立注册/登录/重置一屏（三模式同屏）。入口：在线首启守卫、我的未登录态、生成被拦的 ?next=。
+    path: '/register',
+    name: 'Register',
+    component: () => import('../views/RegisterView.vue')
+  },
+  {
     path: '/account',
     name: 'Account',
     component: () => import('../views/AccountView.vue')

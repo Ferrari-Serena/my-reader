@@ -60,6 +60,7 @@ import { reconcileTenant } from './sync/tenant.js'
 import { migrateAudioPositions } from './sync/progressMigrate.js'
 import { swUpdateReady, applySwUpdate, SW_UPDATE_MSG, SW_UPDATE_ACTION } from './utils/swUpdate.js'
 import { isOffline, OFFLINE_MSG, offlinePendingMsg } from './utils/offline.js'
+import { authGateDecision, hasLocalFootprint, wasAuthSeen } from './utils/authGate.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -82,6 +83,29 @@ const auth = useAuth()
 // 放在这里而不是 useAuth / useSync 里：这是「身份」与「同步」两个模块的接缝，谁都不该 import 对方。
 watch(() => auth.user.value, (u) => { if (u) reconcileTenant(auth) })
 
+// UI-09 三态登录守卫：authenticated 放行；unknown（加载中/网络失败）放行本机阅读；
+// 只有「在线、未登录、无本机足迹、未引导过」才去 /register。宁少弹一次，不误锁人。
+function evalAuthGate() {
+  if (!auth.ready.value) return
+  const decision = authGateDecision({
+    online: !isOffline.value,
+    authReady: true,
+    authUnknown: auth.authUnknown.value,
+    user: auth.user.value,
+    hasLocal: hasLocalFootprint(),
+    seen: wasAuthSeen()
+  })
+  if (decision === 'register' && route.name !== 'Register') {
+    const next = route.fullPath && route.fullPath !== '/' && route.fullPath !== '/register' ? route.fullPath : '/books'
+    router.replace({ path: '/register', query: { next } })
+  }
+}
+watch(
+  [() => auth.ready.value, () => auth.user.value, () => auth.authUnknown.value],
+  evalAuthGate
+)
+if (typeof window !== 'undefined') window.addEventListener('online', evalAuthGate)
+
 // 断网提示的第二行：待上传条数（0 条时 offlinePendingMsg 回空串 ⇒ 整行不出现）
 const offlinePendingLine = computed(() => offlinePendingMsg(sync.pending.value))
 
@@ -96,7 +120,7 @@ const showBack = computed(() => {
   // 导入页不在 tabbar 白名单里（故意：导入是个要收心的流程），所以也要自己带返回
   // 生成页（第 17 步 D-2）同理：不在 tabbar 里，得自己带一条「← Home」
   // 反馈页（第 13 步块 B）也是：它挂在账号页下面，不在 tabbar 里
-  return ['Reader', 'Account', 'Import', 'GenerateAudio', 'Feedback'].includes(route.name)
+  return ['Reader', 'Register', 'Account', 'Import', 'GenerateAudio', 'Feedback'].includes(route.name)
 })
 const backLabel = computed(() => 'Home')
 
@@ -109,6 +133,7 @@ const currentTitle = computed(() => {
     Vocabulary: 'Vocabulary',
     Flashcards: 'Flashcards',
     Quiz: 'Quiz',
+    Register: '注册 / 登录',
     Account: 'Account',
     Feedback: 'Feedback'
   }

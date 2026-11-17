@@ -9,6 +9,8 @@
  */
 
 import * as A from './src/utils/authForm.js'
+import * as G from './src/utils/authGate.js'
+import * as P from './src/utils/authPolicy.js'
 
 let pass = 0, fail = 0
 function t(name, cond) {
@@ -74,6 +76,29 @@ t('password-required -> 要求输密码确认', A.authErrorMessage(400, { error:
 t('gone -> 说明冷静期已过、救不回来', A.authErrorMessage(410, { error: 'gone' }).includes('30 天'))
 t('not-pending -> 说明这号没在注销中', A.authErrorMessage(409, { error: 'not-pending' }).includes('不在注销'))
 t('注销时密码不对沿用 invalid-credentials 文案', A.authErrorMessage(401, { error: 'invalid-credentials' }).includes('不对'))
+
+console.log('\n[authGate — 三态守卫]')
+const base = { online: true, authReady: true, authUnknown: false, user: null, hasLocal: false, seen: false }
+t('已登录 -> 放行', G.authGateDecision({ ...base, user: { id: 'u' } }) === 'allow')
+t('未就绪 -> 等（不弹墙）', G.authGateDecision({ ...base, authReady: false }) === 'wait')
+t('auth 网络失败（unknown）-> 放行', G.authGateDecision({ ...base, authUnknown: true }) === 'allow')
+t('离线 -> 放行', G.authGateDecision({ ...base, online: false }) === 'allow')
+t('有本机足迹（老游客）-> 放行', G.authGateDecision({ ...base, hasLocal: true }) === 'allow')
+t('已引导过 -> 放行', G.authGateDecision({ ...base, seen: true }) === 'allow')
+t('在线首启（无账号/无足迹/未引导）-> register', G.authGateDecision(base) === 'register')
+
+console.log('\n[authPolicy — 密码策略 A]')
+t('7 位 -> 0', P.passwordStrength('1234567') === 0)
+t('8 位纯数字 -> 1', P.passwordStrength('12345678') === 1)
+t('大小写+数字 -> 2', P.passwordStrength('Abcdef12') === 2)
+t('大小写+数字+符号 -> 3', P.passwordStrength('Abcdef1!') === 3)
+t('12 位以上加分', P.passwordStrength('AbcdefGH1234') === 3)
+t('常见密码被拦', P.commonPasswordProblem('password') !== null)
+t('大小写不敏感拦常见密码', P.commonPasswordProblem('PASSWORD') !== null)
+t('正常密码不拦', P.commonPasswordProblem('Abcdef1!') === null)
+t('密码=邮箱被拦', P.sameAsEmailProblem('a@b.co', 'a@b.co') !== null)
+t('大小写不敏感', P.sameAsEmailProblem('A@B.CO', 'a@b.co') !== null)
+t('不同邮箱不拦', P.sameAsEmailProblem('a@b.co', 'Abcdef1!') === null)
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
