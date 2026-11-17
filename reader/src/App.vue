@@ -134,7 +134,7 @@ const currentTitle = computed(() => {
     Flashcards: 'Flashcards',
     Quiz: 'Quiz',
     Register: '注册 / 登录',
-    Account: 'Account',
+    Account: '我的',
     Feedback: 'Feedback'
   }
   return titles[route.name] || 'my-reader'

@@ -126,6 +126,9 @@ export function normalizeGenStatus(body, bookId = '') {
       chars: num(row.chars),
       attempts: num(row.attempts),
       error: row.error ? String(row.error) : null,
+      // 「我的 · 最近任务」要按服务端时间排序（服务端每行已回这两个字段）
+      updatedAt: row.updatedAt ? String(row.updatedAt) : null,
+      finishedAt: row.finishedAt ? String(row.finishedAt) : null,
     }
   }
   const s = (b.summary && typeof b.summary === 'object') ? b.summary : {}

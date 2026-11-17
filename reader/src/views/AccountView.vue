@@ -1,109 +1,116 @@
 <template>
   <div class="account-view">
     <p v-if="auth.notice.value" class="banner notice">{{ auth.notice.value }}</p>
-    <!-- 认领提示走独立横幅：它是后台异步发生的，不该被表单流程的 notice 盖掉 -->
     <p v-if="auth.claimNotice.value" class="banner notice">{{ auth.claimNotice.value }}</p>
 
-    <!-- 4.4 同步可见：跨设备同步状态。D16 起同步**跟着登录走** —— 同一个账号＝同一份数据，本机不再有同步码这回事；未登录就不同步。 -->
-    <section class="card sync-card">
-      <h2 class="card-title">同步</h2>
-      <p v-if="auth.user.value" class="line ok">
-        ✅ 已同步到 <strong>{{ auth.user.value.email }}</strong>
-      </p>
-      <p v-else class="line">
-        在下方登录后，可在多台设备间同步生词、笔记、书籍和进度。
-      </p>
-      <p v-if="sync.lastSync.value" class="hint">上次同步：{{ sync.lastSync.value.toLocaleString() }}</p>
-      <p v-if="sync.pending.value > 0" class="hint">
-        待上传：<strong>{{ sync.pending.value }}</strong>
-      </p>
-      <p v-else-if="auth.user.value" class="hint">所有改动已上传 ✓</p>
-      <!-- 另一个方向：账号里有、这台设备还没有的书（第 16.6 步）。上传侧数不到它们，
-           「All changes uploaded ✓」也不代表书架已经齐了 —— 这一行补的就是这个歧义。 -->
-      <p v-if="bookSyncState.prefetching" class="hint">
-        正在从账号载入书籍：<strong>{{ bookSyncState.queued }}</strong>
-      </p>
-      <p v-if="sync.error.value" class="error">{{ sync.error.value }}</p>
-      <button
-        v-if="auth.user.value" class="btn" :disabled="syncing"
-        @click="sync.syncNow()"
-      >{{ syncing ? '同步中…' : '立即同步' }}</button>
-    </section>
-
-    <!-- 反馈入口（第 13 步块 B）：登录与否都能发；放在 Sync 卡下面 ——
-         它是「出事了才去」的一页，不进 tabbar，也就不抢主路径。 -->
-    <section class="card feedback-entry">
-      <h2 class="card-title">反馈</h2>
-      <p class="hint">
-        遇到故障，或有想法？告诉我们发生了什么 —— 页面会自动附上一段简短诊断，无需账号。
-      </p>
-      <router-link class="btn entry-link" to="/feedback">发送反馈</router-link>
-    </section>
-
-    <!-- 法律与隐私（UI-35）：占位页，条款待法律审阅 —— 入口放在反馈下面，
-         同样不进 tabbar，不抢主路径。 -->
-    <section class="card legal-entry">
-      <h2 class="card-title">法律与隐私</h2>
-      <p class="hint">隐私政策与服务条款（待法律审阅后补全）。</p>
-      <button class="btn" @click="goLegal">查看</button>
-    </section>
-
-    <!-- 已登录 -->
-    <template v-if="auth.user.value">
-      <section class="card">
-        <h2 class="card-title">已登录</h2>
-        <p class="email">{{ auth.user.value.email }}</p>
-        <p v-if="auth.user.value.emailVerified" class="line ok">✅ 邮箱已验证</p>
-        <p v-else class="line warn">
-          ⚠️ 邮箱尚未验证 ——
-          <button class="link" :disabled="auth.busy.value" @click="doResend">重新发送验证链接</button>
-        </p>
-        <p class="hint">退出登录后，本机的书籍、生词和进度会保留。</p>
-      </section>
-
-      <!-- 登出：**单独放到页面最下面 + 二次确认**。它是这一页唯一的破坏性动作，
-           贴着上面的信息放，手快一点就退出去了。 -->
-      <div class="danger-zone">
-        <button v-if="!confirmingOut" class="btn" @click="confirmingOut = true">退出登录</button>
-        <div v-else class="confirm">
-          <p class="confirm-text">退出这台设备？</p>
-          <div class="confirm-actions">
-            <button class="btn" :disabled="auth.busy.value" @click="confirmingOut = false">取消</button>
-            <button class="btn danger" :disabled="auth.busy.value" @click="doSignOut">
-              {{ auth.busy.value ? '退出中…' : '确认退出' }}
-            </button>
-          </div>
+    <!-- 身份行：头像／邮箱／状态／退出（未登录 → 去 /register） -->
+    <section class="idrow">
+      <div class="av" aria-hidden="true">{{ initial }}</div>
+      <div class="idmain">
+        <div class="nm">{{ auth.user.value ? auth.user.value.email : '未登录' }}</div>
+        <div class="st">
+          <template v-if="auth.user.value">
+            已登录 · 首版免费<span v-if="!auth.user.value.emailVerified"> · 邮箱待验证</span>
+          </template>
+          <template v-else>登录后可跨设备同步生词、笔记和进度</template>
         </div>
       </div>
-      <!-- 注销：二次确认（重输密码）+ 30 天冷静期。放在登出下面，是这一页最重的破坏性动作。 -->
-      <div class="danger-zone">
-        <button v-if="!confirmingDelete" class="btn danger-outline" @click="openDelete">注销账号…</button>
-        <div v-else class="confirm">
-          <p class="confirm-text">
-            要注销这个账号吗？账号会先进入 30 天删除期，期间重新登录即可撤销。30 天后，账号以及同步到账号的生词和进度将被永久删除。本机的书籍和生词不受影响。
-          </p>
-          <label class="label" for="del-pw">输入密码确认</label>
-          <input
-            id="del-pw" v-model="deletePassword" class="input" type="password"
-            autocomplete="current-password" :disabled="auth.busy.value"
-          />
-          <p v-if="auth.error.value" class="error">{{ auth.error.value }}</p>
-          <div class="confirm-actions">
-            <button class="btn" :disabled="auth.busy.value" @click="closeDelete">取消</button>
-            <button class="btn danger" :disabled="auth.busy.value || !deletePassword" @click="doDelete">
-              {{ auth.busy.value ? '注销中…' : '确认注销账号' }}
+      <button v-if="auth.user.value" class="lnk" type="button" @click="confirmingOut = true">退出</button>
+      <router-link v-else class="lnk" to="/register">登录 / 注册</router-link>
+    </section>
+
+    <!-- 同步（原有功能，压成一行；不与线框的四块抢位） -->
+    <div v-if="auth.user.value" class="sync-line">
+      <span class="sync-text">{{ syncText }}</span>
+      <button class="lnk" type="button" :disabled="syncing" @click="sync.syncNow()">
+        {{ syncing ? '同步中…' : '立即同步' }}
+      </button>
+    </div>
+    <p v-if="auth.user.value && sync.error.value" class="error">{{ sync.error.value }}</p>
+
+    <template v-if="auth.user.value">
+      <!-- 额度 -->
+      <div class="sec">
+        <b>额度</b>
+        <router-link class="lnk" :to="genLink">去生成音频</router-link>
+      </div>
+      <div class="blk">
+        <template v-if="quota.known">
+          <div class="krow"><span>今日逐章生成</span><b>{{ quota.used }}／{{ quota.max }} 章</b></div>
+          <div class="bar"><i :style="{ width: quota.pct + '%' }"></i></div>
+        </template>
+        <div v-else class="krow"><span>今日逐章生成</span><span>{{ quotaUnknownText }}</span></div>
+        <div class="krow"><span>整本音频</span><span>{{ campaignLine }}</span></div>
+        <div class="sub">按 UTC 天重置；配额内音频保留。清空音频不退额度。</div>
+      </div>
+
+      <!-- 存储 -->
+      <div class="sec"><b>存储</b><span></span></div>
+      <div class="blk">
+        <template v-if="storage.known">
+          <div class="krow"><span>音频存储</span><b>{{ storage.usedText }}／{{ storage.limitText }}</b></div>
+          <div class="bar"><i :style="{ width: storage.pct + '%' }"></i></div>
+          <div v-if="storage.full" class="sub warn">空间已满：清空某本书的音频后可继续生成。</div>
+        </template>
+        <div v-else class="krow"><span>音频存储</span><span>{{ storageUnknownText }}</span></div>
+        <div class="sub">分母读服务端上限；清空该书音频只释放空间，不返还额度。</div>
+      </div>
+
+      <!-- 最近任务 -->
+      <div class="sec">
+        <b>最近任务</b>
+        <router-link v-if="firstBookId" class="lnk" :to="'/generate/' + firstBookId">打开生成页</router-link>
+      </div>
+      <div class="blk">
+        <div v-if="!taskRows.length" class="sub">{{ tasksEmptyText }}</div>
+        <template v-for="row in taskRows" :key="row.bookId + ':' + row.chapterId">
+          <div class="task">
+            <div class="task-main">
+              <div class="tl">{{ taskTitle(row) }}</div>
+              <div class="ts">
+                {{ row.atText }}<template v-if="row.status === 'failed' && row.error"> · {{ row.error }}</template>
+              </div>
+            </div>
+            <div class="tr" :class="{ bad: row.status === 'failed' }">{{ row.label }}</div>
+          </div>
+          <div v-if="row.canRetry" class="retry">
+            <span class="rd">{{ RETRY_NOTE }}</span>
+            <button class="rbtn" type="button" :disabled="retrying === row.chapterId" @click="retryTask(row)">
+              {{ retrying === row.chapterId ? '重试中…' : '重试' }}
             </button>
           </div>
+        </template>
+        <p v-if="retryError" class="error">{{ retryError }}</p>
+        <div class="sub" style="margin-top: 8px">{{ REGEN_NOTE }}</div>
+      </div>
+
+      <!-- 数据导出（入口先占位，实现归 UI-22） -->
+      <div class="sec"><b>数据导出</b><span></span></div>
+      <div class="blk">
+        <div class="krow"><span>笔记与卡片</span><span class="muted">暂不可用</span></div>
+        <div class="sub">{{ EXPORT_NOTE }}</div>
+      </div>
+
+      <!-- 邮箱验证 -->
+      <div class="sec"><b>账号</b><span></span></div>
+      <div class="blk">
+        <div class="krow">
+          <span>{{ auth.user.value.email }}</span>
+          <span v-if="auth.user.value.emailVerified">已验证</span>
+          <button v-else class="lnk" type="button" :disabled="auth.busy.value" @click="doResend">
+            重新发送验证
+          </button>
         </div>
+        <div class="sub">退出登录后，本机的书籍、生词和进度会保留。</div>
       </div>
     </template>
 
-    <!-- 冷静期中：撤销注销（密码确认；注销已把会话都踢了，所以这里只认密码） -->
+    <!-- 冷静期中：撤销注销 -->
     <template v-else-if="auth.pendingDeletion.value">
-      <section class="card">
-        <h2 class="card-title">账号已安排删除</h2>
-        <p class="hint">
-          {{ auth.pendingDeletion.value.email }} 已安排删除，约 {{ auth.pendingDeletion.value.daysLeft }} 天后将永久清除。
+      <section class="blk">
+        <h2 class="blk-title">账号已安排删除</h2>
+        <p class="sub">
+          {{ auth.pendingDeletion.value.email }} 已安排删除，约 {{ auth.pendingDeletion.value.daysLeft }} 天后永久清除。
           输入密码可撤销，生词和进度会恢复。
         </p>
         <form novalidate @submit.prevent="doCancelDeletion">
@@ -113,183 +120,176 @@
             autocomplete="current-password" :disabled="auth.busy.value"
           />
           <p v-if="auth.error.value" class="error">{{ auth.error.value }}</p>
-          <button class="btn primary" type="submit" :disabled="auth.busy.value || !restorePassword">
+          <button class="btn" type="submit" :disabled="auth.busy.value || !restorePassword">
             {{ auth.busy.value ? '处理中…' : '撤销注销' }}
           </button>
         </form>
         <p class="switch">
-          <button class="link" type="button" @click="forgetPending">换一个账号</button>
+          <button class="lnk" type="button" @click="forgetPending">换一个账号</button>
         </p>
       </section>
     </template>
 
-    <!-- 未登录 -->
+    <!-- 未登录：只给入口，不再重复一套登录表单（表单在 /register） -->
     <template v-else>
-      <section class="card">
-        <h2 class="card-title">{{ heading }}</h2>
-        <p class="hint">{{ subheading }}</p>
-
-        <!-- novalidate：关掉浏览器原生校验。type="email" 的原生检查会**先**把提交挡下，
-             于是我们自己那套（与后端同口径：域名必须带点）永远跑不到 —— 提示语就成了死代码，
-             而且混出中英两套说法。这里让提示只有一个来源：authForm.js。
-             type="email" 保留只为移动端弹对键盘。 -->
-        <form novalidate @submit.prevent="submit">
-          <label class="label" for="acct-email">邮箱</label>
-          <input
-            id="acct-email" v-model.trim="email" class="input" type="email"
-            inputmode="email" autocapitalize="off" autocomplete="email"
-            placeholder="you@example.com" :disabled="auth.busy.value"
-          />
-
-          <template v-if="mode !== 'reset'">
-            <label class="label" for="acct-pw">密码</label>
-            <input
-              id="acct-pw" v-model="password" class="input" type="password"
-              :autocomplete="mode === 'signup' ? 'new-password' : 'current-password'"
-              :placeholder="mode === 'signup' ? '至少 8 个字符' : ''"
-              :disabled="auth.busy.value"
-            />
-          </template>
-
-          <template v-if="mode === 'signup'">
-            <label class="label" for="acct-pw2">确认密码</label>
-            <input
-              id="acct-pw2" v-model="confirm" class="input" type="password"
-              autocomplete="new-password" :disabled="auth.busy.value"
-            />
-          </template>
-
-          <p v-if="formError || auth.error.value" class="error">{{ formError || auth.error.value }}</p>
-
-          <button class="btn primary" type="submit" :disabled="auth.busy.value || !canSubmit">
-            {{ busyLabel }}
-          </button>
-        </form>
-
-        <p class="switch">
-          <template v-if="mode === 'signin'">
-            还没有账号？
-            <button class="link" type="button" @click="setMode('signup')">注册</button>
-            ·
-            <button class="link" type="button" @click="setMode('reset')">忘记密码？</button>
-          </template>
-          <template v-else>
-            <button class="link" type="button" @click="setMode('signin')">← 返回登录</button>
-          </template>
-        </p>
+      <section class="blk login-prompt">
+        <h2 class="blk-title">登录或创建账号</h2>
+        <p class="sub">登录后可在多台设备间同步生词、笔记和进度；不登录也能继续阅读本机书。</p>
+        <router-link class="btn primary" to="/register">登录 / 注册</router-link>
       </section>
-
-      <p class="foot">
-        账号可在多台设备间同步生词和进度；不登录也能继续阅读。
-      </p>
     </template>
+
+    <div class="more">
+      <router-link to="/legal">法律与隐私</router-link>
+      <span>·</span>
+      <router-link to="/feedback">发送反馈</router-link>
+      <template v-if="auth.user.value">
+        <span>·</span>
+        <button class="lnk" type="button" @click="openDelete">删除账号</button>
+      </template>
+    </div>
+
+    <!-- 退出确认 -->
+    <div v-if="confirmingOut" class="confirm">
+      <p class="confirm-text">退出这台设备？</p>
+      <div class="actions">
+        <button class="btn" type="button" :disabled="auth.busy.value" @click="confirmingOut = false">取消</button>
+        <button class="btn strong" type="button" :disabled="auth.busy.value" @click="doSignOut">
+          {{ auth.busy.value ? '退出中…' : '确认退出' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 注销确认（重输密码 + 30 天冷静期） -->
+    <div v-if="confirmingDelete" class="confirm">
+      <p class="confirm-text">
+        要注销这个账号吗？账号会先进入 30 天删除期，期间重新登录即可撤销。30 天后，账号以及同步到账号的生词和进度将被永久删除。本机的书籍和生词不受影响。
+      </p>
+      <label class="label" for="del-pw">输入密码确认</label>
+      <input
+        id="del-pw" v-model="deletePassword" class="input" type="password"
+        autocomplete="current-password" :disabled="auth.busy.value"
+      />
+      <p v-if="auth.error.value" class="error">{{ auth.error.value }}</p>
+      <div class="actions">
+        <button class="btn" type="button" :disabled="auth.busy.value" @click="closeDelete">取消</button>
+        <button class="btn danger" type="button" :disabled="auth.busy.value || !deletePassword" @click="doDelete">
+          {{ auth.busy.value ? '注销中…' : '确认注销账号' }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
 import { useSync } from '../composables/useSync.js'
+import { useBookShelf } from '../composables/useBookShelf.js'
 import { bookSyncState } from '../sync/bookSync.js'
-import { emailProblem, passwordProblem, confirmProblem } from '../utils/authForm.js'
+import {
+  fetchGenStatus, submitGenChapters, submitErrorText, campaignStatusLabel,
+} from '../utils/genApi.js'
+import {
+  RECENT_BOOK_LIMIT, RETRY_NOTE, REGEN_NOTE, EXPORT_NOTE,
+  quotaSummary, storageSummary, recentTasks, taskTitle,
+} from '../utils/accountData.js'
 
-const router = useRouter()
 const auth = useAuth()
 const sync = useSync()
-// 「Sync now」这一趟包含书体对账（useSync.syncNow 里 await 了它），所以按钮的忙态要把
-// bookSyncState.prefetching 一起算 —— 否则正文还在拉、按钮已经变回「Sync now」了。
-const syncing = computed(() => sync.pulling.value || sync.pushing.value || bookSyncState.prefetching)
+const shelf = useBookShelf()
 
-const mode = ref('signin') // 'signin' | 'signup' | 'reset'
-const email = ref('')
-const password = ref('')
-const confirm = ref('')
-const formError = ref('')
 const confirmingOut = ref(false)
 const confirmingDelete = ref(false)
 const deletePassword = ref('')
 const restorePassword = ref('')
+const retrying = ref('')
+const retryError = ref('')
 
-onMounted(() => { auth.loadMe() })
+const statuses = ref([])     // 每本书的归一 status（最多 RECENT_BOOK_LIMIT 本）
+const quotaRaw = ref(null)
+const storageRaw = ref(null)
+const dataState = ref('idle') // idle | no-books | ready | error
 
-const heading = computed(() => {
-  if (mode.value === 'signup') return '创建账号'
-  if (mode.value === 'reset') return '重置密码'
-  return '登录'
+const syncing = computed(() => sync.pulling.value || sync.pushing.value || bookSyncState.prefetching)
+const initial = computed(() => {
+  const email = auth.user.value ? String(auth.user.value.email || '') : ''
+  return email ? email.slice(0, 1).toUpperCase() : '?'
+})
+const syncText = computed(() => {
+  const last = sync.lastSync.value
+  const pending = sync.pending.value
+  if (pending > 0) return '待上传 ' + pending + ' 条'
+  if (last) return '已同步 · ' + last.toLocaleString()
+  return '同步已就绪'
 })
 
-const subheading = computed(() => {
-  if (mode.value === 'signup') return '我们会发一封验证邮件到你的邮箱。'
-  if (mode.value === 'reset') return '我们会发一封重置密码的邮件，链接 1 小时内有效。'
-  return '登录后可在多台设备间同步生词和进度。'
+const quota = computed(() => quotaSummary(quotaRaw.value))
+const storage = computed(() => storageSummary(storageRaw.value))
+const taskRows = computed(() => recentTasks(statuses.value))
+const firstBookId = computed(() => (statuses.value[0] ? statuses.value[0].bookId : ''))
+const genLink = computed(() => (firstBookId.value ? '/generate/' + firstBookId.value : '/books'))
+
+const campaignLine = computed(() => {
+  for (const s of statuses.value) {
+    const c = s.data && s.data.campaign
+    if (c) return campaignStatusLabel(c)
+  }
+  return '按整本生成时显示'
+})
+const quotaUnknownText = computed(() => {
+  if (dataState.value === 'no-books') return '导入一本书后可查看'
+  if (dataState.value === 'error') return '暂时读不到'
+  return '读取中…'
+})
+const storageUnknownText = computed(() => quotaUnknownText.value)
+const tasksEmptyText = computed(() => {
+  if (dataState.value === 'no-books') return '还没有本机书；导入后可在这里看到生成任务。'
+  if (dataState.value === 'error') return '暂时读不到任务状态。'
+  return '最近没有生成任务。'
 })
 
-const busyLabel = computed(() => {
-  if (auth.busy.value) return '处理中…'
-  if (mode.value === 'signup') return '创建账号'
-  if (mode.value === 'reset') return '发送重置链接'
-  return '登录'
-})
-
-const canSubmit = computed(() => {
-  if (!email.value) return false
-  if (mode.value === 'reset') return true
-  if (!password.value) return false
-  if (mode.value === 'signup' && !confirm.value) return false
-  return true
-})
-
-function setMode(next) {
-  confirmingOut.value = false
-  mode.value = next
-  formError.value = ''
-  password.value = ''
-  confirm.value = ''
-  auth.clearMessages()
-}
-
-async function submit() {
-  formError.value = ''
-  auth.clearMessages()
-
-  const ep = emailProblem(email.value)
-  if (ep) { formError.value = ep; return }
-
-  if (mode.value === 'reset') {
-    await auth.sendReset(email.value)
+async function loadAccountData() {
+  retryError.value = ''
+  if (!auth.user.value) {
+    statuses.value = []
+    quotaRaw.value = null
+    storageRaw.value = null
+    dataState.value = 'idle'
     return
   }
-
-  const pp = passwordProblem(password.value)
-  if (pp) { formError.value = pp; return }
-
-  if (mode.value === 'signup') {
-    const cp = confirmProblem(password.value, confirm.value)
-    if (cp) { formError.value = cp; return }
-
-    const created = await auth.signUp(email.value, password.value)
-    if (!created.ok) return
-
-    // 注册成功不自动给会话（服务端口径），所以顺手登进去 —— 少一步「请再去登录」
-    const signed = await auth.signIn(email.value, password.value)
-    if (signed.ok) {
-      auth.note(created.data.mailSent
-        ? '账号已创建，验证链接已发到你的邮箱。'
-        : '账号已创建，但验证邮件发送失败。你可以在这页重新发送。')
-      password.value = ''
-      confirm.value = ''
-    } else {
-      setMode('signin')
-      auth.note('账号已创建，请登录。')
-    }
+  try { await shelf.refresh() } catch { /* 书库打不开也继续：下面按空处理 */ }
+  const books = (shelf.myBooks.value || []).slice(0, RECENT_BOOK_LIMIT)
+  if (!books.length) {
+    statuses.value = []
+    quotaRaw.value = null
+    storageRaw.value = null
+    dataState.value = 'no-books'
     return
   }
-
-  await auth.signIn(email.value, password.value)
+  const rows = await Promise.all(books.map(async (b) => {
+    try {
+      const r = await fetchGenStatus(b.id)
+      return r.ok ? { bookId: b.id, bookTitle: b.title, chapterIds: b.chapterIds, data: r.data } : null
+    } catch { return null }
+  }))
+  const ok = rows.filter(Boolean)
+  statuses.value = ok
+  quotaRaw.value = ok[0] ? ok[0].data.quota : null
+  storageRaw.value = ok[0] ? ok[0].data.storage : null
+  dataState.value = ok.length ? 'ready' : 'error'
 }
 
-function goLegal() { router.push('/legal') }
+watch(() => auth.user.value, loadAccountData, { immediate: true })
+
+async function retryTask(row) {
+  retrying.value = row.chapterId
+  retryError.value = ''
+  const r = await submitGenChapters(row.bookId, [row.chapterId])
+  retrying.value = ''
+  if (!r.ok) { retryError.value = submitErrorText(r); return }
+  await loadAccountData()
+}
 
 function doResend() { auth.resendVerify() }
 
@@ -316,11 +316,8 @@ async function doDelete() {
   if (r.ok) {
     confirmingDelete.value = false
     deletePassword.value = ''
-    // 注销成功后默认落到「登录」态（而不是留在注册态）：我们刚告诉用户「再登录一次就能撤销」
-    mode.value = 'signin'
     const days = (r.data && r.data.daysLeft) || 30
-    auth.note('账号已安排删除。若未在期限内登录撤销，约 ' + days
-      + ' 天后将永久清除。')
+    auth.note('账号已安排删除。若未在期限内登录撤销，约 ' + days + ' 天后将永久清除。')
   }
 }
 
@@ -343,191 +340,211 @@ function forgetPending() {
 
 <style scoped>
 .account-view {
-  padding: 16px;
-  max-width: 520px;
+  max-width: 390px;
   margin: 0 auto;
+  padding: 12px 14px 32px;
+  background: #fff;
+  color: #333;
+  font-size: 13px;
+  line-height: 1.55;
 }
-
 .banner {
   margin: 0 0 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.5;
+  padding: 8px 10px;
+  border: 1px solid #999;
+  border-radius: 3px;
+  font-size: 12px;
 }
+.banner.notice { background: #f5f5f5; color: #333; }
 
-.banner.notice {
-  background: #eef6ff;
-  color: #14538f;
-  border: 1px solid #cfe3fb;
+.idrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid #999;
 }
-
-.sync-card {
-  margin-bottom: 16px;
-}
-
-.feedback-entry {
-  margin-bottom: 16px;
-}
-
-.legal-entry {
-  margin-bottom: 16px;
-}
-
-/* .btn 本来是给 <button> 写的；router-link 要自己补上这两条，
-   否则文字贴在左边、还带一条下划线 */
-.entry-link {
-  display: block;
-  box-sizing: border-box;
-  text-align: center;
-  text-decoration: none;
-}
-
-.card {
-  background: var(--bg-secondary, #f7f7f9);
-  border: 1px solid var(--border-color, #d2d2d7);
-  border-radius: 12px;
-  padding: 16px;
-}
-
-.card-title {
-  margin: 0 0 6px;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary, #1d1d1f);
-}
-
-.email {
-  margin: 0 0 8px;
+.av {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #999;
+  background: #f5f5f5;
+  color: #333;
   font-size: 15px;
   font-weight: 600;
-  word-break: break-all;
-  color: var(--text-primary, #1d1d1f);
 }
-
-.line {
-  margin: 0 0 10px;
-  font-size: 13px;
-}
-
-.line.ok { color: #1a7f37; }
-.line.warn { color: #9a6700; }
-
-.hint {
-  margin: 0 0 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-secondary, #6e6e73);
-}
-
-.label {
-  display: block;
-  margin: 12px 0 4px;
+.idmain { flex: 1; min-width: 0; }
+.idmain .nm {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary, #6e6e73);
+  color: #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.idmain .st { font-size: 10px; color: #666; }
 
+.sync-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #666;
+}
+.sync-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sec {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 16px 0 6px;
+  font-size: 11px;
+  color: #666;
+}
+.sec b { font-size: 12px; color: #000; font-weight: 600; }
+
+.blk {
+  border: 1px solid #e5e5e5;
+  border-radius: 3px;
+  padding: 9px 10px;
+}
+.blk-title { margin: 0 0 6px; font-size: 15px; color: #000; font-weight: 600; }
+
+.krow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+  color: #333;
+}
+.krow b { font-size: 12px; color: #000; font-weight: 600; }
+.krow .muted { color: #999; }
+
+.bar {
+  height: 4px;
+  background: #e5e5e5;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 6px 0 8px;
+}
+.bar i { display: block; height: 100%; background: #333; }
+
+.sub { margin: 4px 0 0; font-size: 10px; color: #666; line-height: 1.6; }
+.sub.warn { color: #333; }
+
+.task {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #999;
+}
+.task:last-of-type { border-bottom: 0; padding-bottom: 0; }
+.task-main { min-width: 0; }
+.task .tl { font-size: 11px; color: #000; }
+.task .ts { margin-top: 1px; font-size: 10px; color: #666; }
+.task .tr { flex: 0 0 auto; font-size: 10px; color: #333; text-align: right; white-space: nowrap; }
+.task .tr.bad { color: #000; font-weight: 600; }
+
+.retry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #999;
+}
+.retry .rd { font-size: 10px; color: #333; line-height: 1.6; }
+.rbtn {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid #333;
+  background: #fff;
+  color: #333;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: inherit;
+}
+.rbtn:disabled { opacity: 0.55; }
+
+.more {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 10px;
+  color: #666;
+  line-height: 1.9;
+}
+.more a { color: #333; text-decoration: underline; text-underline-offset: 2px; }
+.more span { margin: 0 4px; }
+
+.lnk {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: #333;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.lnk:disabled { opacity: 0.55; cursor: default; }
+
+.login-prompt .btn { margin-top: 10px; }
+
+.label { display: block; margin: 10px 0 4px; font-size: 11px; color: #000; font-weight: 600; }
 .input {
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 12px;
-  font-size: 16px;
-  border: 1px solid var(--border-color, #d2d2d7);
-  border-radius: 8px;
-  background: var(--bg-primary, #fff);
-  color: var(--text-primary, #1d1d1f);
-}
-
-.error {
-  margin: 12px 0 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #999;
+  border-radius: 3px;
   font-size: 13px;
-  line-height: 1.5;
-  color: #c0392b;
+  color: #333;
+  background: #fff;
 }
+.error { margin: 8px 0 0; font-size: 11px; color: #000; font-weight: 600; }
 
 .btn {
-  margin-top: 16px;
+  display: flex;
   width: 100%;
-  padding: 11px 16px;
-  font-size: 15px;
-  border: 1px solid var(--border-color, #d2d2d7);
-  border-radius: 8px;
-  background: var(--bg-primary, #fff);
-  color: var(--text-primary, #1d1d1f);
-  cursor: pointer;
-}
-
-.btn.primary {
-  background: var(--accent-color, #1a73e8);
-  border-color: var(--accent-color, #1a73e8);
-  color: #fff;
-}
-
-.btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.link {
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: var(--accent-color, #1a73e8);
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-.link:disabled { opacity: 0.55; cursor: default; }
-
-.switch {
-  margin: 14px 0 0;
-  font-size: 13px;
-  color: var(--text-secondary, #6e6e73);
-}
-
-.foot {
-  margin: 14px 4px 0;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  border: 1px solid #999;
+  border-radius: 3px;
+  background: #fff;
+  color: #333;
   font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-secondary, #6e6e73);
+  box-sizing: border-box;
+  text-decoration: none;
 }
-
-.danger-zone {
-  margin: 28px 0 8px;
-}
+.btn.primary { background: #000; border-color: #000; color: #fff; }
+.btn.strong { background: #000; border-color: #000; color: #fff; }
+.btn.danger { background: #000; border-color: #000; color: #fff; }
+.btn:disabled { opacity: 0.55; }
 
 .confirm {
-  border: 1px solid #f0c2bb;
-  background: #fdf3f2;
-  border-radius: 10px;
-  padding: 12px;
+  margin-top: 14px;
+  border: 1px solid #999;
+  background: #f5f5f5;
+  border-radius: 3px;
+  padding: 10px;
 }
-
-.confirm-text {
-  margin: 0 0 10px;
-  font-size: 14px;
-  color: #8a2b1d;
-}
-
-.confirm-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.confirm-actions .btn {
-  margin-top: 0;
-}
-
-.btn.danger {
-  border-color: #c0392b;
-  background: #c0392b;
-  color: #fff;
-}
-
-.btn.danger-outline {
-  border-color: #d98c81;
-  color: #c0392b;
-}
+.confirm-text { margin: 0 0 8px; font-size: 12px; color: #000; line-height: 1.6; }
+.actions { display: flex; gap: 8px; }
+.actions .btn { margin-top: 0; }
+.switch { margin: 10px 0 0; font-size: 11px; color: #666; }
 </style>
