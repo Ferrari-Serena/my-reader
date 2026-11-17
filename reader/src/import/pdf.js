@@ -6,7 +6,11 @@
  *
  * 分两层：
  *   · 纯函数（groupLines / linesToParagraphs / pagesToChapters）—— 可在 Node 里直接单测；
- *   · parsePdf —— 壳，只负责调 pdfjs 把页取出来喂给上面三个。
+ *   · parsePdf —— 壳，只负责调 pdfjs 把页取出来喂给上面三个，并逐页算三量。
+ *
+ * 逐页三量（BYO-OCR S8 §11.1.2，b2）：`vis`＝切段结果的可见码点合计（visOf 口径）；
+ * `cov`＝非空文字项包围盒面积之和 / 页面面积；verdict 由 verdictOf 按 §11.1.4 判。
+ * 有 OCR 结果（ocrByPage）时在 pagesToChapters 之前逐页走 mergePage（§11.2 三分支）。
  *
  * pdfjs 的取法有个坑（2026-10-05 实测）：非 legacy 版在 Node 里 import 就炸
  * （"hashOriginal.toHex is not a function"，它自己会提示用 legacy 构建）。
@@ -14,6 +18,7 @@
  */
 import { ImportError, throwIfAborted } from './errors.js'
 import { collapse } from './book.js'
+import { mergePage, visOf, verdictOf } from './ocrMerge.js'
 
 /** 只取文本时的加载参数；verbosity:0 压掉「缺标准字体」这类与我们无关的告警 */
 export const PDF_LOAD_OPTIONS = {
@@ -178,7 +183,39 @@ async function readMeta(doc) {
   } catch { return { title: '', author: '' } }
 }
 
-export async function parsePdf(bytes, { pdfjs, onProgress, signal, title = '' } = {}) {
+/**
+ * 非空文字项的包围盒覆盖率（§11.1）。
+ * 口径＝Σ 每个非空项的 width × height / 页面面积：重叠项会重复计面积，误差方向是
+ * 把 cov 推高、偏保守（§四 风险 8）—— 规格接受这一口径，不做并集去重。
+ * pdfjs 的 TextItem.width/height 与 transform 的平移同一套单位，页面面积用 getViewport({scale:1})。
+ */
+function itemCoverage(page, items) {
+  let area = 0
+  try {
+    const vp = page.getViewport({ scale: 1 })
+    area = Math.abs((Number(vp && vp.width) || 0) * (Number(vp && vp.height) || 0))
+  } catch { area = 0 }
+  let cover = 0
+  for (const it of Array.isArray(items) ? items : []) {
+    const str = it && it.str
+    if (!str || !/\S/.test(str)) continue
+    const tr = it.transform || []
+    const w = Number(it.width) || 0
+    const h = Number(it.height) || Math.abs(Number(tr[3]) || 0) || 0
+    if (w > 0 && h > 0) cover += w * h
+  }
+  if (!(area > 0)) return 0
+  const cov = cover / area
+  return cov <= 0 ? 0 : cov >= 1 ? 1 : cov
+}
+
+function paragraphsVis(paragraphs) {
+  let n = 0
+  for (const p of paragraphs) n += visOf(p)
+  return n
+}
+
+export async function parsePdf(bytes, { pdfjs, onProgress, signal, title = '', ocrByPage } = {}) {
   const lib = await loadPdfjs(pdfjs)
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
 
@@ -191,18 +228,41 @@ export async function parsePdf(bytes, { pdfjs, onProgress, signal, title = '' } 
 
   try {
     const pages = []
+    const ocrMap = ocrByPage instanceof Map ? ocrByPage : null
     for (let i = 1; i <= doc.numPages; i++) {
       throwIfAborted(signal)
       const page = await doc.getPage(i)
       const tc = await page.getTextContent()
-      pages.push({ paragraphs: linesToParagraphs(groupLines((tc && tc.items) || [])) })
+      const items = (tc && tc.items) || []
+      let paragraphs = linesToParagraphs(groupLines(items))
+      const vis = paragraphsVis(paragraphs)
+      const cov = itemCoverage(page, items)
+      const verdict = verdictOf({ vis, cov }).state
+      if (ocrMap && ocrMap.has(i)) {
+        const merged = mergePage({ verdict, paragraphs, ocrBlocks: ocrMap.get(i), pageNo: i })
+        if (merged.stats.verdictMismatch) {
+          // 上游判 empty 但切段仍有可见原文：不整页替换，走 coverage 路径（§11.2.3 R2）
+          console.warn(`[pdf] page ${i}: verdict=empty 但文字层仍有 ${vis} 个可见字符，OCR 结果只补进`)
+        }
+        paragraphs = merged.paragraphs
+      }
+      // vis/cov/verdict 记的是文字层口径（merge 输入），paragraphs 是合并后的最终段落
+      pages.push({ paragraphs, vis, cov, verdict })
       if (typeof onProgress === 'function') onProgress({ stage: 'pdf', loaded: i, total: doc.numPages })
     }
+    // 只有「一页都读不出来」才抛；PDF_NO_TEXT 降为兜底码 —— 扫描件走 UI 判态 2（§10.1）
+    if (!pages.length) throw new ImportError('PDF_NO_TEXT', 'no pages')
     const outline = await readOutline(doc)
     const meta = await readMeta(doc)
-    const chars = pages.reduce((n, p) => n + p.paragraphs.join('').length, 0)
-    if (!chars) throw new ImportError('PDF_NO_TEXT')
-    return { title: meta.title || collapse(title), author: meta.author, chapters: pagesToChapters(pages, outline) }
+    const textChars = pages.reduce((n, p) => n + paragraphsVis(p.paragraphs), 0)
+    return {
+      pages,
+      verdicts: pages.map(p => p.verdict),
+      textChars,
+      title: meta.title || collapse(title),
+      author: meta.author,
+      chapters: pagesToChapters(pages, outline),
+    }
   } finally {
     try { await doc.destroy() } catch { /* 清理失败不影响结果 */ }
   }

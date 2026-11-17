@@ -11,6 +11,7 @@ export const IMPORT_STEP = {
   IDLE: 'idle',       // 等着选文件 / 选好了等着点导入
   READING: 'reading', // 把文件读进内存
   PARSING: 'parsing', // 解码 / 切章
+  OCR: 'ocr',         // 识别「正文可能不在文字层」的页（b2 同意层；与解析层的 stage 'ocr' 同名）
   SAVING: 'saving',   // 落 IndexedDB
   DONE: 'done',
   ERROR: 'error'
@@ -74,6 +75,9 @@ export function progressPercent(progress) {
 const STEP_TEXT = {
   [IMPORT_STEP.READING]: 'Reading the file...',
   [IMPORT_STEP.PARSING]: 'Reading the text...',
+  // OCR 阶段（b2）：文案与 importCopy 同源（中文口径）—— 说的是「可能需要识别的页」，
+  // 不说「没有文字层的页」（算法也会送有文字层但正文像图片的页，§10.2）。
+  [IMPORT_STEP.OCR]: '正在识别正文可能不在文字层的页…',
   [IMPORT_STEP.SAVING]: 'Saving to this device...'
 }
 

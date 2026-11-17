@@ -7,6 +7,7 @@
  *   import/txt.js    — 编码识别（BOM/UTF-8/GBK/UTF-16）+ 切段切章
  *   import/epub.js   — 解包 / container+OPF / spine 顺序 / DRM 拦截
  *   import/pdf.js    — 纯函数（groupLines/linesToParagraphs/pagesToChapters）+ 真 PDF 取字
+ *   import/ocrMerge.js — 可见码点 / 三态 verdict / 三分支 merge（b2，含 legacy 反例负测）
  *   import/index.js  — importBook 端到端（含 bookId 与 node:crypto 交叉核对）
  * 用法: node verify-import.mjs
  *
@@ -24,6 +25,7 @@ const { htmlToParagraphs, decodeEntities, stripTags } = await import('./src/impo
 const { decodeBytes, splitTextToParagraphs, isChapterHeading, paragraphsToChapters, parseTxt } = await import('./src/import/txt.js')
 const { resolvePath, findOpfPath, parseOpf, findCoverItem, parseEpub, isEncryptedEpub, readEpubEntries } = await import('./src/import/epub.js')
 const { groupLines, linesToParagraphs, pagesToChapters, parsePdf } = await import('./src/import/pdf.js')
+const { visOf, DEFAULT_RULES, verdictOf, mergePage, ocrParagraphsOf, auditDropped } = await import('./src/import/ocrMerge.js')
 const { bytesToBase64, coverDataUrl, isCoverDataUrl, COVER_MAX_BYTES, COVER_MAX_DATA_URL } = await import('./src/utils/bookCover.js')
 const { importBook } = await import('./src/import/index.js')
 
@@ -279,6 +281,217 @@ console.log('\n[pdf.js — 纯函数]')
   tEq('无目录：一页一章、空页丢掉', noOutline, [{ title: 'Page 1', paragraphs: ['a'] }])
 }
 
+console.log('\n[ocrMerge.js — 可见码点]')
+{
+  // §11.1.3 表：vis 与 ocrVis 用同一个函数，标点计入、U+FFFD 不计、按码点计数
+  tEq('visOf ASCII', visOf('abc'), 3)
+  tEq('visOf 全角（NFKC 全角->半角）', visOf('ＡＢＣ'), 3)
+  tEq('visOf 空白不计', visOf(' a\tb\nc '), 3)
+  tEq('visOf CJK 按码点', visOf('中文'), 2)
+  tEq('visOf emoji 代理对算一个码点', visOf('😀'), 1)
+  tEq('visOf 扩展 B（U+20000）', visOf('𠀀'), 1)
+  tEq('visOf 组合符（e + U+0301 -> é）', visOf('é'), 1)
+  tEq('visOf 软连字符不计', visOf('a­b'), 2)
+  tEq('visOf 零宽空格不计', visOf('a​b'), 2)
+  tEq('visOf U+FFFD 不计', visOf('a�b'), 2)
+  tEq('visOf 标点计入', visOf('，。！？'), 4)
+  tEq('visOf 空 / null / undefined -> 0', [visOf(''), visOf(null), visOf(undefined)], [0, 0, 0])
+  tEq('visOf 纯空白 -> 0', visOf('  　 '), 0)
+  t('visOf 是纯函数（同输入同输出）', visOf('中文 abc') === visOf('中文 abc') && visOf('中文 abc') === 5)
+
+  // §11.1.4 三态判定（text 只作防御）
+  tEq('verdictOf vis=0 -> empty', verdictOf({ vis: 0, cov: 0.9 }), { state: 'empty', needsOcr: true })
+  tEq('verdictOf vis=49 -> sparse（cov 大也仍 sparse）', verdictOf({ vis: 49, cov: 0.9 }), { state: 'sparse', needsOcr: true })
+  tEq('verdictOf vis=50 且 cov=0.11 -> image_body', verdictOf({ vis: 50, cov: 0.11 }), { state: 'image_body', needsOcr: true })
+  tEq('verdictOf vis=50 且 cov=0.12 -> text（边界含在内）', verdictOf({ vis: 50, cov: 0.12 }), { state: 'text', needsOcr: false })
+  tEq('DEFAULT_RULES 常量', [
+    DEFAULT_RULES.MIN_NOVEL_BLOCK_VIS, DEFAULT_RULES.MIN_NOVEL_BLOCK_VIS_CJK,
+    DEFAULT_RULES.COVER_SIM, DEFAULT_RULES.T_SPARSE, DEFAULT_RULES.C_BODY,
+  ], [4, 2, 0.8, 50, 0.12])
+}
+
+console.log('\n[ocrMerge.js — 三分支与反例（§11.6.2）]')
+{
+  const w = s => String(s).repeat(10)
+  const HEADER = Array.from({ length: 20 }, (_, i) => w(String.fromCharCode(97 + i))).join(' ')
+  const BODY = Array.from({ length: 15 }, () => 'bodywordzz').join(' ')
+  t('夹具：页眉恰 200 可见字符', visOf(HEADER) === 200)
+  t('夹具：图片正文恰 150 可见字符', visOf(BODY) === 150)
+
+  // 200 字页眉 ＋ 150 字图片正文：夹具页按 §11.1.4 判 image_body（vis=200 ≥ 50 且 cov≈0.03 < 0.12）
+  const HDR = { text: HEADER, bbox: [72, 760, 500, 780] }
+  const BODY_BLOCK = { text: BODY, bbox: [72, 400, 500, 620] }
+  const fixture = { verdict: 'image_body', paragraphs: [HEADER], ocrBlocks: [HDR, BODY_BLOCK], pageNo: 1 }
+  const sparseFixture = { ...fixture, verdict: 'sparse' }
+  const countOf = (hay, needle) => hay.split(needle).length - 1
+
+  // M1：sparse，OCR 块＝页眉＋正文 -> merge，原文保留＋正文追加
+  const m1 = mergePage(sparseFixture)
+  tEq('M1 action', m1.action, 'merge')
+  tEq('M1 reason', m1.reason, 'ocr_adds_novel_text')
+  tEq('M1 首段仍是页眉', m1.paragraphs[0], HEADER)
+  t('M1 最终含 150 字正文', m1.paragraphs.join(' ').includes(BODY))
+  t('M1 discarded 记 covered_by_text_layer（页眉块）', m1.discarded.some(d => d.reason === 'covered_by_text_layer' && d.blocks === 1))
+  t('M1 审计 droppedBlocks', auditDropped(m1))
+
+  // M1b：OCR 把页眉＋正文合成一个块 -> 长度上限先判未覆盖，整块走 merge
+  const m1b = mergePage({ ...sparseFixture, ocrBlocks: [{ text: HEADER + ' ' + BODY, bbox: [72, 400, 500, 780] }] })
+  tEq('M1b 合成块 action', m1b.action, 'merge')
+  t('M1b 结果含正文（页眉允许重复）', m1b.paragraphs.join(' ').includes(BODY))
+  t('M1b 审计 droppedBlocks', auditDropped(m1b))
+
+  // M1c：image_body 与 sparse 同路径（夹具页实际 verdict 是 image_body）
+  const m1c = mergePage(fixture)
+  tEq('M1c image_body 与 sparse 同结果', [m1c.action, m1c.reason, m1c.paragraphs], [m1.action, m1.reason, m1.paragraphs])
+
+  // M2：只读正文
+  const m2 = mergePage({ ...sparseFixture, ocrBlocks: [BODY_BLOCK] })
+  tEq('M2 action', m2.action, 'merge')
+  tEq('M2 novelVis=150', m2.stats.novelVis, 150)
+  t('M2 含正文', m2.paragraphs.join(' ').includes(BODY))
+
+  // M3：没有 OCR 块
+  const m3 = mergePage({ ...sparseFixture, ocrBlocks: [] })
+  tEq('M3 action', m3.action, 'keep')
+  tEq('M3 reason', m3.reason, 'ocr_empty')
+  tEq('M3 原文不动', m3.paragraphs, [HEADER])
+  tEq('M3 discarded 为空', m3.discarded, [])
+  tEq('M3 droppedBlocks=0', m3.stats.droppedBlocks, 0)
+
+  // M4 / M4b / M4c：非 CJK 脚本下限 4（>= 含边界）
+  const m4 = mergePage({ ...sparseFixture, ocrBlocks: [HDR, { text: 'abcde', bbox: [72, 300, 200, 320] }] })
+  tEq('M4 5 字符新块被接受', m4.action, 'merge')
+  t('M4 结果含 abcde', m4.paragraphs.includes('abcde'))
+  const m4b = mergePage({ ...sparseFixture, ocrBlocks: [HDR, { text: 'x', bbox: [72, 300, 80, 320] }] })
+  tEq('M4b 1 字符 -> novel_below_block_min', [m4b.action, m4b.reason], ['keep', 'novel_below_block_min'])
+  t('M4b 审计', auditDropped(m4b))
+  const m4c = mergePage({ ...sparseFixture, ocrBlocks: [HDR, { text: 'abcd', bbox: [72, 300, 200, 320] }] })
+  tEq('M4c 恰好 4 字符被接受（>= 边界）', m4c.action, 'merge')
+  t('M4c 结果含 abcd', m4c.paragraphs.includes('abcd'))
+
+  // M5：OCR 只有页眉
+  const m5 = mergePage({ ...sparseFixture, ocrBlocks: [HDR] })
+  tEq('M5 无新块 -> keep ocr_no_novel_text', [m5.action, m5.reason], ['keep', 'ocr_no_novel_text'])
+  t('M5 审计', auditDropped(m5))
+
+  // M6 / M6b / M6c / M6d：replace 只留给 empty 且 vis===0
+  const m6 = mergePage({ verdict: 'empty', paragraphs: [], ocrBlocks: [BODY_BLOCK] })
+  tEq('M6 empty+vis0 -> replace', [m6.action, m6.reason], ['replace', 'empty_page'])
+  tEq('M6 droppedBlocks=0', m6.stats.droppedBlocks, 0)
+  const m6b = mergePage({ verdict: 'empty', paragraphs: [HEADER], ocrBlocks: [BODY_BLOCK] })
+  tEq('M6b empty 但 vis>0 -> 不 replace，走 merge', [m6b.action, m6b.reason], ['merge', 'ocr_adds_novel_text'])
+  tEq('M6b verdictMismatch=true', m6b.stats.verdictMismatch, true)
+  tEq('M6b 原文保留', m6b.paragraphs[0], HEADER)
+  t('M6b 含正文', m6b.paragraphs.join(' ').includes(BODY))
+  t('M6b 审计', auditDropped(m6b))
+  const m6c = mergePage({ verdict: 'empty', paragraphs: [HEADER], ocrBlocks: [HDR] })
+  tEq('M6c empty+vis>0 且无新块 -> keep ocr_no_novel_text', [m6c.action, m6c.reason], ['keep', 'ocr_no_novel_text'])
+  tEq('M6c verdictMismatch=true', m6c.stats.verdictMismatch, true)
+  tEq('M6c 原文不动', m6c.paragraphs, [HEADER])
+  const m6d = mergePage({ verdict: 'empty', paragraphs: ['  ​'], ocrBlocks: [BODY_BLOCK] })
+  tEq('M6d 零可见原文也过 replace 门', [m6d.action, m6d.reason], ['replace', 'empty_page'])
+  t('M6d discarded 含 text_layer_replaced{blocks:1,vis:0}',
+    m6d.discarded.some(d => d.reason === 'text_layer_replaced' && d.blocks === 1 && d.vis === 0))
+  tEq('M6d text_layer_replaced 不计入 droppedBlocks', m6d.stats.droppedBlocks, 0)
+
+  // M7：重复 OCR 块
+  const m7 = mergePage({ ...sparseFixture, ocrBlocks: [HDR, BODY_BLOCK, BODY_BLOCK] })
+  tEq('M7 action=merge', m7.action, 'merge')
+  t('M7 页眉只出现一次', countOf(m7.paragraphs.join(' '), HEADER) === 1)
+  t('M7 正文只出现一次', countOf(m7.paragraphs.join(' '), BODY) === 1)
+  t('M7 discarded 含 duplicate_block', m7.discarded.some(d => d.reason === 'duplicate_block' && d.blocks === 1))
+  t('M7 审计 droppedBlocks', auditDropped(m7))
+
+  // M8：text 页误调用（防御分支）
+  const m8 = mergePage({ verdict: 'text', paragraphs: [HEADER], ocrBlocks: [BODY_BLOCK] })
+  tEq('M8 text -> keep page_has_text_layer', [m8.action, m8.reason], ['keep', 'page_has_text_layer'])
+  tEq('M8 discarded 为空', m8.discarded, [])
+
+  // M9 / M9b / M9c：ocr_empty（页级零可见字符）
+  const m9 = mergePage({ verdict: 'empty', paragraphs: [], ocrBlocks: [] })
+  tEq('M9 无块 -> keep ocr_empty', [m9.action, m9.reason], ['keep', 'ocr_empty'])
+  tEq('M9 discarded 为空', m9.discarded, [])
+  tEq('M9 droppedBlocks=0', m9.stats.droppedBlocks, 0)
+  const m9b = mergePage({ ...sparseFixture, ocrBlocks: [{ text: '  \n' }] })
+  tEq('M9b 零可见字符块 -> keep ocr_empty', [m9b.action, m9b.reason], ['keep', 'ocr_empty'])
+  t('M9b discarded 记一条汇总 ocr_empty{blocks:1,vis:0}',
+    m9b.discarded.length === 1 && m9b.discarded[0].reason === 'ocr_empty' && m9b.discarded[0].blocks === 1 && m9b.discarded[0].vis === 0)
+  tEq('M9b ocr_empty 不计入 droppedBlocks', m9b.stats.droppedBlocks, 0)
+  tEq('M9b 早退不做段落化 -> degraded=false', m9b.stats.degraded, false)
+  const m9c = mergePage({ verdict: 'empty', paragraphs: ['orig'], ocrBlocks: [] })
+  tEq('M9c 早退也带 verdictMismatch', [m9c.action, m9c.reason, m9c.stats.verdictMismatch], ['keep', 'ocr_empty', true])
+  tEq('M9c droppedBlocks=0', m9c.stats.droppedBlocks, 0)
+
+  // M10：覆盖块＋过短块一起丢弃，审计式计数（F1）
+  const m10 = mergePage({ ...sparseFixture, ocrBlocks: [HDR, { text: 'abcde' }, { text: 'xy' }] })
+  tEq('M10 only abcde 被追加', m10.action === 'merge' && m10.paragraphs.includes('abcde') && !m10.paragraphs.includes('xy'), true)
+  t('M10 discarded 含 covered_by_text_layer＋below_min_block',
+    m10.discarded.some(d => d.reason === 'covered_by_text_layer' && d.blocks === 1) &&
+    m10.discarded.some(d => d.reason === 'below_min_block' && d.blocks === 1))
+  tEq('M10 droppedBlocks=2', m10.stats.droppedBlocks, 2)
+  t('M10 审计 droppedBlocks', auditDropped(m10))
+
+  // M11：无 bbox 退化「一块一段」
+  const m11 = mergePage({
+    ...sparseFixture,
+    ocrBlocks: [{ text: HEADER }, { text: BODY }],
+  })
+  tEq('M11 action=merge', m11.action, 'merge')
+  tEq('M11 degraded=true', m11.stats.degraded, true)
+  t('M11 正文仍进入段落', m11.paragraphs.includes(BODY))
+  t('M11 有 bbox 时 degraded=false', m1.stats.degraded === false && fixture.ocrBlocks.every(b => Array.isArray(b.bbox)))
+
+  // M12 / M12b / M12c：CJK 下限 2（>= 含边界）
+  const m12 = mergePage({ ...sparseFixture, ocrBlocks: [HDR, { text: '第一章', bbox: [72, 300, 200, 320] }] })
+  tEq('M12 3 个 CJK 字被接受', m12.action, 'merge')
+  t('M12 结果含第一章', m12.paragraphs.includes('第一章'))
+  const m12b = mergePage({ ...sparseFixture, ocrBlocks: [HDR, { text: '序', bbox: [72, 300, 200, 320] }] })
+  tEq('M12b 1 个 CJK 字 -> novel_below_block_min', [m12b.action, m12b.reason], ['keep', 'novel_below_block_min'])
+  const m12c = mergePage({ ...sparseFixture, ocrBlocks: [HDR, { text: '图书', bbox: [72, 300, 200, 320] }] })
+  tEq('M12c 2 个 CJK 字恰好等于下限 -> 接受', m12c.action, 'merge')
+  t('M12c 结果含图书', m12c.paragraphs.includes('图书'))
+  t('M12c 审计', auditDropped(m12c))
+
+  // M13：replace 分支里也去重
+  const m13 = mergePage({ verdict: 'empty', paragraphs: [], ocrBlocks: [BODY_BLOCK, BODY_BLOCK] })
+  tEq('M13 action=replace', m13.action, 'replace')
+  t('M13 正文只出现一次', countOf(m13.paragraphs.join(' '), BODY) === 1)
+  t('M13 discarded 含 duplicate_block', m13.discarded.some(d => d.reason === 'duplicate_block' && d.blocks === 1))
+  tEq('M13 droppedBlocks=1', m13.stats.droppedBlocks, 1)
+
+  // 审计不变量：每个用例 droppedBlocks === Σ 三类 OCR 丢弃（§11.2.3）
+  for (const [name, r] of [['M1', m1], ['M1b', m1b], ['M1c', m1c], ['M2', m2], ['M3', m3],
+    ['M4', m4], ['M4b', m4b], ['M4c', m4c], ['M5', m5], ['M6', m6], ['M6b', m6b], ['M6c', m6c],
+    ['M6d', m6d], ['M7', m7], ['M8', m8], ['M9', m9], ['M9b', m9b], ['M9c', m9c], ['M10', m10],
+    ['M11', m11], ['M12', m12], ['M12b', m12b], ['M12c', m12c], ['M13', m13]]) {
+    t(`审计不变量（droppedBlocks 口径）${name}`, auditDropped(r))
+  }
+
+  // 反例：旧式 ocrVis >= max(100, 2×vis) 会丢掉 150 字正文；新规则必须不丢（§11.6.3）
+  function legacyMergePage(input) {
+    const paras = input.paragraphs || []
+    const blocks = input.ocrBlocks || []
+    const vis = paras.reduce((n, s) => n + visOf(s), 0)
+    const ocrVis = blocks.reduce((n, b) => n + visOf(b && b.text), 0)
+    if (input.verdict === 'text') return { action: 'keep', reason: 'page_has_text_layer', paragraphs: paras }
+    if (ocrVis >= Math.max(100, 2 * vis)) {
+      return { action: 'replace', reason: 'empty_page', paragraphs: ocrParagraphsOf(blocks) }
+    }
+    return { action: 'keep', reason: 'legacy_threshold_discard', paragraphs: paras }
+  }
+  const legacyBoth = legacyMergePage({ ...fixture, ocrBlocks: [HDR, BODY_BLOCK] }) // ocrVis 350
+  const legacyBody = legacyMergePage({ ...fixture, ocrBlocks: [BODY_BLOCK] })     // ocrVis 150
+  tEq('反例：旧规则在 350/150 两种 OCR 字数下都判 keep', [legacyBoth.action, legacyBody.action], ['keep', 'keep'])
+  tEq('反例：旧规则 reason=legacy_threshold_discard', [legacyBoth.reason, legacyBody.reason], ['legacy_threshold_discard', 'legacy_threshold_discard'])
+  t('反例：旧规则最终只剩页眉（正文丢失）', !legacyBoth.paragraphs.join(' ').includes(BODY) && !legacyBody.paragraphs.join(' ').includes(BODY))
+  t('反例：新 mergePage 不丢正文', m1.paragraphs.join(' ').includes(BODY) && m1.action === 'merge')
+
+  // 生产代码里不得留 legacy 分支或旧阈值（legacy 仅存在于本测试）
+  const mergeSrc = fs.readFileSync(new URL('./src/import/ocrMerge.js', import.meta.url), 'utf8')
+  t('生产 ocrMerge.js 不含 legacy_threshold_discard', !mergeSrc.includes('legacy_threshold_discard'))
+  t('生产 ocrMerge.js 不含旧阈值 max(100, 2*vis)', !/max\(\s*100\s*,\s*2\s*\*/.test(mergeSrc))
+}
+
 console.log('\n[pdf.js — 真 PDF（legacy pdfjs）]')
 {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
@@ -291,8 +504,30 @@ console.log('\n[pdf.js — 真 PDF（legacy pdfjs）]')
     'A second paragraph follows here after a short gap.',
   ])
   tEq('第二章正文', book.chapters[1].paragraphs, ['Chapter two body text only.'])
+  t('parsePdf 返回 pages / verdicts / textChars', Array.isArray(book.pages) && Array.isArray(book.verdicts) && book.textChars > 0)
+  // 这个夹具每页只有两三行短文本，按 §11.1.4 会判 sparse／image_body —— 不假设一定 text，
+  // 只钉「每页 verdict 与 vis/cov 走同一个 verdictOf」这层接线。
+  tEq('每页 verdict 与 verdictOf({vis,cov}) 一致', book.pages.every(p => p.verdict === verdictOf(p).state), true)
+  tEq('pages 与 verdicts 一一对应', book.pages.length, book.verdicts.length)
+  t('每页带 vis / cov（cov 在 0..1）', book.pages.every(p => p.vis > 0 && p.cov >= 0 && p.cov <= 1))
+  tEq('text-layer.pdf 的可读字符数与 textChars 一致',
+    book.textChars, book.pages.reduce((n, p) => n + p.paragraphs.reduce((m, s) => m + visOf(s), 0), 0))
 
-  tEq('没有文本层 -> PDF_NO_TEXT', await codeOf(() => parsePdf(read('no-text-layer.pdf'), { pdfjs })), 'PDF_NO_TEXT')
+  // §10.1 前置：无文字层不再抛 PDF_NO_TEXT，改由 UI 判态 2
+  const scanned = await parsePdf(read('no-text-layer.pdf'), { pdfjs })
+  tEq('没有文本层 -> 不抛错，textChars=0', scanned.textChars, 0)
+  t('没有文本层的页 verdict 是 empty', scanned.verdicts.length > 0 && scanned.verdicts.every(v => v === 'empty'))
+  tEq('没有文本层 -> 零章节（不落库的判断交给 UI）', scanned.chapters.length, 0)
+
+  // merge 入口：有 ocrByPage 时在 pagesToChapters 之前逐页走 mergePage
+  const ocrText = 'Recognized scanned body text.'
+  const withOcr = await parsePdf(read('no-text-layer.pdf'), {
+    pdfjs,
+    ocrByPage: new Map([[1, [{ text: ocrText }]]]),
+  })
+  t('ocrByPage：识别文本进了章节', JSON.stringify(withOcr.chapters).includes(ocrText))
+  t('ocrByPage：textChars 按合并结果算', withOcr.textChars > 0)
+
   tEq('不是 PDF -> PDF_INVALID', await codeOf(() => parsePdf(read('sample.txt'), { pdfjs })), 'PDF_INVALID')
   tEq('中途取消 -> CANCELLED', await codeOf(() => parsePdf(read('text-layer.pdf'), { pdfjs, signal: { aborted: true } })), 'CANCELLED')
 }
