@@ -69,6 +69,8 @@ export const DEFAULT_PUBLIC_BOOK_IDS = Object.freeze([])
 export const CACHE_SCHEMA_VERSION = 'v2'
 export const PROMPT_VERSION = 'p2-abstain'
 export const LEXICON_VERSION = 'l1'
+export const PHRASE_CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000
+export const PHRASE_CACHE_TTL_CRON = '43 4 * * *'
 
 function json(cors, data, status = 200, extra = {}) {
   return new Response(JSON.stringify(data), {
@@ -411,9 +413,10 @@ export async function handlePhraseResolve(request, env) {
   // 1. D1 缓存（公开书共享；BYO 的键已按 user 分隔）。
   //    D1 读失败时 fail-closed：不绕过缓存和限流直接去烧模型。
   try {
+    const cutoff = Date.now() - PHRASE_CACHE_TTL_MS
     const row = await env.DB
-      .prepare('SELECT rank FROM phrase_cloud_cache WHERE cache_key = ?')
-      .bind(cacheKey)
+      .prepare('SELECT rank FROM phrase_cloud_cache WHERE cache_key = ? AND created_at >= ?')
+      .bind(cacheKey, cutoff)
       .first()
     if (row && payload.senses.some(s => s.rank === row.rank)) {
       await bumpMetric(env, 'cache_hits')
@@ -455,7 +458,10 @@ export async function handlePhraseResolve(request, env) {
   // 4. 写缓存；写失败不阻断响应。
   try {
     await env.DB
-      .prepare('INSERT OR IGNORE INTO phrase_cloud_cache (cache_key, rank, created_at) VALUES (?, ?, ?)')
+      .prepare(`INSERT INTO phrase_cloud_cache (cache_key, rank, created_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(cache_key) DO UPDATE
+          SET rank = excluded.rank, created_at = excluded.created_at`)
       .bind(cacheKey, r.rank, Date.now())
       .run()
   } catch (e) {
@@ -463,6 +469,34 @@ export async function handlePhraseResolve(request, env) {
   }
 
   return json(cors, { status: 'cloud', rank: r.rank, confidence, source: 'model' })
+}
+
+/**
+ * 每日清理过期缓存（90 天）。按 created_at 索引；每批 500 行，最多 20 批。
+ * now 由调用方传入，便于负测冻结时间。
+ */
+export async function runPhraseCacheTtl(env, now = Date.now()) {
+  const cutoff = Number(now) - PHRASE_CACHE_TTL_MS
+  const del = env.DB.prepare(`DELETE FROM phrase_cloud_cache
+    WHERE cache_key IN (
+      SELECT cache_key FROM phrase_cloud_cache
+      WHERE created_at < ? ORDER BY created_at LIMIT ?
+    )`)
+  let deleted = 0
+  let batches = 0
+  const expired = await env.DB
+    .prepare('SELECT COUNT(*) AS n FROM phrase_cloud_cache WHERE created_at < ?')
+    .bind(cutoff)
+    .first()
+  console.log('phrase cache ttl: expired rows', Number((expired && expired.n) || 0))
+  for (let i = 0; i < 20; i++) {
+    const r = await del.bind(cutoff, 500).run()
+    const n = Number((r && r.meta && r.meta.changes) || 0)
+    deleted += n
+    batches = i + 1
+    if (n < 500) break
+  }
+  return { deleted, batches }
 }
 
 /** GET /api/phrase/config：只回答「当前缓存该按哪一版算」。 */
