@@ -644,14 +644,25 @@ onMounted(refresh)
 }
 
 .missing-row-go.as-button:disabled { opacity: 0.6; cursor: default; }
+.empty-state {
+  padding-top: 88px;
+}
+
+.empty-state h2 {
+  font-size: 16px;
+  color: #000;
+}
+
 .empty-import {
   display: inline-block;
   margin-top: 16px;
-  padding: 10px 18px;
-  border-radius: 8px;
-  background: var(--accent-color, #1a73e8);
+  padding: 0 18px;
+  min-height: 44px;
+  line-height: 44px;
+  border-radius: 3px;
+  background: #000;
   color: #fff;
-  font-size: 14px;
+  font-size: 12px;
   text-decoration: none;
 }
 
