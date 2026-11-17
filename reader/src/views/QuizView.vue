@@ -23,15 +23,26 @@
         <label class="setup-label">题目数量</label>
         <div class="count-options">
           <button
-            v-for="c in [10, 20, 30, 'All']" :key="c"
+            v-for="c in QUIZ_COUNT_OPTIONS" :key="c"
             :class="['count-btn', { active: count === c }]"
             @click="count = c"
           >{{ c === 'All' ? '全部' : c }}</button>
         </div>
       </div>
 
+      <div class="setup-group">
+        <label class="setup-label">题型</label>
+        <div class="count-options">
+          <button
+            v-for="t in QUIZ_TYPES" :key="t.value"
+            :class="['count-btn', { active: quizType === t.value }]"
+            @click="quizType = t.value"
+          >{{ t.label }}</button>
+        </div>
+      </div>
+
       <div class="setup-stats" v-if="totalAttempts > 0">
-        📊 已答 {{ totalAttempts }} 题 · 正确率 {{ accuracy }}%
+        已答 {{ totalAttempts }} 题 · 正确率 {{ accuracy }}%
         <span v-if="vocab.errorPool.value.length"> · 错题池：{{ vocab.errorPool.value.length }}</span>
       </div>
 
@@ -63,13 +74,14 @@
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: ((currentIdx + 1) / questions.length * 100) + '%' }"></div>
         </div>
-        <span class="score-live">✓{{ correctCount }} ✗{{ wrongCount }}</span>
+        <span class="score-live">对 {{ correctCount }} · 错 {{ wrongCount }}</span>
+        <router-link class="quit-link" to="/books">退出</router-link>
       </div>
 
       <!-- question -->
       <div class="question-card">
         <p class="question-stem">{{ current.stem }}</p>
-        <p v-if="current.hint" class="question-hint">💡 {{ current.hint }}</p>
+        <p v-if="current.hint" class="question-hint">{{ current.hint }}</p>
 
         <!-- 选择题 -->
         <div v-if="current.options" class="options-grid">
@@ -100,9 +112,9 @@
 
         <!-- feedback -->
         <div v-if="answered" :class="['feedback', lastCorrect ? 'fb-correct' : 'fb-wrong']" aria-live="polite">
-          <template v-if="lastCorrect">✅ 回答正确</template>
+          <template v-if="lastCorrect">回答正确</template>
           <template v-else>
-            ❌ 回答错误。答案：
+            回答错误。答案：
             <strong>{{ current.options ? current.options[current.answerIndex] : current.answer }}</strong>
           </template>
           <p v-if="current.explanation" class="fb-explanation">{{ current.explanation }}</p>
@@ -133,7 +145,7 @@
         >
           <div class="wrong-row">
             <span class="wrong-word">{{ w.word }}</span>
-            <span class="wrong-type">{{ w.type }}</span>
+            <span class="wrong-type">{{ w.typeLabel || w.type }}</span>
           </div>
           <p v-if="expandedWrong === w.word" class="wrong-detail">{{ w.explanation }}</p>
         </div>
@@ -153,6 +165,7 @@
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { useVocabulary } from '../composables/useVocabulary'
 import { generateQuestions, generatePhraseQuestions } from '../quizGen.js'
+import { QUIZ_COUNT_OPTIONS, QUIZ_TYPES, filterQuestionsByType, generationCount } from '../utils/quizView.js'
 import { checkSpelling } from '../utils/spelling.js'
 import { usePhrases } from '../composables/usePhrases.js'
 import { createCard } from '../fsrs.js'
@@ -172,6 +185,7 @@ const sync = useSync()
 const phase = ref('setup') // setup | loading | active | results | error
 const source = ref('all')
 const count = ref(20)
+const quizType = ref('mixed')
 const errorMsg = ref('')
 
 const sourceOptions = computed(() => {
@@ -243,11 +257,11 @@ async function startQuiz() {
   errorMsg.value = ''
   try {
     let qs = []
-    const maxCount = count.value === 'All' ? Infinity : count.value
+    const wantAll = count.value === 'All'
 
     if (source.value === 'phrases') {
       await phrases.init()
-      qs = generatePhraseQuestions(phrases.all.value, maxCount === Infinity ? 30 : maxCount)
+      qs = generatePhraseQuestions(phrases.all.value, generationCount(count.value, quizType.value, 30))
     } else {
       // all | error-pool
       const candidates = source.value === 'error-pool'
@@ -262,7 +276,16 @@ async function startQuiz() {
       const chapters = await loadVocabChapters(candidates)
       // 干扰项池：生词本
       const distractorPool = candidates
-      qs = generateQuestions(sorted, distractorPool, chapters, maxCount === Infinity ? candidates.length : maxCount)
+      qs = generateQuestions(sorted, distractorPool, chapters, generationCount(count.value, quizType.value, candidates.length))
+    }
+
+    // 单一题型：生成时多要一些，再筛到目标题量
+    if (quizType.value !== 'mixed') {
+      const only = filterQuestionsByType(qs, quizType.value)
+      if (!only.length) {
+        throw new Error(quizType.value === 'choice' ? '所选来源没有选择题。' : '所选来源没有拼写题。')
+      }
+      qs = wantAll ? only : only.slice(0, Number(count.value))
     }
 
     if (!qs.length) throw new Error('无法从所选来源生成题目。')
@@ -300,6 +323,7 @@ async function recordAnswer(correct) {
     wrongList.value.push({
       word: current.value.word,
       type: current.value.type,
+      typeLabel: current.value.options ? '选择题' : '拼写题',
       explanation: current.value.explanation || (current.value.answer ? `答案：${current.value.answer}` : '')
     })
   }
@@ -776,4 +800,144 @@ onMounted(() => {
   .source-options { grid-template-columns: 1fr; }
   .question-stem { font-size: 16px; }
 }
+
+/* ── UI-07 · 线框 v0.2 灰阶（覆盖上方旧配色）──────────────────────────── */
+.quiz-view {
+  max-width: 390px;
+  padding: 12px 14px 24px;
+  color: #333;
+  font-size: 13px;
+  line-height: 1.55;
+  background: #fff;
+}
+.placeholder-view { padding: 56px 12px; color: #666; }
+.spinner { border-color: #e5e5e5; border-top-color: #000; }
+.action-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid #999;
+  border-radius: 3px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+}
+.action-btn.primary { background: #000; border-color: #000; color: #fff; }
+
+.setup-title { margin: 4px 0 14px; font-size: 15px; color: #000; font-weight: 600; }
+.setup-group { margin-bottom: 14px; }
+.setup-label { font-size: 11px; color: #666; font-weight: 400; margin-bottom: 6px; }
+.source-options { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.source-btn {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #e5e5e5;
+  border-radius: 3px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+}
+.source-btn.active { border-color: #000; box-shadow: inset 0 0 0 1px #000; }
+.source-btn.disabled { border-style: dashed; color: #999; opacity: 1; }
+.source-count { font-size: 10px; color: #666; background: #f5f5f5; border-radius: 2px; }
+.source-btn.disabled .source-count { color: #999; }
+
+.count-options { display: flex; gap: 0; border: 1px solid #333; border-radius: 3px; overflow: hidden; }
+.count-btn {
+  flex: 1;
+  min-height: 40px;
+  border: 0;
+  border-right: 1px solid #333;
+  border-radius: 0;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+}
+.count-btn:last-child { border-right: 0; }
+.count-btn.active { background: #000; color: #fff; }
+
+.setup-stats { margin: 4px 0 10px; font-size: 10px; color: #666; }
+.start-btn {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: #000;
+  color: #fff;
+  font-size: 13px;
+}
+.start-btn:disabled { background: #999; border-color: #999; }
+.start-hint { margin-top: 8px; font-size: 10px; color: #666; }
+
+.quiz-progress { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 10px; color: #666; }
+.progress-text { font-size: 11px; color: #333; white-space: nowrap; }
+.progress-bar { flex: 1; height: 4px; background: #e5e5e5; border-radius: 2px; overflow: hidden; }
+.progress-fill { height: 100%; background: #333; }
+.score-live { font-size: 10px; color: #333; white-space: nowrap; }
+.quit-link { font-size: 10px; color: #333; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+
+.question-card { border: 1px solid #999; border-radius: 3px; padding: 12px; }
+.question-stem { font-size: 14px; color: #000; line-height: 1.6; }
+.question-hint { font-size: 10px; color: #666; }
+.options-grid { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; }
+.option-btn {
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid #e5e5e5;
+  border-radius: 3px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  text-align: left;
+}
+.option-btn.opt-correct { border-color: #000; box-shadow: inset 0 0 0 1px #000; font-weight: 600; }
+.option-btn.opt-wrong { border-style: dashed; border-color: #333; }
+.option-btn.opt-dim { color: #999; }
+.opt-letter { font-size: 10px; color: #666; margin-right: 6px; }
+.answer-input {
+  min-height: 44px;
+  border: 1px solid #999;
+  border-radius: 3px;
+  font-size: 13px;
+  color: #333;
+}
+.answer-input.correct { border-color: #000; border-width: 2px; }
+.answer-input.wrong { border-color: #000; border-style: dashed; }
+.submit-btn {
+  min-height: 44px;
+  border: 1px solid #333;
+  border-radius: 3px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+}
+.feedback { margin-top: 10px; padding: 8px 10px; border-radius: 3px; font-size: 12px; }
+.fb-correct { border: 1px solid #000; background: #f5f5f5; color: #000; font-weight: 600; }
+.fb-wrong { border: 1px dashed #333; background: #fff; color: #000; }
+.fb-explanation { margin: 4px 0 0; font-size: 11px; font-weight: 400; color: #333; }
+.next-btn {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: #000;
+  color: #fff;
+  font-size: 12px;
+}
+
+.quiz-results { padding-top: 6px; }
+.result-score { display: flex; align-items: baseline; gap: 10px; }
+.score-big { font-size: 28px; color: #000; font-weight: 600; }
+.score-pct { font-size: 13px; color: #333; }
+.result-bar { height: 6px; margin: 10px 0 16px; background: #e5e5e5; border-radius: 2px; overflow: hidden; }
+.bar-correct { height: 100%; background: #333; }
+.wrong-title { font-size: 12px; color: #000; font-weight: 600; }
+.wrong-card { border: 1px solid #e5e5e5; border-radius: 3px; padding: 8px 10px; margin-top: 6px; }
+.wrong-row { display: flex; justify-content: space-between; font-size: 12px; color: #333; }
+.wrong-word { color: #000; font-weight: 600; }
+.wrong-type { font-size: 10px; color: #666; }
+.wrong-detail { margin: 4px 0 0; font-size: 11px; color: #333; }
+.result-actions { display: flex; gap: 8px; margin-top: 14px; }
+.result-actions .action-btn { flex: 1; }
 </style>

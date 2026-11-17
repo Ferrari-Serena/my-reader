@@ -132,7 +132,7 @@ const currentTitle = computed(() => {
     GenerateAudio: 'Audio',
     Vocabulary: 'Vocabulary',
     Flashcards: '复习',
-    Quiz: 'Quiz',
+    Quiz: '测验',
     Register: '注册 / 登录',
     Account: '我的',
     Feedback: 'Feedback'
