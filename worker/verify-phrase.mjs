@@ -193,6 +193,23 @@ console.log('\n[phraseConfigPayload / handlePhraseConfig — 前端缓存代际]
   const okBody = await ok.json()
   t('GET 配置 → 200 + 版本', ok.status === 200 && okBody.versions.model === 'model-m2')
   t('配置响应 no-store', ok.headers.get('Cache-Control') === 'no-store')
+  t('配置响应带 retractEpoch 且为 number', typeof okBody.retractEpoch === 'number')
+  t('没有 DB 时 retractEpoch 兜底 0', okBody.retractEpoch === 0)
+  const epochDb = (first) => ({
+    prepare(sql) {
+      const stmt = {
+        bind() { return stmt },
+        async first() { return first(sql) },
+      }
+      return stmt
+    },
+  })
+  const epochRes = await handlePhraseConfig(req(CONFIG_PATH), { ...env, DB: epochDb(() => ({ n: 7 })) })
+  const epochBody = await epochRes.json()
+  t('DB 有撤回记录 → retractEpoch=7', epochRes.status === 200 && epochBody.retractEpoch === 7)
+  const downRes = await handlePhraseConfig(req(CONFIG_PATH), { ...env, DB: epochDb(() => { throw new Error('db down') }) })
+  const downBody = await downRes.json()
+  t('DB 查询抛错 → retractEpoch=0', downRes.status === 200 && downBody.retractEpoch === 0)
 
   const wrongMethod = await handlePhraseConfig(req(CONFIG_PATH, 'POST'), env)
   t('非 GET → 405', wrongMethod.status === 405)

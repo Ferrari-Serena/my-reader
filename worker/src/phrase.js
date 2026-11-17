@@ -508,5 +508,12 @@ export async function handlePhraseConfig(request, env) {
   if (request.method !== 'GET') {
     return json(cors, { status: 'invalid', error: 'method not allowed' }, 405, { Allow: 'GET' })
   }
-  return json(cors, phraseConfigPayload(env), 200, { 'Cache-Control': 'no-store' })
+  const payload = phraseConfigPayload(env)
+  try {
+    const row = await env.DB.prepare('SELECT COALESCE(MAX(id),0) AS n FROM phrase_retract_log').first()
+    payload.retractEpoch = Number(row && row.n) || 0
+  } catch {
+    payload.retractEpoch = 0
+  }
+  return json(cors, payload, 200, { 'Cache-Control': 'no-store' })
 }
