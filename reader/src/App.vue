@@ -168,8 +168,8 @@ function goBack() {
   align-items: center;
   padding: 8px 0;
   padding-bottom: max(8px, env(safe-area-inset-bottom));
-  background: var(--bg-primary, #fff);
-  border-top: 1px solid var(--border-color, #d2d2d7);
+  background: #fff;
+  border-top: 1px solid #999;
   position: sticky;
   bottom: 0;
   z-index: 100;
@@ -180,15 +180,16 @@ function goBack() {
   flex-direction: column;
   align-items: center;
   text-decoration: none;
-  color: var(--text-secondary, #6e6e73);
-  font-size: 11px;
+  color: #666;
+  font-size: 10px;
   gap: 2px;
   padding: 4px 12px;
   transition: color 0.2s;
 }
 
 .tab-item.router-link-active {
-  color: var(--accent-color, #1a73e8);
+  color: #000;
+  font-weight: 600;
 }
 
 .tab-icon {
@@ -196,7 +197,7 @@ function goBack() {
 }
 
 .tab-label {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .update-banner {
