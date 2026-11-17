@@ -1,0 +1,11 @@
+{
+  "base": "http://127.0.0.1:8789",
+  "token_env": "METRICS_TOKEN_TEST",
+  "cases": [
+    {"name":"GET 405","method":"GET","path":"/api/phrase/admin/retract","expect_status":405,"expect_json":{"status":"invalid","error":"method not allowed"},"expect_headers":{"allow":"POST"}},
+    {"name":"no auth 401","method":"POST","path":"/api/phrase/admin/retract","headers":{"content-type":"application/json"},"body":{},"expect_status":401,"expect_json":{"status":"unauthorized","error":"admin token required"},"expect_headers":{"www-authenticate":"Bearer realm=\"phrase-admin\""}},
+    {"name":"wrong token 403","method":"POST","path":"/api/phrase/admin/retract","headers":{"content-type":"application/json","authorization":"Bearer wrong-token"},"body":{},"expect_status":403,"expect_json":{"status":"forbidden","error":"admin token rejected"}},
+    {"name":"random 404","method":"POST","path":"/api/phrase/admin/retract","headers":{"content-type":"application/json","authorization":"Bearer ${TOKEN}"},"body":{"scope":"public","answerHash":"<64hex>","bookId":"probe-book","phrase":"probe-phrase","batch":{"schema":"v2","model":"m","prompt":"p","lexicon":"l1"},"reason":"probe 404"},"expect_status":404,"expect_json":{"status":"not_found"}},
+    {"name":"null metadata 200","method":"POST","path":"/api/phrase/admin/retract","headers":{"content-type":"application/json","authorization":"Bearer ${TOKEN}"},"body":{"scope":"public","answerHash":"<64hex>","bookId":"probe-null","phrase":"probe-null","batch":{"schema":"v2","model":"m","prompt":"p","lexicon":"l1"},"reason":"probe-null 200"},"expect_status":200,"expect_json":{"status":"retracted","answerRank":3,"metadataVerified":false},"pre_sql":"INSERT INTO phrase_cloud_cache (cache_key,rank,created_at,book_id,phrase_hash,schema_ver,model_ver,prompt_ver,lexicon_ver) VALUES ('public:<64hex>',3,<ms>,'probe-null','<64hex>',NULL,NULL,NULL,NULL);","post_checks":["cache_count=0","audit_count=1","retracted_at integer","schema_ver/model_ver/prompt_ver/lexicon_ver null","scope_kind=public","book_id=probe-null","answer_rank=3","operator=metrics-token"]}
+  ]
+}
