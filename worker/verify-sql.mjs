@@ -10,6 +10,7 @@
 
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
+import { buildRetractAudit, RETRACT_LOG_COLUMNS } from './src/phraseAudit.js'
 import { SQL_ALIVE_UPSERT, SQL_TOMB_UPSERT } from './src/sync.js'
 import * as rlMod from './src/ratelimit.js'
 import { takePhraseToken } from './src/phraseRateLimit.js'
@@ -590,5 +591,27 @@ console.log('\n[schema.sql 单独建库（权威源：空库直接建出最终�
     try { fresh.exec(schemaSql); return true } catch { return false }
   })())
 }
+console.log(`
+[phraseAudit — buildRetractAudit]`)
+{
+  const base = {
+    cacheKeyHash: 'a'.repeat(64),
+    scopeKind: 'public',
+    bookId: 'b',
+    phraseHash: 'b'.repeat(64),
+    answerRank: 2,
+    batch: { schema_ver: 'v2', model_ver: 'm', prompt_ver: 'p', lexicon_ver: 'l1' },
+    reason: 'r',
+    operator: 'op',
+    retractedAt: '2026-11-17T00:00:00.000Z',
+  }
+  const ok = buildRetractAudit(base)
+  t('合法 row', ok.ok === true && ok.row.cache_key_hash === base.cacheKeyHash)
+  t('非法 hash', buildRetractAudit({ ...base, cacheKeyHash: 'x' }).ok === false)
+  t('非法 scope', buildRetractAudit({ ...base, scopeKind: 'bad' }).ok === false)
+  t('空 reason', buildRetractAudit({ ...base, reason: '' }).ok === false)
+  t('row 键对齐', ok.ok && Object.keys(ok.row).join(',') === RETRACT_LOG_COLUMNS.filter(c => c !== 'id').join(','))
+}
+
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
