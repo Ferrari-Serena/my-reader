@@ -115,6 +115,46 @@ export default {
  * 端点分发（= 第 4 步 4.8 之前的 fetch 主体，逐字搬出）。
  * 抽成独立函数，好让入口统一计时与记日志；路由逻辑一行未改（只多了一个 /api/metrics 分支）。
  */
+async function handlePhraseAdminRetract(request, env, cors) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ status: 'invalid', error: 'method not allowed' }), {
+      status: 405,
+      headers: { ...cors, 'Content-Type': 'application/json', Allow: 'POST' },
+    })
+  }
+
+  const token = env && env.METRICS_TOKEN ? String(env.METRICS_TOKEN).trim() : ''
+  if (!token) {
+    return new Response('Not found', {
+      status: 404,
+      headers: { ...cors, 'Content-Type': 'text/plain; charset=utf-8' },
+    })
+  }
+
+  const auth = (request.headers.get('Authorization') || '').trim()
+  const match = /^Bearer\s+(.*)$/i.exec(auth)
+  const bearer = match ? match[1].trim() : ''
+  if (!match || !bearer) {
+    return new Response(JSON.stringify({ status: 'unauthorized', error: 'admin token required' }), {
+      status: 401,
+      headers: { ...cors, 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer realm="phrase-admin"' },
+    })
+  }
+
+  if (bearer !== token) {
+    return new Response(JSON.stringify({ status: 'forbidden', error: 'admin token rejected' }), {
+      status: 403,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    })
+  }
+
+  // 本切片不做 DB，直接 501，等 004b 接入
+  return new Response(JSON.stringify({ status: 'invalid', error: 'not implemented' }), {
+    status: 501,
+    headers: { ...cors, 'Content-Type': 'application/json' },
+  })
+}
+
 async function handleRequest(request, env, url) {
     // 0.0 止血：CORS 不再用通配，改为按请求回显自家 Origin（见 cors.js）
     const cors = corsFor(request, env)
@@ -172,6 +212,45 @@ async function handleRequest(request, env, url) {
     // 词组运行时云端终判：/api/phrase/resolve（有模型配置才可用；见 phrase.js）
     const phraseRes = await handlePhraseResolve(request, env)
     if (phraseRes !== null) return phraseRes
+
+    // A1 管理端：POST /api/phrase/admin/retract（精确路径；本切片只做路由与鉴权，DB 在 004b 接）
+    if (url.pathname === '/api/phrase/admin/retract') {
+      const adminHeaders = { ...(cors || {}), 'content-type': 'application/json; charset=utf-8' }
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ status: 'invalid', error: 'method not allowed' }), {
+          status: 405,
+          headers: { ...adminHeaders, allow: 'POST' },
+        })
+      }
+      const adminToken = typeof env.METRICS_TOKEN === 'string' ? env.METRICS_TOKEN.trim() : ''
+      if (!adminToken) {
+        // 未配置管理令牌：按路径不存在处理，避免暴露管理端
+        return new Response('Not found', {
+          status: 404,
+          headers: { ...(cors || {}), 'content-type': 'text/plain; charset=utf-8' },
+        })
+      }
+      const authHeader = request.headers.get('authorization') || ''
+      const bearer = authHeader.match(/^Bearer[ ]+([^ ]*)$/i)
+      const presented = bearer ? bearer[1].trim() : ''
+      if (!presented) {
+        return new Response(JSON.stringify({ status: 'unauthorized', error: 'admin token required' }), {
+          status: 401,
+          headers: { ...adminHeaders, 'www-authenticate': 'Bearer realm="phrase-admin"' },
+        })
+      }
+      if (presented !== adminToken) {
+        return new Response(JSON.stringify({ status: 'forbidden', error: 'admin token rejected' }), {
+          status: 403,
+          headers: adminHeaders,
+        })
+      }
+      // 本切片不接 DB：明确返回未实现，不假装成功
+      return new Response(JSON.stringify({ status: 'invalid', error: 'not implemented' }), {
+        status: 501,
+        headers: adminHeaders,
+      })
+    }
 
     if (url.pathname === '/health') {
       return json(cors, { status: 'ok' })
