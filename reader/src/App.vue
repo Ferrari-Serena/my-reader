@@ -120,9 +120,9 @@ const showBack = computed(() => {
   // 导入页不在 tabbar 白名单里（故意：导入是个要收心的流程），所以也要自己带返回
   // 生成页（第 17 步 D-2）同理：不在 tabbar 里，得自己带一条「← Home」
   // 反馈页（第 13 步块 B）也是：它挂在账号页下面，不在 tabbar 里
-  return ['Reader', 'Register', 'Account', 'Import', 'GenerateAudio', 'Feedback'].includes(route.name)
+  return ['Reader', 'Register', 'Account', 'Import', 'GenerateAudio', 'Feedback', 'Legal'].includes(route.name)
 })
-const backLabel = computed(() => 'Home')
+const backLabel = computed(() => (route.name === 'Legal' ? '我的' : 'Home'))
 
 const currentTitle = computed(() => {
   const titles = {
@@ -135,13 +135,14 @@ const currentTitle = computed(() => {
     Quiz: '测验',
     Register: '注册 / 登录',
     Account: '我的',
-    Feedback: 'Feedback'
+    Legal: '法律与帮助',
+    Feedback: '反馈'
   }
   return titles[route.name] || 'my-reader'
 })
 
 function goBack() {
-  router.push('/books')
+  router.push(route.name === 'Legal' ? '/account' : '/books')
 }
 </script>
 
