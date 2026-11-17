@@ -431,17 +431,20 @@ onMounted(refresh)
 }
 
 .add-book {
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 8px 14px;
-  font-size: 14px;
-  color: var(--text-primary);
-  background: var(--bg-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  min-height: 44px;
+  font-size: 12px;
+  color: #333;
+  background: none;
 }
 
 .add-book:hover {
-  border-color: var(--accent-color);
-  color: var(--accent-color);
+  color: #333;
 }
 
 .shelf-note {
