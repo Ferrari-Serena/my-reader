@@ -496,5 +496,58 @@ console.log('\n[phrase cache TTL — 常量与清理]')
   const r2 = await runPhraseCacheTtl({ DB: one }, 0)
   t('清理：changes<500 提前停', r2.deleted === 3 && r2.batches === 1)
 }
+// ── phraseAdmin：撤回请求校验 / 缓存键 / 短语哈希 ──
+{
+  const admin = await import('./src/phraseAdmin.js')
+  t('RETRACT_PATH 正确', admin.RETRACT_PATH === '/api/phrase/admin/retract')
+  t('phraseAdmin 四个导出齐备',
+    typeof admin.parseRetractRequest === 'function' &&
+    typeof admin.retractCacheKey === 'function' &&
+    typeof admin.phraseHash === 'function' &&
+    typeof admin.RETRACT_PATH === 'string')
+
+  const batch = { schema: 'v1', model: 'm', prompt: 'p', lexicon: 'l' }
+  const answerHash = 'a'.repeat(64)
+
+  const okReq = admin.parseRetractRequest({
+    scope: 'public', answerHash, bookId: 'book-1', phrase: '  你好  ',
+    batch, reason: '  误判  ', dryRun: false,
+  })
+  t('合法请求解析成功', okReq.ok === true)
+  t('phrase/reason 已 trim', okReq.ok && okReq.value.phrase === '你好' && okReq.value.reason === '误判')
+  t('dryRun 默认 false', okReq.ok && okReq.value.dryRun === false)
+
+  const dry = admin.parseRetractRequest({ bookId: 'b', phrase: 'p', batch, reason: 'r', dryRun: true })
+  t('dryRun=true 可省 scope/answerHash', dry.ok === true && dry.value.dryRun === true)
+
+  const badScope = admin.parseRetractRequest({ scope: 'team', answerHash, bookId: 'b', phrase: 'p', batch, reason: 'r' })
+  t('非法 scope 拒绝', badScope.ok === false && typeof badScope.error === 'string')
+  const badScope2 = admin.parseRetractRequest({ scope: 'user:', answerHash, bookId: 'b', phrase: 'p', batch, reason: 'r' })
+  t('空 user id 拒绝', badScope2.ok === false)
+  const userScope = admin.parseRetractRequest({ scope: 'user:abc_1', answerHash, bookId: 'b', phrase: 'p', batch, reason: 'r' })
+  t('合法 user scope 通过', userScope.ok === true && userScope.value.scope === 'user:abc_1')
+
+  const badHash = admin.parseRetractRequest({ scope: 'public', answerHash: 'xyz', bookId: 'b', phrase: 'p', batch, reason: 'r' })
+  t('非法 answerHash 拒绝', badHash.ok === false)
+  const upperHash = admin.parseRetractRequest({ scope: 'public', answerHash: 'A'.repeat(64), bookId: 'b', phrase: 'p', batch, reason: 'r' })
+  t('大写 hex answerHash 拒绝', upperHash.ok === false)
+  const noHash = admin.parseRetractRequest({ scope: 'public', bookId: 'b', phrase: 'p', batch, reason: 'r' })
+  t('非 dryRun 缺 answerHash 拒绝', noHash.ok === false)
+
+  const badBatch = admin.parseRetractRequest({ scope: 'public', answerHash, bookId: 'b', phrase: 'p', batch: { schema: 'v1', model: 'm', prompt: 'p' }, reason: 'r' })
+  t('batch 缺字段拒绝', badBatch.ok === false)
+
+  t('public 缓存键', admin.retractCacheKey('public', answerHash) === 'public:' + answerHash)
+  t('user 缓存键', admin.retractCacheKey('user:abc_1', answerHash) === 'user:abc_1:' + answerHash)
+  t('非法 scope 缓存键为 null', admin.retractCacheKey('team', answerHash) === null)
+  t('非法 hash 缓存键为 null', admin.retractCacheKey('public', 'zz') === null)
+
+  const h1 = await admin.phraseHash('book-1', '你好')
+  const h2 = await admin.phraseHash('book-1', '你好')
+  t('phraseHash 为 64 位小写 hex', typeof h1 === 'string' && /^[0-9a-f]{64}$/.test(h1))
+  t('phraseHash 同输入相等', h1 === h2)
+  const h3 = await admin.phraseHash('book-1', '你好！')
+  t('phraseHash 不同输入不同', h1 !== h3)
+}
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)
