@@ -39,63 +39,71 @@ import { parseRetractRequest, retractCacheKey } from './phraseAdmin.js'
 import { buildRetractAudit } from './phraseAudit.js'
 
 // A1 retract endpoint: validate body, retract cache row, write audit log to D1.
-async function handlePhraseRetract(request, env) {
+async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)))
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function handlePhraseRetract(request, env, cors, operator) {
   let body
   try {
     const text = await request.text()
-    if (text.length > 4096) return json({ status: 'invalid', error: 'body too large' }, 400)
+    if (text.length > 4096) return json(cors, { status: 'invalid', error: 'body too large' }, 400)
     body = JSON.parse(text)
   } catch {
-    return json({ status: 'invalid', error: 'invalid json' }, 400)
+    return json(cors, { status: 'invalid', error: 'invalid json' }, 400)
   }
   const parsed = parseRetractRequest(body)
-  if (!parsed || !parsed.ok) return json({ status: 'invalid', error: (parsed && parsed.error) || 'invalid request' }, 400)
-  const req = parsed.value || parsed
-  if (req.dryRun === true) return json({ status: 'invalid', error: 'dryRun not implemented' }, 400)
+  if (!parsed || !parsed.ok) return json(cors, { status: 'invalid', error: (parsed && parsed.error) || 'invalid request' }, 400)
+  const req = parsed.value
+  if (req.dryRun === true) return json(cors, { status: 'invalid', error: 'dryRun not implemented' }, 400)
 
-  const scope = req.scope
-  const answerHash = req.answerHash
-  const reason = req.reason
-  const operator = req.operator
-  const cacheKey = retractCacheKey(scope, answerHash)
-  const cacheKeyHash = cacheKey
-  const db = env.PHRASE_DB
+  const cacheKey = retractCacheKey(req.scope, req.answerHash)
+  if (!cacheKey) return json(cors, { status: 'invalid', error: 'invalid scope or answerHash' }, 400)
+  const cacheKeyHash = await sha256Hex(cacheKey)
+  const scopeKind = req.scope === 'public' ? 'public' : 'user'
 
   try {
-    const row = await db
+    const row = await env.DB
       .prepare('SELECT rank,book_id,phrase_hash,schema_ver,model_ver,prompt_ver,lexicon_ver FROM phrase_cloud_cache WHERE cache_key=?')
       .bind(cacheKey)
       .first()
-    if (!row) return json({ status: 'not_found', cacheKeyHash }, 404)
+    if (!row) return json(cors, { status: 'not_found', cacheKeyHash }, 404)
 
-    const del = await db.prepare('DELETE FROM phrase_cloud_cache WHERE cache_key=?').bind(cacheKey).run()
-    if (!del || del.changes !== 1) return json({ status: 'db_error' }, 500)
+    const del = await env.DB.prepare('DELETE FROM phrase_cloud_cache WHERE cache_key=?').bind(cacheKey).run()
+    const changes = Number((del && del.meta && del.meta.changes) || (del && del.changes) || 0)
+    if (changes !== 1) return json(cors, { status: 'db_error' }, 500)
 
-    const audit = buildRetractAudit({ row, scope, reason, operator })
     const retractedAt = Date.now()
-    await db
+    const audit = buildRetractAudit({
+      cacheKeyHash,
+      scopeKind,
+      bookId: row.book_id || req.bookId,
+      phraseHash: row.phrase_hash || await sha256Hex(req.bookId + '\n' + req.phrase),
+      answerRank: row.rank,
+      batch: {
+        schema_ver: row.schema_ver,
+        model_ver: row.model_ver,
+        prompt_ver: row.prompt_ver,
+        lexicon_ver: row.lexicon_ver,
+      },
+      reason: req.reason,
+      operator,
+      retractedAt,
+    })
+    if (!audit.ok) return json(cors, { status: 'db_error' }, 500)
+    const a = audit.row
+    await env.DB
       .prepare('INSERT INTO phrase_retract_log (retracted_at,cache_key_hash,scope_kind,book_id,phrase_hash,answer_rank,schema_ver,model_ver,prompt_ver,lexicon_ver,reason,operator) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-      .bind(
-        retractedAt,
-        cacheKeyHash,
-        audit.scope_kind,
-        row.book_id,
-        row.phrase_hash,
-        row.rank,
-        row.schema_ver,
-        row.model_ver,
-        row.prompt_ver,
-        row.lexicon_ver,
-        reason,
-        operator,
-      )
+      .bind(a.retracted_at, a.cache_key_hash, a.scope_kind, a.book_id, a.phrase_hash, a.answer_rank, a.schema_ver, a.model_ver, a.prompt_ver, a.lexicon_ver, a.reason, a.operator)
       .run()
 
-    return json({ status: 'retracted', cacheKeyHash, answerRank: row.rank, retractedAt, metadataVerified: false }, 200)
+    return json(cors, { status: 'retracted', cacheKeyHash, answerRank: row.rank, retractedAt: new Date(retractedAt).toISOString(), metadataVerified: false }, 200)
   } catch {
-    return json({ status: 'db_error' }, 500)
+    return json(cors, { status: 'db_error' }, 500)
   }
 }
+
 import { parseRange } from './range.js'
 import { audioRequestPlan } from './audioalias.js'
 import { corsFor } from './cors.js'
@@ -306,11 +314,8 @@ async function handleRequest(request, env, url) {
           headers: adminHeaders,
         })
       }
-      // 本切片不接 DB：明确返回未实现，不假装成功
-      return new Response(JSON.stringify({ status: 'invalid', error: 'not implemented' }), {
-        status: 501,
-        headers: adminHeaders,
-      })
+      const operator = (request.headers.get('x-operator') || 'metrics-token').trim().slice(0, 64) || 'metrics-token'
+      return await handlePhraseRetract(request, env, cors, operator)
     }
 
     if (url.pathname === '/health') {
