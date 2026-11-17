@@ -8,7 +8,6 @@
 
     <!-- empty -->
     <div v-else-if="phase === 'empty'" class="placeholder-view">
-      <div class="placeholder-icon">🔄</div>
       <h2>暂无需要复习的卡片</h2>
       <p>阅读时收藏生词，或在测验中答错词组，就能开始复习。</p>
       <router-link to="/books" class="action-btn primary">去书架</router-link>
@@ -16,7 +15,6 @@
 
     <!-- nothing-due -->
     <div v-else-if="phase === 'nothing-due'" class="placeholder-view">
-      <div class="placeholder-icon">⏳</div>
       <h2>当前没有待复习的卡片</h2>
       <p v-if="nextDue">下次复习：{{ nextDueStr }}</p>
       <p v-else>还没有安排复习的卡片 —— 阅读时收藏生词，或在测验中答错词组即可开始。</p>
@@ -30,14 +28,13 @@
 
     <!-- reviewing -->
     <div v-else-if="phase === 'reviewing'" class="review-session">
-      <!-- progress -->
-      <div class="session-progress">
-        <span class="progress-text">{{ currentIdx + 1 }} / {{ sessionCards.length }}</span>
-        <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: ((currentIdx + 1) / sessionCards.length * 100) + '%' }"></div>
-        </div>
-        <span class="progress-due">待复习：{{ freshDone > 0 ? freshDone + ' 张新卡，' : '' }}{{ dueReviewCount }} 张</span>
+      <!-- 今日进度 -->
+      <div class="srow">
+        <span>今日已复习 <b>{{ todayCount }}</b> 张</span>
+        <router-link class="lnk" to="/books">退出</router-link>
       </div>
+      <div class="bar"><i :style="{ width: ((currentIdx + 1) / sessionCards.length * 100) + '%' }"></i></div>
+      <p class="smeta">本次队列 {{ sessionCards.length }} 张 · 第 {{ currentIdx + 1 }} 张</p>
 
       <!-- card -->
       <div class="flash-card-container" @click="flipIfFront">
@@ -48,8 +45,8 @@
             <p v-if="currentItem?.content?.phonetic" class="flash-phonetic">
               {{ currentItem.content.phonetic }}
             </p>
-            <button v-if="!isPhraseCard" class="speak-btn" @click.stop="speakWord" title="朗读">🔊</button>
-            <p class="flip-hint">点卡片翻面</p>
+            <button v-if="!isPhraseCard" class="speak-btn" @click.stop="speakWord" title="朗读">朗读</button>
+            <p class="flip-hint">点击显示释义</p>
           </div>
 
           <!-- back -->
@@ -93,25 +90,31 @@
               <button class="rating-btn again" @click.stop="rateCard(1)" title="键盘：1">重来</button>
               <button class="rating-btn hard" @click.stop="rateCard(2)" title="键盘：2">困难</button>
               <button class="rating-btn good" @click.stop="rateCard(3)" title="键盘：3">良好</button>
-              <button class="rating-btn easy" @click.stop="rateCard(4)" title="键盘：4">简单</button>
+              <button class="rating-btn easy" @click.stop="rateCard(4)" title="键盘：4">容易</button>
             </div>
           </div>
         </div>
       </div>
 
-      <p class="kb-hint">空格 = 翻面 · 1–4 = 评级</p>
+      <p class="kb-hint">空格 = 显示释义 · 1–4 = 评级</p>
+
+      <div class="qinfo">
+        <div class="qrow"><span>本次队列</span><b>{{ sessionCards.length }} 张</b></div>
+        <div class="qrow"><span>预计用时</span><b>{{ estimate }}</b></div>
+        <div class="qrow"><span>来源</span><b>{{ sourceText }}</b></div>
+        <div class="qnote">复习只覆盖收藏过的词；答错的卡片会缩短下次间隔。</div>
+      </div>
     </div>
 
     <!-- complete -->
     <div v-else-if="phase === 'complete'" class="placeholder-view">
-      <div class="placeholder-icon">🎉</div>
       <h2>本轮复习完成</h2>
-      <p>已复习 {{ sessionReviewed }} 张卡片。</p>
+      <p>本轮已复习 {{ sessionReviewed }} 张 · 今日共 {{ todayCount }} 张。</p>
       <button class="action-btn primary" @click="resetToSetup">完成</button>
     </div>
 
     <p v-if="phase === 'empty' || phase === 'nothing-due'" class="fsrs-note">
-      卡片按 FSRS 间隔重复安排复习：你选的「重来／困难／良好／简单」决定下次出现的时间。
+      卡片按 FSRS 间隔重复安排复习：你选的「重来／困难／良好／容易」决定下次出现的时间。
     </p>
   </div>
 </template>
@@ -132,6 +135,7 @@ import {
   phraseCardId,
   REF_KIND_PHRASE
 } from '../review.js'
+import { dailyReviewedCount, estimateText, queueSourceText } from '../utils/reviewView.js'
 
 const tts = useTTS()
 const vocab = useVocabulary()
@@ -240,6 +244,11 @@ function startSession(mode) {
 
 const currentItem = computed(() => sessionCards.value[currentIdx.value] || null)
 const isPhraseCard = computed(() => currentItem.value?.refKind === REF_KIND_PHRASE)
+
+// 今日进度／队列估算／来源（纯展示，数字都从现有数据算，不编每日目标）
+const todayCount = computed(() => dailyReviewedCount(reviewItems.value))
+const estimate = computed(() => estimateText(sessionCards.value.length))
+const sourceText = computed(() => queueSourceText(reviewItems.value))
 
 const nextDue = computed(() => nextDueFromItems(reviewItems.value))
 const nextDueStr = computed(() => {
@@ -673,4 +682,140 @@ onUnmounted(() => {
 @media (min-width: 768px) {
   .flash-card-container { max-width: 440px; height: 400px; }
 }
+
+/* ── UI-05 · 线框 v0.2 灰阶（覆盖上方旧配色；后写同权重即生效）────────── */
+.flashcards-view {
+  max-width: 390px;
+  padding: 12px 14px 24px;
+  color: #333;
+  font-size: 13px;
+  line-height: 1.55;
+  background: #fff;
+}
+.placeholder-view { padding: 56px 12px 24px; color: #666; }
+.placeholder-view h2 { font-size: 18px; color: #000; font-weight: 600; }
+.placeholder-view p { font-size: 12px; color: #666; }
+.fsrs-note {
+  max-width: 390px;
+  margin: 18px auto 0;
+  padding: 9px 10px;
+  border: 1px solid #e5e5e5;
+  border-radius: 3px;
+  background: #fff;
+  color: #666;
+  font-size: 11px;
+}
+.spinner { border-color: #e5e5e5; border-top-color: #000; }
+.action-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid #999;
+  border-radius: 3px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  line-height: 42px;
+}
+.action-btn.primary { background: #000; border-color: #000; color: #fff; }
+
+/* 今日进度 */
+.srow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: #333;
+}
+.srow b { font-size: 12px; color: #000; }
+.bar {
+  height: 4px;
+  margin: 6px 0 4px;
+  background: #e5e5e5;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bar i { display: block; height: 100%; background: #333; }
+.smeta { margin: 0 0 10px; font-size: 10px; color: #666; }
+.lnk {
+  font-size: 11px;
+  color: #333;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* 卡片 */
+.flash-card-container { height: 320px; max-width: 362px; }
+.flash-card-front,
+.flash-card-back { border-radius: 3px; }
+.flash-card-front { border: 1px solid #999; background: #fff; }
+.flash-card-back { border: 1px solid #999; background: #fff; }
+.flash-word { font-size: 26px; color: #000; font-weight: 600; }
+.flash-phonetic { font-size: 12px; color: #666; }
+.speak-btn {
+  width: 52px;
+  height: 44px;
+  border-radius: 3px;
+  border: 1px solid #999;
+  background: #f5f5f5;
+  color: #333;
+  font-size: 11px;
+}
+.flip-hint { font-size: 11px; color: #666; }
+.back-word { font-size: 18px; color: #000; font-weight: 600; }
+.def-list li { font-size: 13px; color: #333; }
+
+/* 拼写 */
+.spelling-label { font-size: 11px; color: #666; }
+.spelling-input {
+  min-height: 44px;
+  border: 1px solid #999;
+  border-radius: 3px;
+  font-size: 13px;
+  color: #333;
+}
+.spelling-input.correct { border-color: #000; border-width: 2px; }
+.spelling-input.wrong { border-color: #000; border-style: dashed; }
+.spelling-feedback { font-size: 11px; }
+.correct-fb { color: #000; font-weight: 600; }
+.wrong-fb { color: #000; text-decoration: underline; }
+.close-fb { color: #333; }
+.check-btn {
+  min-height: 32px;
+  border: 1px solid #333;
+  border-radius: 3px;
+  color: #333;
+  font-size: 11px;
+}
+
+/* 四档评分（灰阶） */
+.rating-row { gap: 6px; }
+.rating-btn {
+  min-height: 44px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.rating-btn.again { background: #000; color: #fff; }
+.rating-btn.hard { background: #333; color: #fff; border-color: #333; }
+.rating-btn.good { background: #666; color: #fff; border-color: #666; }
+.rating-btn.easy { background: #fff; color: #000; border-color: #000; }
+.kb-hint { font-size: 10px; color: #666; margin-top: 10px; }
+
+/* 队列信息 */
+.qinfo {
+  margin-top: 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 3px;
+  padding: 8px 10px;
+}
+.qrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: #333;
+}
+.qrow b { font-size: 11px; color: #000; font-weight: 600; }
+.qnote { margin-top: 4px; font-size: 10px; color: #666; line-height: 1.6; }
 </style>
