@@ -40,7 +40,10 @@
           <div class="bar"><i :style="{ width: quota.pct + '%' }"></i></div>
         </template>
         <div v-else class="krow"><span>今日逐章生成</span><span>{{ quotaUnknownText }}</span></div>
-        <div class="krow"><span>整本音频</span><span>{{ campaignLine }}</span></div>
+        <div class="krow"><span>整本音频</span>
+          <router-link v-if="firstBookId" class="lnk" :to="'/generate/' + firstBookId">{{ campaignLine }}</router-link>
+          <span v-else>{{ campaignLine }}</span>
+        </div>
         <div class="sub">按 UTC 天重置；配额内音频保留。清空音频不退额度。</div>
       </div>
 
@@ -256,7 +259,7 @@ const campaignLine = computed(() => {
     const c = s.data && s.data.campaign
     if (c) return campaignStatusLabel(c)
   }
-  return '按整本生成时显示'
+  return '整本生成时显示额度'
 })
 const quotaUnknownText = computed(() => {
   if (dataState.value === 'no-books') return '导入一本书后可查看'
@@ -603,4 +606,6 @@ function forgetPending() {
 .actions { display: flex; gap: 8px; }
 .actions .btn { margin-top: 0; }
 .switch { margin: 10px 0 0; font-size: 11px; color: #666; }
+.lnk { color: var(--accent, #2f6fed); text-decoration: none; }
+.lnk:hover { text-decoration: underline; }
 </style>
