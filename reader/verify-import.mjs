@@ -28,6 +28,7 @@ const { groupLines, linesToParagraphs, pagesToChapters, parsePdf } = await impor
 const { visOf, DEFAULT_RULES, verdictOf, mergePage, ocrParagraphsOf, auditDropped } = await import('./src/import/ocrMerge.js')
 const { bytesToBase64, coverDataUrl, isCoverDataUrl, COVER_MAX_BYTES, COVER_MAX_DATA_URL } = await import('./src/utils/bookCover.js')
 const { importBook } = await import('./src/import/index.js')
+const { runParseInWorker, hasWorkerSupport, WorkerInfraError } = await import('./src/import/workerClient.js')
 
 let pass = 0, fail = 0
 function t(name, cond) {
@@ -558,6 +559,112 @@ console.log('\n[index.js — importBook 端到端]')
   const oversize = new Uint8Array(MAX_FILE_BYTES + 1)
   tEq('超限 -> FILE_TOO_BIG', await codeOf(() => importBook({ name: 'big.txt', bytes: oversize })), 'FILE_TOO_BIG')
   tEq('没有字节 -> UNSUPPORTED_FORMAT', await codeOf(() => importBook({ name: 'x.pdf' })), 'UNSUPPORTED_FORMAT')
+}
+
+console.log('\n[workerClient.js — Worker 协议 / 路由 / 取消（RK-15）]')
+{
+  // 假 Worker：只实现客户端用到的四条（postMessage / onmessage / terminate / 收到 transfer），
+  // 解析仍走真 parseTxt / parseEpub —— 验的是协议与路由，不依赖真浏览器。
+  function fakeWorker(handler) {
+    const w = {
+      terminateCalls: 0,
+      posts: [],
+      terminate() { w.terminateCalls++ },
+      postMessage(msg, transfer) {
+        w.posts.push({ msg, transfer })
+        Promise.resolve().then(() => handler(w, msg))
+      },
+    }
+    return w
+  }
+  function parseInFake(w, msg) {
+    try {
+      const bytes = new Uint8Array(msg.bytes)
+      const parsed = msg.format === 'epub' ? parseEpub(bytes, { title: msg.title }) : parseTxt(bytes, { title: msg.title })
+      w.onmessage({ data: { ok: true, parsed } })
+    } catch (e) {
+      w.onmessage({ data: { ok: false, error: { code: e.code, message: e.message } } })
+    }
+  }
+
+  const txtBytes = read('sample.txt')
+  const txtLen = txtBytes.byteLength
+  const syncTxt = await importBook({ name: 'sample.txt', bytes: txtBytes })
+
+  // ④ 无 Worker（Node）：原同步路径
+  tEq('Node 无 Worker 全局（同步回退前提）', hasWorkerSupport(), false)
+  const syncAgain = await importBook({ name: 'sample.txt', bytes: txtBytes })
+  tEq('无 workerFactory -> 同步路径结果不变', [syncAgain.bookId, syncAgain.chapterCount], [syncTxt.bookId, syncTxt.chapterCount])
+
+  // ① txt 被路由进 worker
+  const txtWorkers = []
+  const viaTxt = await importBook({ name: 'sample.txt', bytes: txtBytes }, {
+    workerFactory: () => { const w = fakeWorker(parseInFake); txtWorkers.push(w); return w },
+  })
+  tEq('txt 构造 worker 一次', txtWorkers.length, 1)
+  tEq('txt 消息 format=txt', txtWorkers[0].posts[0].msg.format, 'txt')
+  t('txt 交 worker 的是 ArrayBuffer 且列入 transfer', txtWorkers[0].posts[0].msg.bytes instanceof ArrayBuffer && txtWorkers[0].posts[0].transfer.length === 1)
+  tEq('txt worker 路径解析成功（两章）', viaTxt.chapterCount, 2)
+  tEq('成功路径也 terminate（一次性 worker）', txtWorkers[0].terminateCalls, 1)
+
+  // ① epub 被路由进 worker
+  const epubWorkers = []
+  const viaEpub = await importBook({ name: 'sample.epub', bytes: read('sample.epub') }, {
+    workerFactory: () => { const w = fakeWorker(parseInFake); epubWorkers.push(w); return w },
+  })
+  tEq('epub 构造 worker 一次', epubWorkers.length, 1)
+  tEq('epub 消息 format=epub', epubWorkers[0].posts[0].msg.format, 'epub')
+  tEq('epub worker 路径解析成功（两章）', viaEpub.chapterCount, 2)
+
+  // ② worker 路径与同步路径逐项一致（bookId / 章数 / 段数 / 首段）
+  tEq('bookId 与同步路径一致', viaTxt.bookId, syncTxt.bookId)
+  tEq('chapterCount/paragraphCount 与同步路径一致',
+    [viaTxt.chapterCount, viaTxt.paragraphCount], [syncTxt.chapterCount, syncTxt.paragraphCount])
+  tEq('首段文本与同步路径一致', viaTxt.chapters[0].paragraphs[0].text, syncTxt.chapters[0].paragraphs[0].text)
+  tEq('传副本不 detach 原字节', txtBytes.byteLength, txtLen)
+  t('原字节仍可再次解析（未被 transfer 走）', (await importBook({ name: 'sample.txt', bytes: txtBytes })).bookId === syncTxt.bookId)
+
+  // ③ abort -> terminate + CANCELLED
+  const hanging = fakeWorker(() => { /* 永不回消息 */ })
+  const created = []
+  const ctrl = new AbortController()
+  const pending = importBook({ name: 'sample.txt', bytes: txtBytes }, {
+    signal: ctrl.signal,
+    workerFactory: () => { created.push(hanging); return hanging },
+  })
+  while (!created.length) await new Promise((r) => setTimeout(r, 1))
+  ctrl.abort()
+  tEq('abort -> promise 拒绝为 CANCELLED', await codeOf(() => pending), 'CANCELLED')
+  tEq('abort -> worker.terminate 恰好一次', hanging.terminateCalls, 1)
+
+  // ⑤ worker 返回 ok:false -> 抛对应 ImportError，且不回退（回退会解析成功而吞掉错误）
+  const failing = fakeWorker((w) => w.onmessage({ data: { ok: false, error: { code: 'ENCODING_UNKNOWN', message: 'decode failed' } } }))
+  let caught = null
+  try { await importBook({ name: 'sample.txt', bytes: txtBytes }, { workerFactory: () => failing }) } catch (e) { caught = e }
+  t('worker ok:false -> ImportError', caught instanceof ImportError)
+  tEq('错误码原样透传', caught && caught.code, 'ENCODING_UNKNOWN')
+  tEq('hint 来自既有错误码表（未新增文案）', caught && caught.hint, IMPORT_ERRORS.ENCODING_UNKNOWN.hint)
+  tEq('解析错误不触发回退（worker 只被问一次）', failing.posts.length, 1)
+
+  // 附加：基础设施失败（构造炸 / onerror）-> 回退主线程一次且结果一致
+  const infra = await (async () => {
+    try {
+      await runParseInWorker({ format: 'txt', bytes: new Uint8Array([1]), workerFactory: () => { throw new Error('x') } })
+      return null
+    } catch (e) { return e }
+  })()
+  t('工厂抛错 -> WorkerInfraError 且带可回退标记', infra instanceof WorkerInfraError && infra.workerInfraFailure === true)
+
+  const fbConstruct = await importBook({ name: 'sample.txt', bytes: txtBytes }, {
+    workerFactory: () => { throw new Error('no worker here') },
+  })
+  tEq('构造失败 -> 回退同步且结果一致',
+    [fbConstruct.bookId, fbConstruct.chapterCount], [syncTxt.bookId, syncTxt.chapterCount])
+
+  const brokenWorker = fakeWorker((w) => w.onerror({ type: 'error', message: 'script load failed' }))
+  const fbOnError = await importBook({ name: 'sample.txt', bytes: txtBytes }, { workerFactory: () => brokenWorker })
+  tEq('worker onerror -> 回退同步且结果一致',
+    [fbOnError.bookId, fbOnError.chapterCount], [syncTxt.bookId, syncTxt.chapterCount])
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
