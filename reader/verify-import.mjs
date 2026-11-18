@@ -604,6 +604,7 @@ console.log('\n[workerClient.js — Worker 协议 / 路由 / 取消（RK-15）]'
   tEq('txt 构造 worker 一次', txtWorkers.length, 1)
   tEq('txt 消息 format=txt', txtWorkers[0].posts[0].msg.format, 'txt')
   t('txt 交 worker 的是 ArrayBuffer 且列入 transfer', txtWorkers[0].posts[0].msg.bytes instanceof ArrayBuffer && txtWorkers[0].posts[0].transfer.length === 1)
+  t('txt 交 worker 的是副本，不是原 buffer', txtWorkers[0].posts[0].msg.bytes !== txtBytes.buffer)
   tEq('txt worker 路径解析成功（两章）', viaTxt.chapterCount, 2)
   tEq('成功路径也 terminate（一次性 worker）', txtWorkers[0].terminateCalls, 1)
 
@@ -665,6 +666,32 @@ console.log('\n[workerClient.js — Worker 协议 / 路由 / 取消（RK-15）]'
   const fbOnError = await importBook({ name: 'sample.txt', bytes: txtBytes }, { workerFactory: () => brokenWorker })
   tEq('worker onerror -> 回退同步且结果一致',
     [fbOnError.bookId, fbOnError.chapterCount], [syncTxt.bookId, syncTxt.chapterCount])
+
+  // 附加：ok:true 但缺 parsed -> 消息形状坏，按基础设施失败回退同步一次
+  const missingParsed = fakeWorker((w) => w.onmessage({ data: { ok: true } }))
+  const fbMissingParsed = await importBook({ name: 'sample.txt', bytes: txtBytes }, { workerFactory: () => missingParsed })
+  tEq('ok:true 缺 parsed -> 回退同步且结果一致',
+    [fbMissingParsed.bookId, fbMissingParsed.chapterCount], [syncTxt.bookId, syncTxt.chapterCount])
+  tEq('ok:true 缺 parsed -> worker 只投递一次（回退不重问）', missingParsed.posts.length, 1)
+
+  // 附加：postMessage 抛错（如 CSP 拦 worker）-> 基础设施失败，回退同步一次
+  let throwPosts = 0
+  const throwingWorker = {
+    terminateCalls: 0,
+    terminate() { throwingWorker.terminateCalls++ },
+    postMessage() { throwPosts++; throw new Error('postMessage blocked') },
+  }
+  const fbThrow = await importBook({ name: 'sample.txt', bytes: txtBytes }, { workerFactory: () => throwingWorker })
+  tEq('postMessage 抛错 -> 回退同步且结果一致',
+    [fbThrow.bookId, fbThrow.chapterCount], [syncTxt.bookId, syncTxt.chapterCount])
+  tEq('postMessage 抛错 -> 只投递一次即回退', throwPosts, 1)
+
+  // 附加：onmessageerror（反序列化失败）-> 基础设施失败，回退同步一次
+  const msgErrWorker = fakeWorker((w) => w.onmessageerror())
+  const fbMsgErr = await importBook({ name: 'sample.txt', bytes: txtBytes }, { workerFactory: () => msgErrWorker })
+  tEq('onmessageerror -> 回退同步且结果一致',
+    [fbMsgErr.bookId, fbMsgErr.chapterCount], [syncTxt.bookId, syncTxt.chapterCount])
+  tEq('onmessageerror -> worker 只投递一次', msgErrWorker.posts.length, 1)
 }
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)

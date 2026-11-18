@@ -235,8 +235,8 @@ async function start() {
   progress.value = null
   step.value = IMPORT_STEP.READING
   try {
-    // 先把「正在处理」画出来再干活：TXT / EPUB 的解析是一次同步解码，一进去主线程就被占住，
-    // 之前没画出来的东西就再也画不出来了（PDF 走 pdfjs，逐页 await，中途能真更新进度）。
+    // 先把「正在处理」画出来再干活：TXT / EPUB 现在走 Web Worker（import/workerClient.js），
+    // Worker 不可用时回退主线程同步解析；PDF 仍走 pdfjs，逐页 await，中途能真更新进度。
     await new Promise((resolve) => setTimeout(resolve, 0))
     step.value = IMPORT_STEP.PARSING
 

@@ -108,8 +108,16 @@ export function runParseInWorker({ format, bytes, title = '', signal, workerFact
         failInfra('malformed worker response')
         return
       }
-      if (data.ok) finish(resolve, data.parsed)
-      else finish(reject, importErrorFromWorker(data.error))
+      if (data.ok === true) {
+        // ok:true 必须带对象形式的 parsed；缺/非对象说明消息坏了，按基础设施失败回退主线程
+        if (!data.parsed || typeof data.parsed !== 'object') {
+          failInfra('malformed worker response: missing parsed')
+          return
+        }
+        finish(resolve, data.parsed)
+      } else {
+        finish(reject, importErrorFromWorker(data.error))
+      }
     }
     worker.onerror = (event) => {
       failInfra((event && (event.message || event.type)) || 'worker error')
