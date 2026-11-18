@@ -29,6 +29,14 @@
         <div class="check-row"><span>DRM</span><span>导入时校验</span></div>
       </div>
 
+      <div class="heavy-warn" v-if="file && !preflightError && heavy">
+        <p class="warn">文件较大（≥50 MB），解析时可能卡顿或页面无响应；建议拆分或换一份更小的文件。</p>
+        <label class="consent">
+          <input type="checkbox" v-model="heavyConfirmed" :disabled="busy" />
+          <span>我了解，仍要导入</span>
+        </label>
+      </div>
+
       <p class="error" v-if="preflightError">{{ preflightError.message }}</p>
       <p class="hint" v-if="preflightError">{{ preflightError.hint }}</p>
 
@@ -120,6 +128,7 @@ const copy = computed(() => importCopy(!!auth.user.value))
 
 const fileInput = ref(null)
 const consent = ref(false)
+const heavyConfirmed = ref(false)
 const file = ref(null)
 const preflightError = ref(null)
 const step = ref(IMPORT_STEP.IDLE)
@@ -138,7 +147,13 @@ const sizeText = computed(() => formatBytes(file.value && file.value.size))
 const heavy = computed(() => isHeavy(file.value && file.value.size))
 const titleGuess = computed(() => stripExt(file.value && file.value.name))
 const startable = computed(() =>
-  canStart({ consent: consent.value, file: file.value, busy: busy.value }) && !preflightError.value)
+  canStart({
+    consent: consent.value,
+    file: file.value,
+    busy: busy.value,
+    heavy: heavy.value,
+    heavyConfirmed: heavyConfirmed.value
+  }) && !preflightError.value)
 
 const stepIndex = computed(() => {
   if (step.value === IMPORT_STEP.DONE) return 3
@@ -183,12 +198,14 @@ function resetAll() {
   file.value = null
   preflightError.value = null
   consent.value = false
+  heavyConfirmed.value = false
 }
 
 function removeFile() {
   file.value = null
   preflightError.value = null
   consent.value = false
+  heavyConfirmed.value = false
   resetOutcome()
 }
 
@@ -199,6 +216,7 @@ function onPicked(event) {
   if (!picked) return
   resetOutcome()
   file.value = picked
+  heavyConfirmed.value = false
   try {
     preflightFile(picked)
     preflightError.value = null
@@ -365,6 +383,16 @@ function cancel() {
   color: var(--rating-hard, #ff9500);
   font-size: 13px;
 }
+
+.heavy-warn {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--rating-hard, #ff9500);
+  border-radius: 8px;
+}
+
+.heavy-warn .warn { margin: 0 0 8px; }
+.heavy-warn .consent { margin-bottom: 0; }
 
 .error {
   margin: 8px 0 0;

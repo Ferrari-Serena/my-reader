@@ -145,6 +145,10 @@ console.log('\n[importFlow — 门与提示]')
   t('没选文件 -> 不能开', F.canStart({ consent: true, file: null, busy: false }) === false)
   t('正在忙 -> 不能开', F.canStart({ consent: true, file, busy: true }) === false)
   t('空参 -> 不能开', F.canStart() === false)
+  const heavyFile = { name: 'big.pdf', size: 60 * MB }
+  t('大文件没勾「我了解」-> 不能开', F.canStart({ consent: true, file: heavyFile, busy: false, heavy: true }) === false)
+  t('大文件勾了「我了解」-> 能开', F.canStart({ consent: true, file: heavyFile, busy: false, heavy: true, heavyConfirmed: true }) === true)
+  t('非大文件不用确认 -> 能开', F.canStart({ consent: true, file, busy: false, heavy: false }) === true)
 
   const already = F.alreadyOnShelfText()
   tEq('已在本机：码固定', already.code, 'ALREADY_ON_SHELF')

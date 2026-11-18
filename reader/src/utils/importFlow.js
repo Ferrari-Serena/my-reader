@@ -161,9 +161,11 @@ export function recordFromBook(book) {
   }
 }
 
-/** 「开始导入」能不能点：勾了版权、选了文件、且没在忙 */
-export function canStart({ consent, file, busy } = {}) {
-  return !!consent && !!file && !busy
+/** 「开始导入」能不能点：勾了版权、选了文件、没在忙；大文件还得先勾「我了解」 */
+export function canStart({ consent, file, busy, heavy, heavyConfirmed } = {}) {
+  if (!consent || !file || busy) return false
+  if (heavy && !heavyConfirmed) return false
+  return true
 }
 
 /**
