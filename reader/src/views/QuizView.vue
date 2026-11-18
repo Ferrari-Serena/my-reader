@@ -131,6 +131,7 @@
       <div class="result-score">
         <span class="score-big">{{ correctCount }}/{{ questions.length }}</span>
         <span class="score-pct">{{ Math.round(correctCount / questions.length * 100) }}%</span>
+        <span class="score-split">正确 {{ correctCount }} · 错误 {{ wrongCount }}</span>
       </div>
       <div class="result-bar">
         <div class="bar-correct" :style="{ width: (correctCount / questions.length * 100) + '%' }"></div>

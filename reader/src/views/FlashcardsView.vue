@@ -110,7 +110,8 @@
     <div v-else-if="phase === 'complete'" class="placeholder-view">
       <h2>本轮复习完成</h2>
       <p>本轮已复习 {{ sessionReviewed }} 张 · 今日共 {{ todayCount }} 张。</p>
-      <button class="action-btn primary" @click="resetToSetup">完成</button>
+      <button v-if="canReviewAgain" class="action-btn primary" @click="resetToSetup">再复习一轮</button>
+      <button v-else class="action-btn primary" @click="resetToSetup">完成</button>
     </div>
 
     <p v-if="phase === 'empty' || phase === 'nothing-due'" class="fsrs-note">
@@ -181,6 +182,10 @@ const reviewItems = computed(() => {
   localRecordRev.value
   sync.recordRevision.value
   return collectReviewItems(vocab.words.value, recordStore.loadRecordsMap(), phraseEntries.value)
+})
+
+const canReviewAgain = computed(() => {
+  return buildQueueFromItems(reviewItems.value, { newLimit: 20 }).due.length > 0
 })
 
 function resetToSetup() {

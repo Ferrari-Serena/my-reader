@@ -4,7 +4,7 @@
          用户点了才换，免得读到一半整页重载丢进度。 -->
     <div class="update-banner" v-if="swUpdateReady">
       <span class="update-text">{{ SW_UPDATE_MSG }}</span>
-      <button class="update-btn" @click="applySwUpdate">{{ SW_UPDATE_ACTION }}</button>
+      <button type="button" class="update-btn" @click="applySwUpdate">{{ SW_UPDATE_ACTION }}</button>
     </div>
     <!-- 第 14 步 块 C：明确离线时的一行「手感」。第 4 步已经保证改动落在本机、联网即补推，
          缺的只是让用户看得见（不然断网记了生词，用户会以为丢了）。 -->
@@ -13,7 +13,7 @@
       <span class="offline-text muted" v-if="offlinePendingLine">{{ offlinePendingLine }}</span>
     </div>
     <header class="app-header" v-if="showHeader">
-      <button class="back-btn" v-if="showBack" @click="goBack">
+      <button type="button" class="back-btn" v-if="showBack" @click="goBack">
         ← {{ backLabel }}
       </button>
       <h1 class="app-title">{{ currentTitle }}</h1>
