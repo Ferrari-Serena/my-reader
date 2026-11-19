@@ -16,7 +16,7 @@ import * as OFF from './src/utils/offline.js'
 import viteConfig, {
   mrSwPrecache, resolveBuildId, BUILD_ID_RE, SOURCE_ALLOW, buildSourceAllow,
   allowedValues, findVersionShapedStrings, scanVersionStrings, assertNoUnregisteredVersions,
-  judgeWorkerPayload, assertVersionConsistency,
+  judgeWorkerPayload, assertVersionConsistency, assertSwTemplateAnchors,
 } from './vite.config.js'
 import { WORKER_VERSION, WORKER_SERVICE, versionPayload } from '../worker/src/version.js'
 
@@ -224,6 +224,65 @@ const startCtx = { error(m) { throw new Error(m) } }
 t('构建期扫描：干净模板通过', mrSwPrecache({ template: swSrc, buildId: TEST_BUILD_ID }).buildStart.call(startCtx) === undefined)
 const startErr = mustThrow(() => mrSwPrecache({ template: swSrc + "\nconst LEAK='2025.01.01.9'", buildId: TEST_BUILD_ID }).buildStart.call({ error(m) { throw new Error(m) } }))
 t('构建期扫描：未登记版本串 ⇒ 红', !!startErr && /未登记版本形串/.test(startErr.message))
+
+// ═══ ⑩ 3.1b 第三项补钉：可执行锚定 + 真正的「错注」负测 ═══
+// 旧实现只数出现次数（移进注释仍是 1）＋ rendered.includes（仍能找到注入值）⇒ 放行。
+// 新实现要求占位符落在可执行赋值上；注释/其它字符串里的不算。
+console.log('\n[offline — 3.1b 可执行锚定与错注负测]')
+t('锚定正例：真模板的 BUILD/WORKER_VERSION/PRECACHE 都在可执行赋值上',
+  assertSwTemplateAnchors(swSrc) === true)
+
+const misBuildErr = mustThrow(() => runPlugin({
+  template: swSrc.replace(
+    "const BUILD = '__SW_BUILD__'",
+    "// 错注：唯一占位符被移进注释\n// '__SW_BUILD__'\nconst BUILD = ''"
+  )
+}))
+t('错注负测：唯一 BUILD 占位符被移进注释 ⇒ 构建红',
+  !!misBuildErr && /__SW_BUILD__.*(注释|可执行赋值)/.test(misBuildErr.message))
+
+const misWorkerErr = mustThrow(() => runPlugin({
+  template: swSrc.replace(
+    "const WORKER_VERSION = '__SW_WORKER_VERSION__'",
+    "// '__SW_WORKER_VERSION__'\nconst WORKER_VERSION = ''"
+  )
+}))
+t('错注负测：唯一 WORKER_VERSION 占位符被移进注释 ⇒ 构建红',
+  !!misWorkerErr && /__SW_WORKER_VERSION__.*(注释|可执行赋值)/.test(misWorkerErr.message))
+
+const misPrecacheErr = mustThrow(() => runPlugin({
+  template: swSrc.replace(
+    'const PRECACHE = __SW_PRECACHE__',
+    '// __SW_PRECACHE__\nconst PRECACHE = []'
+  )
+}))
+t('错注负测：唯一 PRECACHE 占位符被移进注释 ⇒ 构建红',
+  !!misPrecacheErr && /__SW_PRECACHE__.*(注释|可执行赋值)/.test(misPrecacheErr.message))
+
+const stringOnlyErr = mustThrow(() => runPlugin({
+  template: swSrc.replace(
+    "const BUILD = '__SW_BUILD__'",
+    "const BUILD = ''\nconst NOTE = '__SW_BUILD__'"
+  )
+}))
+t('错注负测：占位符只在普通字符串里、不在赋值上 ⇒ 构建红',
+  !!stringOnlyErr && /__SW_BUILD__.*(不在可执行赋值|不在字符串|注释)/.test(stringOnlyErr.message))
+
+t('直接负测：assertSwTemplateAnchors 对「注释里的唯一占位符」抛',
+  !!mustThrow(() => assertSwTemplateAnchors(swSrc.replace(
+    "const BUILD = '__SW_BUILD__'",
+    "// '__SW_BUILD__'\nconst BUILD = ''"
+  ))))
+
+const buildStartMisErr = mustThrow(() => mrSwPrecache({
+  template: swSrc.replace(
+    "const BUILD = '__SW_BUILD__'",
+    "// '__SW_BUILD__'\nconst BUILD = ''"
+  ),
+  buildId: TEST_BUILD_ID,
+}).buildStart.call({ error(m) { throw new Error(m) } }))
+t('错注负测（buildStart 早失败）：唯一 BUILD 占位符移进注释 ⇒ 构建红',
+  !!buildStartMisErr && /__SW_BUILD__.*(注释|可执行赋值)/.test(buildStartMisErr.message))
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

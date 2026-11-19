@@ -185,7 +185,122 @@ const PUBLIC_SHELL = [
   '/books/book-index.json'
 ]
 
-const SW_TOKENS = ['__SW_BUILD__', '__SW_PRECACHE__', '__SW_WORKER_VERSION__']
+/**
+ * 3.1b 第三项补钉：三个占位符必须落在**可执行赋值语句**上（如 `const BUILD = ...`）。
+ *
+ * 只数「出现次数」＋成品里 `includes(buildId)` 不够：把唯一占位符移进注释时，
+ * 次数仍是 1、成品里也仍能找到注入值 —— 但真正执行的 `const BUILD = ''` 是空的，
+ * SW 一 install 就坏。这里先按「代码 / 字符串 / 注释」逐字符分型，再校验锚点；
+ * 注释或其它字符串里的占位符一律不算。
+ */
+const SW_ANCHORS = [
+  { token: '__SW_BUILD__', target: 'BUILD', quoted: true },
+  { token: '__SW_WORKER_VERSION__', target: 'WORKER_VERSION', quoted: true },
+  { token: '__SW_PRECACHE__', target: 'PRECACHE', quoted: false },
+]
+
+/**
+ * 把源码切成「代码 / 字符串 / 注释」三类（下标与源码一一对应）。
+ * strings 只记完整的字符串字面量：start/end 是引号下标，content* 是内容下标。
+ * 正则字面量按代码处理；本模板里的正则形如 /^\/assets\//，不含 `//` 或 `/*` 的误导。
+ */
+function classifySwSource(src) {
+  const n = src.length
+  const kind = new Array(n).fill('code')
+  const strings = []
+  let i = 0
+  while (i < n) {
+    const c = src[i]
+    const next = i + 1 < n ? src[i + 1] : ''
+    if (c === '/' && next === '/') {
+      const start = i
+      i += 2
+      while (i < n && src[i] !== '\n') i++
+      for (let k = start; k < i; k++) kind[k] = 'comment'
+      continue
+    }
+    if (c === '/' && next === '*') {
+      const start = i
+      i += 2
+      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i++
+      i = Math.min(n, i + 2)
+      for (let k = start; k < i; k++) kind[k] = 'comment'
+      continue
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      const quote = c
+      const start = i
+      i += 1
+      while (i < n) {
+        if (src[i] === '\\') { i += 2; continue }
+        if (src[i] === quote) { i += 1; break }
+        i += 1
+      }
+      const end = Math.min(n - 1, i - 1)
+      for (let k = start; k <= end; k++) kind[k] = (k === start || k === end) ? 'code' : 'string'
+      strings.push({ start, end, contentStart: start + 1, contentEnd: end - 1 })
+      continue
+    }
+    i += 1
+  }
+  return { kind, strings }
+}
+
+/**
+ * 校验三个占位符各恰好 1 次，且落在可执行赋值语句上：
+ *   const BUILD = '__SW_BUILD__'
+ *   const WORKER_VERSION = '__SW_WORKER_VERSION__'
+ *   const PRECACHE = __SW_PRECACHE__
+ * 注释 / 其它字符串里的占位符不算；不满足即 throw。
+ */
+export function assertSwTemplateAnchors(source) {
+  const src = String(source == null ? '' : source)
+  const { kind, strings } = classifySwSource(src)
+  // 注释与字符串内容抹成空格（引号保留）：只留可执行代码骨架，且下标不变。
+  let codeOnly = ''
+  for (let i = 0; i < src.length; i++) codeOnly += kind[i] === 'code' ? src[i] : ' '
+
+  for (const { token, target, quoted } of SW_ANCHORS) {
+    let occ = 0
+    let at = -1
+    for (let from = 0; ;) {
+      const idx = src.indexOf(token, from)
+      if (idx < 0) break
+      occ += 1
+      at = idx
+      from = idx + token.length
+    }
+    if (occ !== 1) {
+      throw new Error(
+        `sw.js 模板的 ${token} 必须恰好出现 1 次（实得 ${occ}），且必须位于可执行赋值 const ${target} = ...（注释/字符串里的不算）`
+      )
+    }
+    if (kind[at] === 'comment') {
+      throw new Error(
+        `sw.js 模板的 ${token} 只出现在注释里：注释/字符串里的占位符不算，必须位于可执行赋值 const ${target} = ...`
+      )
+    }
+    if (quoted) {
+      const span = strings.find((s) => s.contentStart === at && s.contentEnd === at + token.length - 1)
+      if (!span) {
+        throw new Error(`sw.js 模板的 ${token} 不在字符串字面量里（必须写成 const ${target} = '${token}'）`)
+      }
+      const before = codeOnly.slice(0, span.start)
+      if (!new RegExp(`(?:^|[^A-Za-z0-9_$])const\\s+${target}\\s*=\\s*$`).test(before)) {
+        throw new Error(`sw.js 模板的 ${token} 不在可执行赋值语句上（要求 const ${target} = '...'；注释/字符串里的不算）`)
+      }
+    } else {
+      if (kind[at] !== 'code') {
+        throw new Error(`sw.js 模板的 ${token} 被包进了字符串（必须裸写成 const ${target} = ${token}）`)
+      }
+      const before = codeOnly.slice(0, at)
+      if (!new RegExp(`(?:^|[^A-Za-z0-9_$])const\\s+${target}\\s*=\\s*$`).test(before)) {
+        throw new Error(`sw.js 模板的 ${token} 不在可执行赋值语句上（要求 const ${target} = ${token}；注释/字符串里的不算）`)
+      }
+    }
+  }
+  return true
+}
 
 /**
  * 构建期版本守卫的扫描面：模板（注入前）＋ Worker 版本源。两者都只允许出现登记过的版本形串。
@@ -212,6 +327,11 @@ export function mrSwPrecache(opts = {}) {
       const buildId = opts.buildId || resolveBuildId()
       const workerVersion = opts.workerVersion || WORKER_VERSION
       const templateText = opts.template != null ? String(opts.template) : readFileSync(SW_TEMPLATE, 'utf8')
+      try {
+        assertSwTemplateAnchors(templateText)
+      } catch (e) {
+        this.error(e.message)
+      }
       const bad = scanBuildSources(buildId, workerVersion, templateText)
       if (bad.length) {
         this.error(`构建期版本扫描失败（未登记版本形串）：${bad.map((b) => `${b.path}: ${JSON.stringify(b.value)}`).join('；')}`)
@@ -229,11 +349,10 @@ export function mrSwPrecache(opts = {}) {
         else if (out.type === 'asset' && /\.(svg|png|json)$/.test(name)) files.add('/' + name)
       }
       const source = opts.template != null ? String(opts.template) : readFileSync(SW_TEMPLATE, 'utf8')
-      for (const token of SW_TOKENS) {
-        const hits = source.split(token).length - 1
-        if (hits !== 1) {
-          this.error(`sw.js 模板的 ${token} 必须恰好出现 1 次（实得 ${hits}）—— 多了会注错地方（比如注进注释），少了等于没注入`)
-        }
+      try {
+        assertSwTemplateAnchors(source)
+      } catch (e) {
+        this.error(e.message)
       }
       const rendered = source
         .replace('__SW_BUILD__', buildId)
