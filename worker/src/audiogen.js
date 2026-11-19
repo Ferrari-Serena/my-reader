@@ -569,6 +569,8 @@ export const SQL_CAMPAIGN_CANCEL = `UPDATE audio_campaigns SET status = 'cancell
 export const SQL_CAMPAIGN_SET_CHAPTERS = `UPDATE audio_campaigns SET chapters_json = ? WHERE id = ?`
 /** runner 取待办；只取 queued，按创建时间 */
 export const SQL_CAMPAIGN_LIST = `SELECT * FROM audio_campaigns WHERE status = ? ORDER BY created_at ASC LIMIT 10`
+/** 管理面列表口允许的 status（T-20261119-041：加 done/blocked 供控制台只读视图） */
+export const CAMPAIGN_LIST_STATUSES = ['queued', 'running', 'done', 'blocked']
 /** runner 认领：queued → running，原子；返回 changes=0 表示已被别人领走 */
 export const SQL_CAMPAIGN_CLAIM = `UPDATE audio_campaigns SET status = 'running', updated_at = ?
   WHERE id = ? AND status = 'queued'`
@@ -846,7 +848,7 @@ export async function handleAudioCampaignAdmin(request, env) {
   if (url.pathname === '/api/internal/audio/campaigns') {
     if (request.method !== 'GET') return internalJson({ error: 'method not allowed' }, 405)
     const status = url.searchParams.get('status') || 'queued'
-    if (status !== 'queued' && status !== 'running') return internalJson({ error: 'invalid status' }, 400)
+    if (!CAMPAIGN_LIST_STATUSES.includes(status)) return internalJson({ error: 'invalid status' }, 400)
     let rows
     try {
       rows = ((await env.DB.prepare(SQL_CAMPAIGN_LIST).bind(status).all()).results) || []
