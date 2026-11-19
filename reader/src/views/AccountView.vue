@@ -59,6 +59,19 @@
         <div class="sub">分母读服务端上限；清空该书音频只释放空间，不返还额度。</div>
       </div>
 
+      <!-- 阅读统计（UI-23 · 18.1 零成本层；全部从本机已有数据算） -->
+      <div class="sec"><b>阅读统计</b><span></span></div>
+      <div class="blk" v-if="readStats">
+        <div class="krow"><span>生词总量</span><b>{{ readStats.total }} 词</b></div>
+        <div class="krow"><span>本周新增</span><b>{{ readStats.weekNew }} 词</b></div>
+        <div class="krow"><span>连续学习</span><b>{{ readStats.streak }} 天</b></div>
+        <div class="krow"><span>未来 7 天到期</span><b>{{ readStats.due7 }} 张</b></div>
+        <div class="krow"><span>掌握度</span><span>新学 {{ readStats.mastery.new }} · 学习中 {{ readStats.mastery.learning }} · 复习中 {{ readStats.mastery.review }}</span></div>
+        <div class="krow"><span>测验正确率</span><b>{{ readStats.quiz.accuracy }}%（{{ readStats.quiz.attempts }} 题）</b></div>
+        <div class="krow"><span>笔记</span><b>{{ readStats.notes }} 条</b></div>
+        <div class="sub">全部从本机已有数据计算，不上传；每本读到哪里见书架。</div>
+      </div>
+
       <!-- 最近任务 -->
       <div class="sec">
         <b>最近任务</b>
@@ -226,6 +239,7 @@ const restorePassword = ref('')
 const retrying = ref('')
 const retryError = ref('')
 const exportCounts = ref({ notes: 0, cards: 0 })
+const readStats = ref(null)
 const exporting = ref(false)
 const exportError = ref('')
 const lastExport = ref('')
@@ -306,14 +320,66 @@ async function loadAccountData() {
 
 const exportEmpty = computed(() => exportCounts.value.notes + exportCounts.value.cards === 0)
 
+function dayKey(value) {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 18.1 零成本统计：只读本机 vocab + notes，不新增埋点、不上传。 */
+function buildReadStats(vocab, noteRows) {
+  const words = vocab && vocab.words && typeof vocab.words === 'object' ? Object.values(vocab.words) : []
+  const now = Date.now()
+  const weekCutoff = now - 7 * 864e5
+  const dueHorizon = now + 7 * 864e5
+  let weekNew = 0
+  let due7 = 0
+  let attempts = 0
+  let correct = 0
+  const mastery = { new: 0, learning: 0, review: 0 }
+  const days = new Set()
+  for (const e of words) {
+    if (e.addedAt && Date.parse(e.addedAt) >= weekCutoff) weekNew++
+    if (e.srs && e.srs.due && Date.parse(e.srs.due) <= dueHorizon) due7++
+    const st = e.srs ? e.srs.state : undefined
+    if (st === 1) mastery.learning++
+    else if (st === 2 || st === 3) mastery.review++
+    else mastery.new++
+    attempts += (e.quiz && e.quiz.totalAttempts) || 0
+    correct += (e.quiz && e.quiz.totalCorrect) || 0
+    const last = (e.srs && e.srs.last_review) || e.addedAt
+    const k = last ? dayKey(last) : ''
+    if (k) days.add(k)
+  }
+  let streak = 0
+  const cursor = new Date()
+  if (!days.has(dayKey(cursor))) cursor.setDate(cursor.getDate() - 1)
+  for (;;) {
+    if (!days.has(dayKey(cursor))) break
+    streak++
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return {
+    total: words.length,
+    weekNew,
+    streak,
+    due7,
+    mastery,
+    quiz: { attempts, accuracy: attempts ? Math.round(correct / attempts * 100) : 0 },
+    notes: Array.isArray(noteRows) ? noteRows.length : 0,
+  }
+}
+
 async function refreshExportMeta() {
   let vocab = null
   try { vocab = await loadVocabulary() } catch { /* 读不到就按空处理，导出时再报错 */ }
+  const noteRows = notes.all()
   try {
-    exportCounts.value = buildExport({ notes: notes.all(), vocab }).counts
+    exportCounts.value = buildExport({ notes: noteRows, vocab }).counts
   } catch {
     exportCounts.value = { notes: 0, cards: 0 }
   }
+  readStats.value = buildReadStats(vocab, noteRows)
   try { lastExport.value = localStorage.getItem(LAST_EXPORT_KEY) || '' } catch { lastExport.value = '' }
 }
 
