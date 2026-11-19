@@ -85,10 +85,10 @@ function makeEnv({ fetchImpl, versionPayload = OK_VERSION_PAYLOAD } = {}) {
   }
 
   const baseImpl = fetchImpl || (async (url) => new Response('{"net":true}', { status: 200 }))
-  // `/version` 由测试夹具统一供给（3.1b：install 第一步就是握手）；负例通过 versionPayload 控制。
+  // `/api/version` 由测试夹具统一供给（3.1b：install 第一步就是握手）；负例通过 versionPayload 控制。
   const impl = async (url) => {
     calls.fetches.push(url)
-    if (url === ORIGIN + '/version') {
+    if (url === ORIGIN + '/api/version') {
       if (versionPayload === null) throw new Error('offline')
       return new Response(JSON.stringify(versionPayload), { status: 200, headers: { 'content-type': 'application/json' } })
     }
@@ -160,7 +160,7 @@ const ev1 = fire(env1, 'install', mkEvent())
 await settle(ev1)
 const shellName = 'mr-shell-testbuild'
 t('install 建的是「带 BUILD 号」的壳缓存（版本化 ⇒ 换版本不会混用旧壳）', env1.stores.has(shellName))
-t('安装期真的先打了 /version（3.1b 版本握手接线）', env1.calls.fetches.some((u) => u === ORIGIN + '/version'))
+t('安装期真的先打了 /api/version（3.1b 版本握手接线）', env1.calls.fetches.some((u) => u === ORIGIN + '/api/version'))
 t('清单里每条都进了缓存', eq([...env1.stores.get(shellName).keys()].sort(), [ORIGIN + '/assets/index-abc.js', ORIGIN + '/index.html'].sort()))
 t('取壳时带 cache:"reload"（绕开 index.html 的 max-age=600，否则会装到上一版）',
   eq(env1.calls.addCache, ['reload', 'reload']))
@@ -183,7 +183,7 @@ async function installRejectedIn(env) {
 }
 {
   const env = loadSw({ versionPayload: null })
-  t('缺失：/version 不可达 ⇒ install 拒绝', await installRejectedIn(env))
+  t('缺失：/api/version 不可达 ⇒ install 拒绝', await installRejectedIn(env))
   t('…且不建壳缓存（不缓存半套错配的壳）', !env.stores.has(shellName))
 }
 {
@@ -197,12 +197,12 @@ async function installRejectedIn(env) {
 }
 {
   const env = loadSw({ versionPayload: { service: WORKER_SERVICE, version: '2026.11.18.9' } })
-  t('mismatch：Worker /version 与前端期望不一致 ⇒ install 拒绝', await installRejectedIn(env))
+  t('mismatch：Worker /api/version 与前端期望不一致 ⇒ install 拒绝', await installRejectedIn(env))
   t('…且不建壳缓存', !env.stores.has(shellName))
 }
 {
   const env = loadSw({ workerVersion: '2026.11.18.9' })
-  t('错注：SW 里注入的 WORKER_VERSION 与 /version 不一致 ⇒ install 拒绝', await installRejectedIn(env))
+  t('错注：SW 里注入的 WORKER_VERSION 与 /api/version 不一致 ⇒ install 拒绝', await installRejectedIn(env))
 }
 {
   const env = loadSw()

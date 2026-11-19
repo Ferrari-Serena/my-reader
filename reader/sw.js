@@ -31,7 +31,7 @@ const BUILD = '__SW_BUILD__'
 const WORKER_VERSION = '__SW_WORKER_VERSION__'
 const PRECACHE = __SW_PRECACHE__
 
-// 3.1b 修复项 ①：安装期与 Worker `/version` 握手。
+// 3.1b 修复项 ①：安装期与 Worker `/api/version` 握手。
 // 缺失 / 格式错 / mismatch 一律让 install 失败（fail-closed）—— **没有 dev 兜底**。
 // 旧 SW 继续管着页面总比「版本错配的新壳静默接管」强；这条不是可选项。
 const WORKER_VERSION_RE = /^\d{4}\.\d{2}\.\d{2}\.\d+$/
@@ -48,9 +48,9 @@ function judgeWorkerVersion(payload) {
 async function verifyWorkerVersion() {
   let res
   try {
-    res = await fetch(new Request('/version', { cache: 'no-store' }))
+    res = await fetch(new Request('/api/version', { cache: 'no-store' }))
   } catch {
-    throw new Error('WORKER_VERSION_MISSING: /version 不可达')
+    throw new Error('WORKER_VERSION_MISSING: /api/version 不可达')
   }
   let payload = null
   try { payload = await res.json() } catch { payload = null }
