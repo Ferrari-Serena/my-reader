@@ -15,6 +15,14 @@
       <input ref="fileInput" type="file" accept=".json,application/json" style="display:none" @change="doImportBackup" />
     </div>
 
+    <!-- 18.1 本机统计：本周新增＋掌握度分层；只读已有数据，不上传 -->
+    <div class="vocab-stats" v-if="vocabStats">
+      <span>本周新增 <b>{{ vocabStats.weekNew }}</b></span>
+      <span>新学 <b>{{ vocabStats.mastery.new }}</b></span>
+      <span>学习中 <b>{{ vocabStats.mastery.learning }}</b></span>
+      <span>复习中 <b>{{ vocabStats.mastery.review }}</b></span>
+    </div>
+
     <!-- Sync Panel -->
     <Teleport to="body">
       <Transition name="popup">
@@ -163,6 +171,21 @@ import { useTTS } from '../composables/useTTS.js'
 
 const tts = useTTS()
 const vocab = useVocabulary()
+
+const vocabStats = computed(() => {
+  const words = Object.values(vocab.words.value || {})
+  const cutoff = Date.now() - 7 * 864e5
+  let weekNew = 0
+  const mastery = { new: 0, learning: 0, review: 0 }
+  for (const e of words) {
+    if (e.addedAt && Date.parse(e.addedAt) >= cutoff) weekNew++
+    const st = e.srs ? e.srs.state : undefined
+    if (st === 1) mastery.learning++
+    else if (st === 2 || st === 3) mastery.review++
+    else mastery.new++
+  }
+  return { weekNew, mastery }
+})
 vocab.init()
 
 const sync = useSync()
@@ -338,6 +361,16 @@ onUnmounted(() => {
   margin: 0 auto;
   padding: 16px;
 }
+
+.vocab-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 4px 0 12px;
+  font-size: 12px;
+  color: var(--text-secondary, #6e6e73);
+}
+.vocab-stats b { color: var(--text-primary, #1d1d1f); font-weight: 600; }
 
 /* ---- header ---- */
 .vocab-header {
