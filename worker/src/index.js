@@ -20,6 +20,7 @@
  * GET /api/feedback      → 后台只读列表（Bearer = METRICS_TOKEN；未配一律 404）
  * GET /api/feedback/mine → 我提过的（登录按会话／未登录按 ?key= 本机匿名键）
  * GET /health           → { status: 'ok' }
+ * GET /version（/api/version 同义）→ { status, service, version }（3.1b：唯一版本源见 version.js，无 dev 回退）
  * GET /api/metrics      → 只读计数（第 4 步 4.8）；需 Authorization: Bearer <METRICS_TOKEN>，
  *                          未配置 secret 一律 404（见 monitor.js 与 handleMetrics）
  *
@@ -37,6 +38,7 @@ import { handleStagingToken } from './stagingtoken.js'
 import { handlePhraseConfig, handlePhraseResolve, PHRASE_CACHE_TTL_CRON, runPhraseCacheTtl } from './phrase.js'
 import { parseRetractRequest, retractCacheKey } from './phraseAdmin.js'
 import { buildRetractAudit } from './phraseAudit.js'
+import { versionPayload } from './version.js'
 
 // A1 retract endpoint: validate body, retract cache row, write audit log to D1.
 async function sha256Hex(s) {
@@ -320,6 +322,23 @@ async function handleRequest(request, env, url) {
       }
       const operator = (request.headers.get('x-operator') || 'metrics-token').trim().slice(0, 64) || 'metrics-token'
       return await handlePhraseRetract(request, env, cors, operator)
+    }
+
+    // 3.1b 修复项 ①：机器可读版本接口（唯一版本源 = worker/src/version.js）。
+    // 前端 SW 安装期拿它做一致性握手；CI 也用它核对「前端注入的期望值 == Worker 实际版本」。
+    // 不存在 dev / 兜底值：版本源本身就是常量，格式错会让模块加载即抛。
+    if (url.pathname === '/version' || url.pathname === '/api/version') {
+      if (request.method !== 'GET') {
+        return new Response(JSON.stringify({ status: 'invalid', error: 'method not allowed' }), {
+          status: 405,
+          headers: { ...(cors || {}), 'content-type': 'application/json; charset=utf-8', allow: 'GET' },
+        })
+      }
+      const payload = versionPayload()
+      return json(cors, { status: 'ok', ...payload, source: 'worker/src/version.js' }, 200, {
+        'cache-control': 'no-store',
+        'x-worker-version': payload.version,
+      })
     }
 
     if (url.pathname === '/health') {

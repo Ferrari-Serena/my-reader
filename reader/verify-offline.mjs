@@ -13,7 +13,16 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import * as OFF from './src/utils/offline.js'
-import { mrSwPrecache } from './vite.config.js'
+import viteConfig, {
+  mrSwPrecache, resolveBuildId, BUILD_ID_RE, SOURCE_ALLOW, buildSourceAllow,
+  allowedValues, findVersionShapedStrings, scanVersionStrings, assertNoUnregisteredVersions,
+  judgeWorkerPayload, assertVersionConsistency,
+} from './vite.config.js'
+import { WORKER_VERSION, WORKER_SERVICE, versionPayload } from '../worker/src/version.js'
+
+// 3.1b：构建身份没有 dev 回退，测试也必须显式给一个（模拟 CI 的 GITHUB_SHA）。
+const TEST_BUILD_ID = 'abc123def456'
+process.env.MR_BUILD_ID = TEST_BUILD_ID
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -103,7 +112,9 @@ t('注入不报错（占位符各恰好 1 次）', !threw, threw ? threw.message
 t('产出一份 sw.js（asset）', emitted.length === 1 && emitted[0].fileName === 'sw.js' && emitted[0].type === 'asset')
 const src = emitted.length ? String(emitted[0].source) : ''
 t('占位符已全部替换（产物里不再有 __SW_）', !!src && !src.includes('__SW_'))
-t('BUILD 注入的是真版本串，不是占位符字面量', /const BUILD = '[^'"]+'/.test(src) && !src.includes("'__SW_BUILD__'"))
+t('BUILD 注入的是真版本串，不是占位符字面量', src.includes(`const BUILD = '${TEST_BUILD_ID}'`) && !src.includes("'__SW_BUILD__'"))
+t('Worker 版本也注入了（3.1b 安装期握手的期望值）',
+  src.includes(`const WORKER_VERSION = '${WORKER_VERSION}'`) && !src.includes('__SW_WORKER_VERSION__'))
 const m = src.match(/const PRECACHE = (\[[\s\S]*?\n\])/)
 let list = []
 try { list = m ? JSON.parse(m[1]) : [] } catch { list = [] }
@@ -129,6 +140,90 @@ console.log('\n[offline — 接线]')
   t('第二行是「待上传条数」，且用同步那份计数（sync.pending）',
     app.includes('offlinePendingLine') && app.includes('offlinePendingMsg(sync.pending.value)'))
 }
+
+// ═══ ⑥ 3.1b：版本源（无 dev 回退）＋ SOURCE_ALLOW 登记表 ═══
+console.log('\n[offline — 3.1b 版本源与登记表]')
+function mustThrow(fn) {
+  try { const r = fn(); return r === undefined ? null : null } catch (e) { return e }
+}
+t('BUILD_ID：缺 env ⇒ 抛（无 dev 回退）', !!mustThrow(() => resolveBuildId({})))
+t("BUILD_ID：'dev' ⇒ 抛", !!mustThrow(() => resolveBuildId({ MR_BUILD_ID: 'dev' })))
+t('BUILD_ID：非十六进制 ⇒ 抛', !!mustThrow(() => resolveBuildId({ MR_BUILD_ID: 'not-a-sha' })))
+t('BUILD_ID：GITHUB_SHA 取前 12 位并小写', resolveBuildId({ GITHUB_SHA: 'A1B2C3D4E5F6A7B8' }) === 'a1b2c3d4e5f6')
+t('BUILD_ID：显式 MR_BUILD_ID 生效', resolveBuildId({ MR_BUILD_ID: TEST_BUILD_ID }) === TEST_BUILD_ID)
+t('BUILD_ID 形状是 12 位十六进制（收窄以免误杀校验常量）', BUILD_ID_RE.test(TEST_BUILD_ID) && BUILD_ID_RE.test('a'.repeat(12)) && !BUILD_ID_RE.test('a'.repeat(11)) && !BUILD_ID_RE.test('dev'))
+const devCfg = viteConfig({ command: 'serve', mode: 'development' })
+t('dev 身份也是真 12 位 SHA（不是 dev 兜底）', BUILD_ID_RE.test(JSON.parse(devCfg.define.__APP_VERSION__)))
+t('注入的 __APP_VERSION__ 是本测试显式给的 BUILD_ID', JSON.parse(devCfg.define.__APP_VERSION__) === TEST_BUILD_ID)
+const buildCfg = viteConfig({ command: 'build' })
+t('build 配置走严格解析（同为本测试的 BUILD_ID）', JSON.parse(buildCfg.define.__APP_VERSION__) === TEST_BUILD_ID)
+t('前端也注入 Worker 期望版本（CI/运行时握手）', JSON.parse(devCfg.define.__WORKER_VERSION__) === WORKER_VERSION)
+
+const REQUIRED_FIELDS = ['id', 'slot', 'consumer', 'registrant', 'reason']
+t('登记表每条字段写全（身份/注册槽/消费者/登记人/原因）',
+  SOURCE_ALLOW.length >= 2 && SOURCE_ALLOW.every((e) => REQUIRED_FIELDS.every((k) => typeof e[k] === 'string' && e[k].trim().length > 0)))
+const resolvedAllow = buildSourceAllow(TEST_BUILD_ID)
+t('登记表能解析出本次构建的允许值（BUILD_ID + WORKER_VERSION）',
+  resolvedAllow.some((e) => e.kind === 'build-id' && e.value === TEST_BUILD_ID)
+  && resolvedAllow.some((e) => e.kind === 'worker-version' && e.value === WORKER_VERSION))
+t('允许值清单恰好是登记的那两条',
+  JSON.stringify([...allowedValues(TEST_BUILD_ID)].sort()) === JSON.stringify([TEST_BUILD_ID, WORKER_VERSION].sort()))
+
+// ═══ ⑦ 3.1b：扫描器（构建期 / 成品期共用） ═══
+console.log('\n[offline — 3.1b 版本形串扫描]')
+t('登记过的 SHA 形串不报', scanVersionStrings([{ path: 'x.js', text: `const B = '${TEST_BUILD_ID}'` }], [TEST_BUILD_ID, WORKER_VERSION]).length === 0)
+t('登记过的 YYYY.MM.DD.N 不报', scanVersionStrings([{ path: 'x.js', text: `const W = '${WORKER_VERSION}'` }], [TEST_BUILD_ID, WORKER_VERSION]).length === 0)
+const badSha = scanVersionStrings([{ path: 'x.js', text: "const LEAK = 'deadbeefcafe'" }], [TEST_BUILD_ID, WORKER_VERSION])
+t('未登记 SHA 形串 ⇒ 红（并报出值与位置）', badSha.length === 1 && badSha[0].value === 'deadbeefcafe' && badSha[0].path === 'x.js')
+t('未登记 YYYY.MM.DD.N ⇒ 红', scanVersionStrings([{ path: 'x.js', text: "const LEAK = '2025.01.01.9'" }], [TEST_BUILD_ID, WORKER_VERSION]).length === 1)
+t('普通串不误报（缓存名 / 占位符 / 文件名）',
+  findVersionShapedStrings("'mr-runtime-v1' '__SW_BUILD__' '/assets/index-abc.js' 'mr-shell-abc123'").length === 0)
+t('assertNoUnregisteredVersions：违规即 throw', !!mustThrow(() => assertNoUnregisteredVersions([{ path: 'x.js', text: "'2025.01.01.9'" }], [])))
+
+// ═══ ⑧ 3.1b：Worker /version 握手 ═══
+console.log('\n[offline — 3.1b Worker 版本握手]')
+t('握手正例：payload 与期望一致', assertVersionConsistency({ buildId: TEST_BUILD_ID, workerVersion: WORKER_VERSION, workerPayload: versionPayload() }) === true)
+t('握手负例：Worker 版本 mismatch ⇒ throw', /mismatch/.test(String(mustThrow(() => assertVersionConsistency({ buildId: TEST_BUILD_ID, workerVersion: WORKER_VERSION, workerPayload: { service: WORKER_SERVICE, version: '2026.11.18.9' } })))))
+t('握手负例：缺 version 字段 ⇒ throw', /missing/.test(String(mustThrow(() => assertVersionConsistency({ buildId: TEST_BUILD_ID, workerPayload: {} })))))
+t('握手负例：格式错 ⇒ throw', /format/.test(String(mustThrow(() => assertVersionConsistency({ buildId: TEST_BUILD_ID, workerPayload: { version: 'v1.2' } })))))
+t('握手负例：BUILD_ID 格式错 ⇒ throw', !!mustThrow(() => assertVersionConsistency({ buildId: 'dev', workerPayload: versionPayload() })))
+t('judgeWorkerPayload 三类原因可区分',
+  judgeWorkerPayload(null).reason === 'missing'
+  && judgeWorkerPayload({ version: 'v1' }).reason === 'format'
+  && judgeWorkerPayload({ version: '2025.01.01.9' }, WORKER_VERSION).reason === 'mismatch')
+t('WORKER_VERSION 是机器可读的 YYYY.MM.DD.N', /^\d{4}\.\d{2}\.\d{2}\.\d+$/.test(WORKER_VERSION))
+
+// ═══ ⑨ 3.1b：占位符负测（重复 / 漏注 / 错注 / 成品期未登记） ═══
+console.log('\n[offline — 3.1b 占位符与成品期负测]')
+const swSrc = readFileSync(join(__dirname, 'sw.js'), 'utf8')
+function runPlugin({ template = swSrc, buildId = TEST_BUILD_ID, workerVersion = WORKER_VERSION, bundle = {} } = {}) {
+  const emitted = []
+  const ctx = { error(m) { throw new Error(m) }, emitFile(f) { emitted.push(f) } }
+  mrSwPrecache({ template, buildId, workerVersion }).generateBundle.call(ctx, {}, bundle)
+  return emitted
+}
+const pos = runPlugin()
+t('正例：三处占位符全部替换、不留 __SW_',
+  pos.length === 1 && !String(pos[0].source).includes('__SW_') && String(pos[0].source).includes(WORKER_VERSION))
+
+const dupErr = mustThrow(() => runPlugin({ template: swSrc.replace('const BUILD =', "// 错注示范：占位符又写进注释 __SW_BUILD__\nconst BUILD =") }))
+t('重复占位符（写进注释也算）⇒ 构建红', !!dupErr && /__SW_BUILD__.*恰好出现 1 次/.test(dupErr.message))
+const missErr = mustThrow(() => runPlugin({ template: swSrc.replace('const PRECACHE = __SW_PRECACHE__', 'const PRECACHE = []') }))
+t('漏注（清单占位符缺失）⇒ 构建红', !!missErr && /__SW_PRECACHE__.*恰好出现 1 次/.test(missErr.message))
+const missWorkerErr = mustThrow(() => runPlugin({ template: swSrc.replace("const WORKER_VERSION = '__SW_WORKER_VERSION__'", `const WORKER_VERSION = '${WORKER_VERSION}'`) }))
+t('漏注（Worker 版本占位符缺失）⇒ 构建红', !!missWorkerErr && /__SW_WORKER_VERSION__.*恰好出现 1 次/.test(missWorkerErr.message))
+
+const injectErr = mustThrow(() => runPlugin({ template: swSrc + "\nconst LEAK = '2025.01.01.9'\n" }))
+t('错注：模板里混入未登记版本形串 ⇒ 成品期扫描红', !!injectErr && /未登记版本形串/.test(injectErr.message))
+const bundleErr = mustThrow(() => runPlugin({ bundle: { 'assets/app.js': { type: 'chunk', code: "const V='2025.01.01.9'" } } }))
+t('成品期扫描：chunk 里未登记版本串 ⇒ 红', !!bundleErr && /未登记版本形串/.test(bundleErr.message))
+const devErr = mustThrow(() => runPlugin({ buildId: 'dev' }))
+t("BUILD_ID='dev' 注入 ⇒ 构建红", !!devErr && /BUILD_ID 格式错/.test(devErr.message))
+
+const startCtx = { error(m) { throw new Error(m) } }
+t('构建期扫描：干净模板通过', mrSwPrecache({ template: swSrc, buildId: TEST_BUILD_ID }).buildStart.call(startCtx) === undefined)
+const startErr = mustThrow(() => mrSwPrecache({ template: swSrc + "\nconst LEAK='2025.01.01.9'", buildId: TEST_BUILD_ID }).buildStart.call({ error(m) { throw new Error(m) } }))
+t('构建期扫描：未登记版本串 ⇒ 红', !!startErr && /未登记版本形串/.test(startErr.message))
 
 console.log(`\n═══ 结果: ${pass} 通过, ${fail} 失败 ═══`)
 process.exit(fail ? 1 : 0)

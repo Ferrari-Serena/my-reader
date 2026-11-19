@@ -4,7 +4,8 @@
  * 这份文件是**构建期产物**：`vite.config.js` 的 `mr-sw-precache` 插件把
  *   「版本号」→ CI 的 commit 短号（＝壳缓存的版本号）
  *   「清单」  → 产物清单（`index.html` ＋ 所有 hash chunk ＋ 图标/清单/phrases.json）
- * 两处置换掉再写进 `dist/sw.js`。**代码里那两个占位符必须原样留着、且各只出现一次**：
+ *   「Worker 版本」→ `worker/src/version.js` 的 `WORKER_VERSION`（安装期握手用）
+ * 三处置换掉再写进 `dist/sw.js`。**代码里那三个占位符必须原样留着、且各只出现一次**：
  * 少了插件当场报错；多写一处（例如写进本段注释）就会把真值注入到注释里、代码留空 ——
  * SW 一装就崩，而且崩得很难查。这条由 vite 插件与 verify-sw.mjs 两头钉住。
  *
@@ -27,7 +28,40 @@
  */
 
 const BUILD = '__SW_BUILD__'
+const WORKER_VERSION = '__SW_WORKER_VERSION__'
 const PRECACHE = __SW_PRECACHE__
+
+// 3.1b 修复项 ①：安装期与 Worker `/version` 握手。
+// 缺失 / 格式错 / mismatch 一律让 install 失败（fail-closed）—— **没有 dev 兜底**。
+// 旧 SW 继续管着页面总比「版本错配的新壳静默接管」强；这条不是可选项。
+const WORKER_VERSION_RE = /^\d{4}\.\d{2}\.\d{2}\.\d+$/
+
+/** 纯判定，无副作用 —— verify-sw.mjs 可直接用 install 事件喂不同载荷来测三类负例 */
+function judgeWorkerVersion(payload) {
+  if (!payload || typeof payload !== 'object') return { ok: false, reason: 'missing' }
+  if (typeof payload.version !== 'string' || payload.version === '') return { ok: false, reason: 'missing' }
+  if (!WORKER_VERSION_RE.test(payload.version)) return { ok: false, reason: 'format' }
+  if (payload.version !== WORKER_VERSION) return { ok: false, reason: 'mismatch' }
+  return { ok: true, reason: '' }
+}
+
+async function verifyWorkerVersion() {
+  let res
+  try {
+    res = await fetch(new Request('/version', { cache: 'no-store' }))
+  } catch {
+    throw new Error('WORKER_VERSION_MISSING: /version 不可达')
+  }
+  let payload = null
+  try { payload = await res.json() } catch { payload = null }
+  if (!res.ok) payload = null
+  const verdict = judgeWorkerVersion(payload)
+  if (!verdict.ok) {
+    const got = payload && payload.version !== undefined ? String(payload.version) : '（无 version 字段）'
+    throw new Error(`WORKER_VERSION_${verdict.reason.toUpperCase()}: 前端期望 ${WORKER_VERSION}，Worker 回 ${got}`)
+  }
+  return true
+}
 
 const SHELL_PREFIX = 'mr-shell-'
 const SHELL_CACHE = SHELL_PREFIX + BUILD
@@ -82,6 +116,8 @@ async function openCache(name) {
  * 会让 SW 装到上一版的壳，那就等于没更新。
  */
 async function precacheAll() {
+  // 先握手再装壳：版本对不上就整次 install 失败，不缓存半套「错配的壳」。
+  await verifyWorkerVersion()
   const cache = await openCache(SHELL_CACHE)
   if (!cache) return
   await Promise.all(PRECACHE.map((path) =>

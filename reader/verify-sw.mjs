@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import * as SW from './src/utils/swUpdate.js'
+import { WORKER_VERSION, WORKER_SERVICE } from '../worker/src/version.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -38,7 +39,9 @@ function mkRequest(input, init) {
   return new Request(resolved, init)
 }
 
-function makeEnv({ fetchImpl } = {}) {
+const OK_VERSION_PAYLOAD = { service: WORKER_SERVICE, version: WORKER_VERSION }
+
+function makeEnv({ fetchImpl, versionPayload = OK_VERSION_PAYLOAD } = {}) {
   const stores = new Map()   // cacheName -> Map（Map 保插入序，正好当 LRU 用）
   const events = new Map()
   const calls = { skipWaiting: 0, claim: 0, reload: 0, fetches: [], added: [], addCache: [] }
@@ -82,7 +85,15 @@ function makeEnv({ fetchImpl } = {}) {
   }
 
   const baseImpl = fetchImpl || (async (url) => new Response('{"net":true}', { status: 200 }))
-  const impl = async (url) => { calls.fetches.push(url); return baseImpl(url) }
+  // `/version` 由测试夹具统一供给（3.1b：install 第一步就是握手）；负例通过 versionPayload 控制。
+  const impl = async (url) => {
+    calls.fetches.push(url)
+    if (url === ORIGIN + '/version') {
+      if (versionPayload === null) throw new Error('offline')
+      return new Response(JSON.stringify(versionPayload), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return baseImpl(url)
+  }
 
   return {
     stores, events, calls, self: selfMock, caches: cachesMock,
@@ -94,6 +105,7 @@ function loadSw(opts = {}) {
   const env = makeEnv(opts)
   const src = SW_SRC
     .replace('__SW_BUILD__', opts.build || 'testbuild')
+    .replace('__SW_WORKER_VERSION__', opts.workerVersion || WORKER_VERSION)
     .replace('__SW_PRECACHE__', JSON.stringify(opts.precache || ['/index.html', '/assets/index-abc.js']))
   const fn = new Function('self', 'caches', 'fetch', 'Request', 'Response', 'URL', 'console', src)
   fn(env.self, env.caches, env.fetch, mkRequest, Response, URL, console)
@@ -127,6 +139,7 @@ console.log('\n[sw — 模板卫生]')
 const countOf = (s, tok) => s.split(tok).length - 1
 t('占位符「版本号」恰好出现 1 次（多一处就是把真值注进注释、代码留空）', countOf(SW_SRC, '__SW_BUILD__') === 1)
 t('占位符「清单」恰好出现 1 次', countOf(SW_SRC, '__SW_PRECACHE__') === 1)
+t('占位符「Worker 版本」恰好出现 1 次（3.1b：安装期握手用）', countOf(SW_SRC, '__SW_WORKER_VERSION__') === 1)
 function sliceHandler(src, marker) {
   const i = src.indexOf(marker)
   if (i < 0) throw new Error('marker not found: ' + marker)
@@ -147,6 +160,7 @@ const ev1 = fire(env1, 'install', mkEvent())
 await settle(ev1)
 const shellName = 'mr-shell-testbuild'
 t('install 建的是「带 BUILD 号」的壳缓存（版本化 ⇒ 换版本不会混用旧壳）', env1.stores.has(shellName))
+t('安装期真的先打了 /version（3.1b 版本握手接线）', env1.calls.fetches.some((u) => u === ORIGIN + '/version'))
 t('清单里每条都进了缓存', eq([...env1.stores.get(shellName).keys()].sort(), [ORIGIN + '/assets/index-abc.js', ORIGIN + '/index.html'].sort()))
 t('取壳时带 cache:"reload"（绕开 index.html 的 max-age=600，否则会装到上一版）',
   eq(env1.calls.addCache, ['reload', 'reload']))
@@ -158,6 +172,45 @@ let installRejected = false
 await Promise.all(ev2.waits.map((p) => Promise.resolve(p).catch(() => { installRejected = true })))
 t('单条 404 不拖垮整次安装（逐条 add，失败即吞）', !installRejected && env2.calls.added.includes(ORIGIN + '/index.html'))
 t('失败那条确实没进缓存', !env2.stores.get(shellName).has(ORIGIN + '/assets/index-abc.js'))
+
+// ═══ ②-b 3.1b 版本握手：缺失 / 格式错 / mismatch 都必须红（fail-closed）═══
+console.log('\n[sw — 版本握手 fail-closed]')
+async function installRejectedIn(env) {
+  let rejected = false
+  const ev = fire(env, 'install', mkEvent())
+  await Promise.all(ev.waits.map((p) => Promise.resolve(p).catch(() => { rejected = true })))
+  return rejected
+}
+{
+  const env = loadSw({ versionPayload: null })
+  t('缺失：/version 不可达 ⇒ install 拒绝', await installRejectedIn(env))
+  t('…且不建壳缓存（不缓存半套错配的壳）', !env.stores.has(shellName))
+}
+{
+  const env = loadSw({ versionPayload: { service: WORKER_SERVICE, version: 'v1.2' } })
+  t('格式错：version="v1.2" ⇒ install 拒绝', await installRejectedIn(env))
+  t('…且不建壳缓存', !env.stores.has(shellName))
+}
+{
+  const env = loadSw({ versionPayload: { service: WORKER_SERVICE, version: '' } })
+  t('缺失：version 为空串 ⇒ install 拒绝', await installRejectedIn(env))
+}
+{
+  const env = loadSw({ versionPayload: { service: WORKER_SERVICE, version: '2026.11.18.9' } })
+  t('mismatch：Worker /version 与前端期望不一致 ⇒ install 拒绝', await installRejectedIn(env))
+  t('…且不建壳缓存', !env.stores.has(shellName))
+}
+{
+  const env = loadSw({ workerVersion: '2026.11.18.9' })
+  t('错注：SW 里注入的 WORKER_VERSION 与 /version 不一致 ⇒ install 拒绝', await installRejectedIn(env))
+}
+{
+  const env = loadSw()
+  const ev = fire(env, 'install', mkEvent())
+  let ok = true
+  await Promise.all(ev.waits.map((p) => Promise.resolve(p).catch(() => { ok = false })))
+  t('正例：载荷一致 ⇒ install 成功（负例不是因为环境永远拒绝）', ok && env.stores.has(shellName))
+}
 
 // ═══ ③ activate：清旧壳、claim ═══
 console.log('\n[sw — activate / 清旧壳]')

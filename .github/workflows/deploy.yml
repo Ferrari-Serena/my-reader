@@ -64,9 +64,54 @@ jobs:
         env:
           ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
+      # 3.1b 修复项 ①：构建前的版本握手。前端期望的 Worker 版本 = worker/src/version.js，
+      # Worker /version 载荷也是它；缺失/格式错/mismatch 一律红。登记表字段也在这里自检。
+      - name: Version handshake (frontend ↔ worker)
+        working-directory: reader
+        run: |
+          node --input-type=module - <<'EOF'
+          import { resolveBuildId, assertVersionConsistency, SOURCE_ALLOW } from './vite.config.js'
+          import { versionPayload, WORKER_VERSION } from '../worker/src/version.js'
+          const buildId = resolveBuildId()
+          assertVersionConsistency({ buildId, workerVersion: WORKER_VERSION, workerPayload: versionPayload() })
+          for (const e of SOURCE_ALLOW) {
+            for (const k of ['id', 'slot', 'consumer', 'registrant', 'reason']) {
+              if (typeof e[k] !== 'string' || !e[k].trim()) throw new Error('SOURCE_ALLOW 缺字段 ' + k + ' @ ' + e.id)
+            }
+          }
+          console.log('version handshake ok:', JSON.stringify({ buildId, workerVersion: WORKER_VERSION }))
+          EOF
+
       - name: Build
         run: npm run build
         working-directory: reader
+
+      # 3.1b 修复项 ②：成品期扫描。构建插件已扫过一遍；CI 再对 dist 做一次独立核验，
+      # 确保 sw.js 带的是本次 BUILD_ID + Worker 版本，且产物里没有未登记的版本形串。
+      - name: Artifact version scan (dist)
+        working-directory: reader
+        run: |
+          node --input-type=module - <<'EOF'
+          import { readFileSync, readdirSync, statSync } from 'node:fs'
+          import { basename, join } from 'node:path'
+          import { resolveBuildId, scanVersionStrings, allowedValues } from './vite.config.js'
+          import { WORKER_VERSION } from '../worker/src/version.js'
+          const buildId = resolveBuildId()
+          const walk = (d) => readdirSync(d).flatMap((n) => {
+            const p = join(d, n)
+            return statSync(p).isDirectory() ? walk(p) : [p]
+          })
+          const files = walk('dist')
+            .filter((p) => /\.(js|html|css)$/.test(p))
+            .map((p) => ({ path: p, text: readFileSync(p, 'utf8') }))
+          const sw = files.find((f) => basename(f.path) === 'sw.js')
+          if (!sw) throw new Error('dist/sw.js 不存在')
+          if (!sw.text.includes('const BUILD = ' + JSON.stringify(buildId).replace(/"/g, "'"))) throw new Error('dist/sw.js 缺本次 BUILD_ID')
+          if (!sw.text.includes('const WORKER_VERSION = ' + JSON.stringify(WORKER_VERSION).replace(/"/g, "'"))) throw new Error('dist/sw.js 缺 WORKER_VERSION')
+          const bad = scanVersionStrings(files.filter((f) => f !== sw), allowedValues(buildId))
+          if (bad.length) throw new Error('成品期未登记版本形串：' + JSON.stringify(bad))
+          console.log('artifact version scan ok:', JSON.stringify({ buildId, workerVersion: WORKER_VERSION, scanned: files.length }))
+          EOF
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

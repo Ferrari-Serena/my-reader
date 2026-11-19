@@ -2,13 +2,176 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'url'
 import { readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
+import { WORKER_VERSION, WORKER_SERVICE, isWorkerVersion } from '../worker/src/version.js'
 
-// 构建版本号（反馈诊断用）：CI 上取 commit 短号，本机开发回 'dev'。
-// `__APP_VERSION__` 由 vite 在构建时**文本替换** —— 代码里必须用 `typeof` 兜底
-// （裸 node 跑单测时这个标识符不存在，见 utils/feedback.js 的 appVersion）。
-const BUILD_ID = String(process.env.GITHUB_SHA || '').slice(0, 12) || 'dev'
+// ─────────────────────────────────────────────────────────────────────────────
+// 3.1b 修复项 ① / ②：版本只有一个来源，且**没有 dev 回退**
+//
+//   BUILD_ID（前端构建身份）  ← CI 的 GITHUB_SHA（前 12 位），本机必须显式 MR_BUILD_ID。
+//   WORKER_VERSION（后端版本）← worker/src/version.js，构建期 import，同一常量也由 /version 返回。
+//
+// 缺失 / 格式错 / 前后端不一致 ⇒ 构建当场红。曾经的 `|| 'dev'` 已删除：
+// 一个 `dev` 兜底会让「版本对不上」在生产里长得像正常状态，3.1b 第二间验判 FAIL 的正是这个口子。
+// ─────────────────────────────────────────────────────────────────────────────
 
-// 第 14 步 块 A：Service Worker 的壳预缓存清单在**构建期**注入（源码里的两个占位符见 sw.js 头部）。
+/**
+ * 构建身份格式：**恰好 12 位十六进制**（GITHUB_SHA 前 12 位；本机 `git rev-parse --short=12 HEAD`）。
+ * 为什么收窄到 12：扫描器要能在成品里认出「版本形串」，而 7–11 位的短十六进制会撞上
+ * 输入校验常量（"12345678"、"abc12345"）和依赖内部的短 hash（"d0991a0d5"）——那会把构建误杀。
+ * 12 位仍是 git SHA 的合法短形式，且与注入值一一对应。
+ */
+export const BUILD_ID_RE = /^[0-9a-f]{12}$/
+
+/** 机器可读的版本形串形状。只认：12 位构建身份 / 40 位完整 SHA、Worker 的 YYYY.MM.DD.N。 */
+export const VERSION_SHAPES = {
+  sha: /^(?:[0-9a-f]{12}|[0-9a-f]{40})$/,
+  stamp: /^\d{4}\.\d{2}\.\d{2}\.\d+$/,
+}
+
+/**
+ * 构建身份解析。**没有任何回退值**：
+ *   - CI：GITHUB_SHA 必存在，取前 12 位；
+ *   - 本机：必须 `MR_BUILD_ID=$(git rev-parse --short=12 HEAD) npm run build`；
+ *   - 空 / `dev` / 非十六进制 ⇒ throw。
+ */
+export function resolveBuildId(env = process.env) {
+  const raw = String(env.MR_BUILD_ID || env.GITHUB_SHA || '').trim()
+  if (!raw) {
+    throw new Error(
+      "BUILD_ID 缺失：CI 需 GITHUB_SHA，本机构建需显式 MR_BUILD_ID（3.1b 已禁止 'dev' 回退）"
+    )
+  }
+  const id = raw.slice(0, 12).toLowerCase()
+  if (!BUILD_ID_RE.test(id)) {
+    throw new Error(`BUILD_ID 格式错：${JSON.stringify(raw)}（要求 12 位十六进制，不允许 dev/test 之类自由串）`)
+  }
+  return id
+}
+
+/**
+ * dev server 的身份：本机 git HEAD 的 12 位短 SHA（真值，不是 'dev'）。
+ * 生产构建**不走这里** —— `vite build` 必须由 CI/env 显式给（见 resolveBuildId）。
+ * 这样本地 `npm run dev` 不用配环境变量，也不会把 'dev' 这种自由串带进缓存键。
+ */
+export function resolveDevBuildId(env = process.env) {
+  if (env.MR_BUILD_ID || env.GITHUB_SHA) return resolveBuildId(env)
+  let head = ''
+  try { head = execSync('git rev-parse --short=12 HEAD', { encoding: 'utf8' }).trim() } catch {
+    throw new Error('dev 身份无法确定：不在 git 仓库且未提供 MR_BUILD_ID（不提供 dev 兜底）')
+  }
+  return resolveBuildId({ MR_BUILD_ID: head })
+}
+
+/**
+ * SOURCE_ALLOW / 版本登记表（机器可读）。
+ * 每一条都必须写全：身份、注册槽、消费者、登记人、原因。
+ * 构建期与成品期扫描会把所有版本形串拿来对这张表；**没登记的 ⇒ fail-closed**。
+ */
+export const SOURCE_ALLOW = [
+  {
+    id: 'reader-build-id',
+    kind: 'build-id',
+    slot: 'reader/vite.config.js::BUILD_ID → sw.js const BUILD / __APP_VERSION__',
+    valueKind: 'env',
+    value: null,
+    valueFrom: 'MR_BUILD_ID | GITHUB_SHA[:12]',
+    consumer: 'sw.js 壳缓存名（mr-shell-<BUILD>）、utils/feedback.js appVersion、utils/swUpdate.js ?v=',
+    registrant: 'CI（GITHUB_SHA）；本机由执行人显式提供 MR_BUILD_ID',
+    reason: '构建身份只允许这一个来源；无 dev 回退，缺失/格式错即 fail-closed',
+  },
+  {
+    id: 'worker-version',
+    kind: 'worker-version',
+    slot: 'worker/src/version.js::WORKER_VERSION → GET /version / sw.js const WORKER_VERSION',
+    valueKind: 'literal',
+    value: WORKER_VERSION,
+    valueFrom: 'worker/src/version.js',
+    consumer: 'Worker GET /version、GET /api/version；SW 安装期握手；CI 版本握手',
+    registrant: 'worker maintainer（手工 bump，格式 YYYY.MM.DD.N）',
+    reason: '前后端一致性握手的唯一 Worker 版本号；其它位置的版本形串一律视为泄漏',
+  },
+]
+
+/** 把动态的 BUILD_ID 填进登记表，得到本次构建的「允许值」清单 */
+export function buildSourceAllow(buildId) {
+  return SOURCE_ALLOW.map((e) => (e.kind === 'build-id' ? { ...e, value: buildId } : { ...e }))
+}
+
+/** 本次构建允许出现的版本形串（扫描器用） */
+export function allowedValues(buildId, workerVersion = WORKER_VERSION) {
+  return [buildId, workerVersion].filter(Boolean)
+}
+
+const QUOTED_LITERAL = /(['"`])([0-9A-Za-z][0-9A-Za-z._-]{6,63})\1/g
+
+/** 找出文本里所有「版本形」的字符串字面量（引号内的 git 短 SHA / YYYY.MM.DD.N） */
+export function findVersionShapedStrings(text) {
+  const out = []
+  const src = String(text == null ? '' : text)
+  let m
+  QUOTED_LITERAL.lastIndex = 0
+  while ((m = QUOTED_LITERAL.exec(src)) !== null) {
+    const value = m[2]
+    if (VERSION_SHAPES.sha.test(value) || VERSION_SHAPES.stamp.test(value)) out.push(value)
+  }
+  return out
+}
+
+/**
+ * 扫描一组文件：任何版本形串只要不在 allowed 里就返回违规项（空数组＝全登记）。
+ * files: [{ path, text }]
+ */
+export function scanVersionStrings(files, allowed) {
+  const allow = new Set(allowed || [])
+  const bad = []
+  for (const f of files || []) {
+    for (const value of findVersionShapedStrings(f.text)) {
+      if (!allow.has(value)) bad.push({ path: f.path || '', value })
+    }
+  }
+  return bad
+}
+
+/** 与 scanVersionStrings 同义，但违规即 throw（构建/CI 用） */
+export function assertNoUnregisteredVersions(files, allowed, where = '版本扫描') {
+  const bad = scanVersionStrings(files, allowed)
+  if (bad.length) {
+    const list = bad.map((b) => `${b.path ? b.path + ': ' : ''}${JSON.stringify(b.value)}`).join('；')
+    throw new Error(`${where}发现未登记版本形串（fail-closed）：${list}`)
+  }
+  return true
+}
+
+/**
+ * 前端期望值 vs Worker `/version` 载荷的一致校验。
+ * 返回 { ok, reason }，reason ∈ missing | format | mismatch；调用方一律按失败处理。
+ */
+export function judgeWorkerPayload(payload, expected = WORKER_VERSION) {
+  if (!payload || typeof payload !== 'object') return { ok: false, reason: 'missing' }
+  if (typeof payload.version !== 'string' || payload.version === '') return { ok: false, reason: 'missing' }
+  if (!isWorkerVersion(payload.version)) return { ok: false, reason: 'format' }
+  if (payload.version !== expected) return { ok: false, reason: 'mismatch' }
+  return { ok: true, reason: '' }
+}
+
+/** 构建/CI 握手：BUILD_ID 格式、Worker 版本格式、`/version` 载荷一致性，任一不满足即 throw */
+export function assertVersionConsistency({ buildId, workerVersion = WORKER_VERSION, workerPayload }) {
+  if (!BUILD_ID_RE.test(String(buildId || ''))) {
+    throw new Error(`版本握手失败：BUILD_ID 格式错 ${JSON.stringify(buildId)}`)
+  }
+  if (!isWorkerVersion(workerVersion)) {
+    throw new Error(`版本握手失败：期望的 WORKER_VERSION 格式错 ${JSON.stringify(workerVersion)}`)
+  }
+  const verdict = judgeWorkerPayload(workerPayload, workerVersion)
+  if (!verdict.ok) {
+    const shown = workerPayload && workerPayload.version !== undefined ? JSON.stringify(workerPayload.version) : '（无 version 字段）'
+    throw new Error(`版本握手失败：${verdict.reason}（前端期望 ${workerVersion}，Worker /version 回 ${shown}）`)
+  }
+  return true
+}
+
+// 第 14 步 块 A：Service Worker 的壳预缓存清单在**构建期**注入（源码里的三个占位符见 sw.js 头部）。
 // 清单只放「壳」：产物 chunk ＋ 图标/清单 ＋ phrases.json ＋ **书架入口索引**；单本书的 JSON 与音频走运行时按需缓存。
 const SW_TEMPLATE = new URL('./sw.js', import.meta.url)
 const PUBLIC_SHELL = [
@@ -22,49 +185,104 @@ const PUBLIC_SHELL = [
   '/books/book-index.json'
 ]
 
-export function mrSwPrecache() {
+const SW_TOKENS = ['__SW_BUILD__', '__SW_PRECACHE__', '__SW_WORKER_VERSION__']
+
+/**
+ * 构建期版本守卫的扫描面：模板（注入前）＋ Worker 版本源。两者都只允许出现登记过的版本形串。
+ * 注意：sw.js 里的 `'__SW_BUILD__'` 等占位符不是版本形串，不会被误判。
+ */
+function scanBuildSources(buildId, workerVersion, templateText) {
+  const files = [{ path: 'reader/sw.js', text: templateText }]
+  try {
+    files.push({ path: 'worker/src/version.js', text: readFileSync(new URL('../worker/src/version.js', import.meta.url), 'utf8') })
+  } catch { /* 版本源缺失会在 import 阶段就炸，这里不掩盖 */ }
+  return scanVersionStrings(files, allowedValues(buildId, workerVersion))
+}
+
+/**
+ * vite 插件：注入 SW 的三个占位符，并做「构建期 + 成品期」两轮版本扫描。
+ * 选项只给测试用（fixtures 在 D:/Temp/31b-fix）：template 可换成字符串模板。
+ */
+export function mrSwPrecache(opts = {}) {
   return {
     name: 'mr-sw-precache',
     apply: 'build',
     enforce: 'post',
+    buildStart() {
+      const buildId = opts.buildId || resolveBuildId()
+      const workerVersion = opts.workerVersion || WORKER_VERSION
+      const templateText = opts.template != null ? String(opts.template) : readFileSync(SW_TEMPLATE, 'utf8')
+      const bad = scanBuildSources(buildId, workerVersion, templateText)
+      if (bad.length) {
+        this.error(`构建期版本扫描失败（未登记版本形串）：${bad.map((b) => `${b.path}: ${JSON.stringify(b.value)}`).join('；')}`)
+      }
+    },
     generateBundle(_options, bundle) {
+      const buildId = opts.buildId || resolveBuildId()
+      const workerVersion = opts.workerVersion || WORKER_VERSION
+      if (!BUILD_ID_RE.test(buildId)) this.error(`BUILD_ID 格式错：${JSON.stringify(buildId)}（禁止 dev 等自由串）`)
+      if (!isWorkerVersion(workerVersion)) this.error(`WORKER_VERSION 格式错：${JSON.stringify(workerVersion)}`)
+
       const files = new Set(PUBLIC_SHELL)
       for (const [name, out] of Object.entries(bundle)) {
         if (/\.(js|css|html)$/.test(name)) files.add('/' + name)
         else if (out.type === 'asset' && /\.(svg|png|json)$/.test(name)) files.add('/' + name)
       }
-      const source = readFileSync(SW_TEMPLATE, 'utf8')
-      for (const token of ['__SW_BUILD__', '__SW_PRECACHE__']) {
+      const source = opts.template != null ? String(opts.template) : readFileSync(SW_TEMPLATE, 'utf8')
+      for (const token of SW_TOKENS) {
         const hits = source.split(token).length - 1
         if (hits !== 1) {
           this.error(`sw.js 模板的 ${token} 必须恰好出现 1 次（实得 ${hits}）—— 多了会注错地方（比如注进注释），少了等于没注入`)
         }
       }
       const rendered = source
-        .replace('__SW_BUILD__', BUILD_ID)
+        .replace('__SW_BUILD__', buildId)
+        .replace('__SW_WORKER_VERSION__', workerVersion)
         .replace('__SW_PRECACHE__', JSON.stringify([...files].sort(), null, 2))
+      if (rendered.includes('__SW_')) this.error('sw.js 注入后仍残留 __SW_ 占位符（漏注）')
+
+      // 成品期扫描：sw.js 成品 + 本次产出的所有 chunk/asset
+      const artifacts = [{ path: 'sw.js', text: rendered }]
+      for (const [name, out] of Object.entries(bundle)) {
+        if (name === 'sw.js') continue
+        const text = out && (typeof out.source === 'string' ? out.source : out.code)
+        if (typeof text === 'string') artifacts.push({ path: name, text })
+      }
+      const bad = scanVersionStrings(artifacts, allowedValues(buildId, workerVersion))
+      if (bad.length) {
+        this.error(`成品期版本扫描失败（未登记版本形串）：${bad.map((b) => `${b.path}: ${JSON.stringify(b.value)}`).join('；')}`)
+      }
+      // 正例自证：注入的值确实出现在产物里（扫不到 ≠ 通过，可能注入错位了）
+      if (!rendered.includes(buildId)) this.error('成品 sw.js 找不到 BUILD_ID（注入错位）')
+      if (!rendered.includes(workerVersion)) this.error('成品 sw.js 找不到 WORKER_VERSION（注入错位）')
+
       this.emitFile({ type: 'asset', fileName: 'sw.js', source: rendered })
     }
   }
 }
 
-export default defineConfig({
-  plugins: [vue(), mrSwPrecache()],
-  define: {
-    __APP_VERSION__: JSON.stringify(BUILD_ID)
-  },
-  // 自定义域名（my-reader.ferrari11.com）直接部署在根目录；import.meta.env.BASE_URL 自动为 '/'
-  // 旧 GitHub Pages 子路径: 如需恢复 ferari-serena.github.io/my-reader/，改回 '/my-reader/'
-  base: '/',
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
-  },
-  // 本地 dev：/api/* 代理到线上 Worker。应用里用的是同源相对路径，没有这段 dev 下点词/朗读全挂。
-  server: {
-    proxy: {
-      '/api': { target: 'https://my-reader.ferrari11.com', changeOrigin: true }
+export default defineConfig(({ command } = {}) => {
+  const BUILD_ID = command === 'serve' ? resolveDevBuildId() : resolveBuildId()
+  return {
+    plugins: [vue(), mrSwPrecache()],
+    define: {
+      __APP_VERSION__: JSON.stringify(BUILD_ID),
+      // 前端也留一份期望的 Worker 版本，供 SW 安装期握手与 CI 核对
+      __WORKER_VERSION__: JSON.stringify(WORKER_VERSION),
+    },
+    // 自定义域名（my-reader.ferrari11.com）直接部署在根目录；import.meta.env.BASE_URL 自动为 '/'
+    // 旧 GitHub Pages 子路径: 如需恢复 ferari-serena.github.io/my-reader/，改回 '/my-reader/'
+    base: '/',
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url))
+      }
+    },
+    // 本地 dev：/api/* 代理到线上 Worker。应用里用的是同源相对路径，没有这段 dev 下点词/朗读全挂。
+    server: {
+      proxy: {
+        '/api': { target: 'https://my-reader.ferrari11.com', changeOrigin: true }
+      }
     }
   }
 })
