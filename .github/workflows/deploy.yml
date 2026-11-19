@@ -45,6 +45,42 @@ jobs:
         run: npm test
         working-directory: worker
 
+      # A1 retract · pre-merge integration（只跑本地，不 deploy）。
+      # worker/wrangler.toml 是 gitignored 的私有配置，CI checkout 里没有，
+      # 所以这里用 heredoc 现生成一份等价的最小配置：本地 D1 绑定 + dev 用 vars。
+      - name: Write ephemeral wrangler.toml (integration only)
+        working-directory: worker
+        run: |
+          cat > wrangler.toml <<'EOF'
+          name = "my-reader-dict"
+          main = "src/index.js"
+          compatibility_date = "2025-06-01"
+
+          [[d1_databases]]
+          binding = "DB"
+          database_name = "my-reader-dict"
+          database_id = "00000000-0000-4000-8000-000000000000"
+
+          [vars]
+          METRICS_TOKEN = ""
+          PHRASE_CLOUD_DISABLED = "1"
+          EOF
+
+      # 缺 token 不得 skip：先显式拦截（exit 2），再跑 integration。
+      # 脚本自身也会做负测（缺 token exit 2 / 坏 route / 错误期望必须红）。
+      - name: A1 retract integration (local D1, pre-merge)
+        working-directory: worker
+        env:
+          METRICS_TOKEN_TEST: ${{ secrets.METRICS_TOKEN_TEST }}
+          WRANGLER_SEND_METRICS: 'false'
+          CI: 'true'
+        run: |
+          if [ -z "${METRICS_TOKEN_TEST}" ]; then
+            echo 'FAIL: METRICS_TOKEN_TEST 未配置（不跳过，直接红）' >&2
+            exit 2
+          fi
+          node integration-a1-retract.mjs
+
   build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
