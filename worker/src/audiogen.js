@@ -11,6 +11,9 @@
  * 两条都**不含 code**（租户由会话反推 `users.sync_code`）；带 `?code=` → 400。
  * 另有 W11-4 内部转正（service token，不在这里的 /api/gen 前缀下）：
  *   POST /api/internal/audio/promote  staging → 正式 R2／audio_tasks／audio-index；见 handleAudioPromote。
+ * 另有控制台只读配额口（service token；T-20261119-037）：
+ *   GET /api/internal/quota（别名 /api/internal/audio/quota）—— D1 现算的日章／字符＋月书数，
+ *   数字与 quotaLeft／campaignQuotaLeft 同源；见 handleAudioQuota。
  *
  * 合成管线（主路 B · 并块、不插静音）：
  *   取章正文（R2 `books/<code>/<bookId>.json` 的 chapters[].paragraphs[].text）
@@ -67,6 +70,8 @@ export const MAX_CHAPTER_BYTES = 32 * 1024 * 1024
 /** 日配额双闸（D21-d，按账号、按 UTC 日） */
 export const DAILY_CHAPTERS = 5
 export const DAILY_CHARS = 80000
+/** 月配额：每账号每月最多建 3 本整本 campaign（W11-1a） */
+export const CAMPAIGN_BOOKS_PER_MONTH = 3
 /** 单任务最多起跑次数：≥3 不再重试（转 failed） */
 export const MAX_ATTEMPTS = 3
 /** `running` 心跳超此值判死（5 分钟）—— cron invocation 可重叠，靠它回收僵尸任务 */
@@ -109,6 +114,11 @@ export const SQL_TASKS_FOR_BOOK = `SELECT chapter_id, title, char_count, status,
 /** 日配额求和（章数 = 行数；字符 = SUM(char_count)）；[dayStart, dayStart+1d) */
 export const SQL_QUOTA_SUM = `SELECT COUNT(*) AS chapters, COALESCE(SUM(char_count), 0) AS chars
   FROM audio_tasks WHERE code = ? AND created_at >= ? AND created_at < ?`
+/** 控制台只读配额口的账号发现（不带 code 时用）：今天有任务的账号 */
+export const SQL_QUOTA_CODES_TODAY = `SELECT DISTINCT code FROM audio_tasks
+  WHERE created_at >= ? AND created_at < ?`
+/** 控制台只读配额口的账号发现：本月建过 campaign 的账号 */
+export const SQL_QUOTA_CODES_MONTH = `SELECT DISTINCT code FROM audio_campaigns WHERE month = ?`
 /** 永久失败的章可重提：同一行重置为 pending（不新增配额，见文件头） */
 export const SQL_TASK_REQUEUE = `UPDATE audio_tasks SET status = 'pending', attempts = 0,
     error = NULL, started_at = NULL, heartbeat = NULL, updated_at = ?
@@ -596,9 +606,20 @@ export async function campaignQuotaUsed(env, code, month) {
     return 0
   }
 }
+/** 月配额读数（带 `unknown`）。`campaignQuotaLeft` 与内部只读口共用这一份，数字同源。
+ *  读表失败回 `unknown: true`（booksUsed/booksLeft 仍按满额填）：调用方要知道「这是缺，不是 0」。 */
+export async function campaignQuotaState(env, code, month) {
+  try {
+    const row = await env.DB.prepare(SQL_CAMPAIGN_QUOTA).bind(code, month).first()
+    const booksUsed = Number(row && row.books) || 0
+    return { booksUsed, booksLeft: Math.max(0, CAMPAIGN_BOOKS_PER_MONTH - booksUsed), month }
+  } catch (e) {
+    console.error('campaign quota read failed (unknown):', e && e.message)
+    return { booksUsed: 0, booksLeft: CAMPAIGN_BOOKS_PER_MONTH, month, unknown: true }
+  }
+}
 export async function campaignQuotaLeft(env, code, month) {
-  const booksUsed = await campaignQuotaUsed(env, code, month)
-  return { booksUsed, booksLeft: Math.max(0, 3 - booksUsed), month }
+  return campaignQuotaState(env, code, month)
 }
 
 /**
@@ -866,6 +887,78 @@ export async function handleAudioCampaignAdmin(request, env) {
     return internalJson({ error: 'db write failed' }, 500)
   }
   return internalJson({ ok: true, changed: Number(r && r.meta && r.meta.changes) || 0 })
+}
+
+// ── T-20261119-037 · 控制台只读配额口（service token；D1 现算，无写入）──────
+//
+// GET /api/internal/quota（别名 /api/internal/audio/quota）
+//   Authorization: Bearer <INTERNAL_TOKEN>
+//   可选 ?code=XXXXXXXX —— 只回该账号；不带则按 D1 里有今日任务／本月 campaign 的账号逐个回。
+//   数字直接调 quotaLeft／campaignQuotaState（与 /api/gen 的展示、campaign 建单闸同源）。
+//   只读：不写表、不写 R2、不发外部请求。
+
+export const QUOTA_ROUTES = ['/api/internal/quota', '/api/internal/audio/quota']
+const QUOTA_CODE_RE = /^[A-Z0-9]{8}$/
+
+/** 不带 code 时的账号发现；任一查询失败向上抛（由 handler 回 500，不假装 0） */
+async function quotaCodes(env, code, now) {
+  if (code) return [code]
+  const from = dayStart(now)
+  const seen = new Set()
+  const a = await env.DB.prepare(SQL_QUOTA_CODES_TODAY).bind(from, from + 86400000).all()
+  for (const r of (a && a.results) || []) {
+    if (r && QUOTA_CODE_RE.test(String(r.code))) seen.add(String(r.code))
+  }
+  const b = await env.DB.prepare(SQL_QUOTA_CODES_MONTH).bind(campaignMonth(now)).all()
+  for (const r of (b && b.results) || []) {
+    if (r && QUOTA_CODE_RE.test(String(r.code))) seen.add(String(r.code))
+  }
+  return [...seen].sort()
+}
+
+export async function handleAudioQuota(request, env) {
+  const url = new URL(request.url)
+  if (!QUOTA_ROUTES.includes(url.pathname)) return null
+  const auth = request.headers.get('authorization') || ''
+  if (!env.INTERNAL_TOKEN || auth !== 'Bearer ' + env.INTERNAL_TOKEN) {
+    return internalJson({ ok: false, error: 'unauthorized' }, 401)
+  }
+  if (request.method !== 'GET') {
+    return internalJson({ ok: false, error: 'method not allowed' }, 405)
+  }
+  const code = String(url.searchParams.get('code') || '').trim()
+  if (code && !QUOTA_CODE_RE.test(code)) {
+    return internalJson({ ok: false, error: 'invalid code' }, 400)
+  }
+  const now = Date.now()
+  const month = campaignMonth(now)
+  let codes
+  try {
+    codes = await quotaCodes(env, code, now)
+  } catch (e) {
+    console.error('quota codes read failed:', e && e.message)
+    return internalJson({ ok: false, error: 'db read failed' }, 500)
+  }
+  const accounts = []
+  for (const c of codes) {
+    accounts.push({
+      code: c,
+      daily: await quotaLeft(env, c, now),
+      campaign: await campaignQuotaState(env, c, month),
+    })
+  }
+  return internalJson({
+    ok: true,
+    asOf: new Date(now).toISOString(),
+    month,
+    source: 'd1',
+    limits: {
+      chaptersPerDay: limitOf(env.AUDIO_GEN_MAX_CHAPTERS_PER_DAY, DAILY_CHAPTERS),
+      charsPerDay: limitOf(env.AUDIO_GEN_MAX_CHARS_PER_DAY, DAILY_CHARS),
+      campaignBooksPerMonth: CAMPAIGN_BOOKS_PER_MONTH,
+    },
+    accounts,
+  })
 }
 
 export async function handleAudioPromote(request, env) {

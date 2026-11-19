@@ -31,7 +31,7 @@ import { handleBookSync } from './booksync.js'
 import { handleBookAudio } from './bookaudio.js'
 import { handleAuth, purgeDeletedAccounts, sessionUserId } from './authapi.js'
 import { handleFeedback } from './feedback.js'
-import { handleAudioGen, handleAudioPromote, handleAudioCampaignAdmin, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
+import { handleAudioGen, handleAudioPromote, handleAudioCampaignAdmin, handleAudioQuota, runAudioGenTick, TICK_CRON, PURGE_CRON } from './audiogen.js'
 import { handleInputToken } from './inputtoken.js'
 import { handleStagingToken } from './stagingtoken.js'
 import { handlePhraseConfig, handlePhraseResolve, PHRASE_CACHE_TTL_CRON, runPhraseCacheTtl } from './phrase.js'
@@ -247,6 +247,10 @@ async function handleRequest(request, env, url) {
     // 内部 campaign runner 管理面：/api/internal/audio/campaigns…（W11-7）
     const campaignAdminRes = await handleAudioCampaignAdmin(request, env)
     if (campaignAdminRes !== null) return campaignAdminRes
+
+    // 控制台只读配额：/api/internal/quota（别名 /api/internal/audio/quota；T-20261119-037）
+    const quotaRes = await handleAudioQuota(request, env)
+    if (quotaRes !== null) return quotaRes
 
     // 同步端点分发（匹配 /api/sync/*）
     const syncRes = await handleSync(request, env)

@@ -23,11 +23,11 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import {
-  handleAudioGen, handleAudioPromote, handleAudioCampaignAdmin, runAudioGenTick, synthesizeChapter, chunkBlocks, chapterOfBook, chapterCharCount,
+  handleAudioGen, handleAudioPromote, handleAudioCampaignAdmin, handleAudioQuota, campaignQuotaState, runAudioGenTick, synthesizeChapter, chunkBlocks, chapterOfBook, chapterCharCount,
   frameSize, locateFrames, scanFrames, stripBlock, mergeAudioIndex, dayStart,
   ROUTE_PREFIX, TICK_CRON, PURGE_CRON, BLOCK_CHARS, MAX_CHAPTER_CHARS, MAX_CHAPTER_BYTES,
   DAILY_CHAPTERS, DAILY_CHARS, MAX_ATTEMPTS, STALE_MS, K_PER_TICK, CHAPTER_ID_RE,
-  purgeBookTasks, isPendingStatus, TASK_PURGED, SQL_PURGE_BOOK_TASKS, SQL_TASK_REPURGE,
+  purgeBookTasks, isPendingStatus, TASK_PURGED, SQL_PURGE_BOOK_TASKS, SQL_TASK_REPURGE, quotaLeft,
   campaignMonth, campaignQuotaLeft, campaignQuotaUsed, SQL_CAMPAIGN_FOR_BOOK, SQL_CAMPAIGN_INSERT, SQL_CAMPAIGN_CANCEL,
   SQL_CAMPAIGN_BLOCK, SQL_TASK_PROMOTE, SQL_CAMPAIGN_PROMOTE_SET, SQL_CAMPAIGN_SET_CHAPTERS,
 } from './src/audiogen.js'
@@ -1200,6 +1200,82 @@ console.log('\n[audiogen — W11-7 campaign runner 管理面]')
     const worker = (await import('./src/index.js')).default
     const r2 = await worker.fetch(new Request(BASE + '/api/internal/audio/campaigns'), { INTERNAL_TOKEN: 'tok-admin' })
     t('index.js 已接线：admin 无 Bearer → 401（路由不是孤儿）', r2.status === 401)
+  }
+}
+
+console.log('\n[audiogen — T-20261119-037 控制台只读配额口]')
+{
+  const TOK = 'tok-quota'
+  const now = Date.now()
+  const ctx = await newEnv({ withBook: false })
+  ctx.db.exec(CAMPAIGN_SCHEMA)
+  ctx.env.INTERNAL_TOKEN = TOK
+  const insTask = `INSERT INTO audio_tasks
+    (code, book_id, chapter_id, title, char_count, status, attempts, created_at, updated_at)
+    VALUES (?, ?, ?, '', ?, 'done', 0, ?, ?)`
+  ctx.db.prepare(insTask).run(CODE_A, 'b1', 'ch-01', 1000, now, now)
+  ctx.db.prepare(insTask).run(CODE_A, 'b1', 'ch-02', 2000, now, now)
+  ctx.db.prepare(insTask).run(CODE_A, 'b1', 'ch-03', 3000, now - 2 * 86400000, now) // 前天，不算今天
+  ctx.db.prepare(insTask).run(CODE_B, 'b1', 'ch-01', 500, now, now)
+  const month = campaignMonth(now)
+  const insC = ctx.db.prepare(SQL_CAMPAIGN_INSERT)
+  insC.run('cq1', CODE_A, 'b1', month, 'am_michael', 1, now, now)
+  insC.run('cq2', CODE_A, 'b2', month, 'am_michael', 1, now, now)
+  insC.run('cq3', CODE_B, 'b3', month, 'am_michael', 1, now, now)
+  insC.run('cq0', CODE_A, 'b9', campaignMonth(now - 40 * 86400000), 'am_michael', 1, now, now) // 上月不计
+
+  const qreq = (o = {}) => new Request(BASE + (o.path || '/api/internal/quota') + (o.qs || ''), {
+    method: o.method || 'GET',
+    headers: o.auth === false ? {} : { authorization: 'Bearer ' + (o.token || TOK) },
+  })
+  const countOf = () => ({
+    tasks: one(ctx.db, 'SELECT COUNT(*) AS n FROM audio_tasks').n,
+    campaigns: one(ctx.db, 'SELECT COUNT(*) AS n FROM audio_campaigns').n,
+  })
+  const before = countOf()
+
+  let r = await handleAudioQuota(qreq({ auth: false }), ctx.env)
+  t('quota 无 auth → 401', r.status === 401)
+  r = await handleAudioQuota(qreq({ token: 'wrong' }), ctx.env)
+  t('quota 错 token → 401', r.status === 401)
+  r = await handleAudioQuota(qreq({ method: 'POST' }), ctx.env)
+  t('quota POST → 405', r.status === 405)
+  r = await handleAudioQuota(qreq({ qs: '?code=bad' }), ctx.env)
+  t('quota 坏 code → 400', r.status === 400)
+  r = await handleAudioQuota(qreq({ qs: '?code=AAAAAAAA' }), ctx.env)
+  t('quota 显式账号无记录 → 200 且 0 用量', r.status === 200 && (await r.json()).accounts[0].daily.chaptersUsed === 0)
+
+  r = await handleAudioQuota(qreq(), ctx.env)
+  const all = await r.json()
+  t('quota 列账号 → 200 且含 A/B', r.status === 200 && eq(all.accounts.map((a) => a.code), [CODE_A, CODE_B]))
+  t('quota 带限值字段', all.limits && all.limits.chaptersPerDay === DAILY_CHAPTERS && all.limits.campaignBooksPerMonth === 3)
+  const qa = all.accounts.find((a) => a.code === CODE_A)
+  const qb = all.accounts.find((a) => a.code === CODE_B)
+  t('daily 只算今天（A: 2 章 3000 字）', qa.daily.chaptersUsed === 2 && qa.daily.charsUsed === 3000)
+  t('daily 与 quotaLeft 同源', eq(qa.daily, await quotaLeft(ctx.env, CODE_A, now)))
+  t('campaign 只算本月（A: 2/3 本）', qa.campaign.booksUsed === 2 && qa.campaign.booksLeft === 1)
+  t('campaign 与 campaignQuotaLeft 同源', eq(qa.campaign, await campaignQuotaLeft(ctx.env, CODE_A, month)))
+  t('B 账号独立（1 章 / 1 本）', qb.daily.chaptersUsed === 1 && qb.campaign.booksUsed === 1 && qb.campaign.booksLeft === 2)
+
+  r = await handleAudioQuota(qreq({ qs: '?code=' + CODE_A }), ctx.env)
+  const filtered = await r.json()
+  t('quota ?code= 只回一个账号', r.status === 200 && filtered.accounts.length === 1 && filtered.accounts[0].code === CODE_A)
+  r = await handleAudioQuota(qreq({ path: '/api/internal/audio/quota', qs: '?code=' + CODE_B }), ctx.env)
+  t('quota 别名 /api/internal/audio/quota 可用', r.status === 200 && (await r.json()).accounts[0].code === CODE_B)
+  t('quota 只读（前后行数不变）', eq(countOf(), before))
+
+  const broken = { ...ctx.env, DB: { prepare() { throw new Error('boom') } } }
+  r = await handleAudioQuota(qreq(), broken)
+  t('quota D1 读失败（账号发现）→ 500', r.status === 500 && (await r.json()).error === 'db read failed')
+  r = await handleAudioQuota(qreq({ qs: '?code=' + CODE_A }), broken)
+  const unk = await r.json()
+  t('quota D1 读失败（单账号）→ 200 unknown，不假装 0',
+    r.status === 200 && unk.accounts[0].daily.unknown === true && unk.accounts[0].campaign.unknown === true)
+
+  {
+    const worker = (await import('./src/index.js')).default
+    const r2 = await worker.fetch(new Request(BASE + '/api/internal/quota'), { INTERNAL_TOKEN: TOK })
+    t('index.js 已接线：quota 无 Bearer → 401（路由不是孤儿）', r2.status === 401)
   }
 }
 
