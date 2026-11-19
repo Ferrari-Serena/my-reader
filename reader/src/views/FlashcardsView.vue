@@ -35,6 +35,7 @@
       </div>
       <div class="bar"><i :style="{ width: ((currentIdx + 1) / sessionCards.length * 100) + '%' }"></i></div>
       <p class="smeta">本次队列 {{ sessionCards.length }} 张 · 第 {{ currentIdx + 1 }} 张</p>
+      <p class="smeta">连续 <b>{{ streakDays }}</b> 天 · 未来 7 天到期 <b>{{ due7 }}</b> 张</p>
 
       <!-- card -->
       <div class="flash-card-container" @click="flipIfFront">
@@ -252,6 +253,36 @@ const isPhraseCard = computed(() => currentItem.value?.refKind === REF_KIND_PHRA
 
 // 今日进度／队列估算／来源（纯展示，数字都从现有数据算，不编每日目标）
 const todayCount = computed(() => dailyReviewedCount(reviewItems.value))
+
+const streakDays = computed(() => {
+  const days = new Set()
+  for (const e of Object.values(vocab.words.value || {})) {
+    const last = (e.srs && e.srs.last_review) || e.addedAt
+    if (!last) continue
+    const d = new Date(last)
+    if (Number.isNaN(d.getTime())) continue
+    days.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+  }
+  let n = 0
+  const cursor = new Date()
+  const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  if (!days.has(key(cursor))) cursor.setDate(cursor.getDate() - 1)
+  for (;;) {
+    if (!days.has(key(cursor))) break
+    n++
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return n
+})
+
+const due7 = computed(() => {
+  const horizon = Date.now() + 7 * 864e5
+  let n = 0
+  for (const e of Object.values(vocab.words.value || {})) {
+    if (e.srs && e.srs.due && Date.parse(e.srs.due) <= horizon) n++
+  }
+  return n
+})
 const estimate = computed(() => estimateText(sessionCards.value.length))
 const sourceText = computed(() => queueSourceText(reviewItems.value))
 
