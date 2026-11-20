@@ -226,6 +226,9 @@ watch(searchInput, (v) => {
 
 const filterOptions = [
   { value: 'all', label: '全部' },
+  { value: 'due', label: '7 天内到期' },
+  { value: 'learning', label: '学习中' },
+  { value: 'review', label: '复习中' },
   { value: 'SAT', label: 'SAT' },
   { value: 'AP', label: 'AP' }
   // 7.2/7.3 解锁：Due today / Wrong answers
@@ -241,7 +244,14 @@ const chapterOptions = computed(() => {
 
 const filtered = computed(() => {
   let list = Object.values(vocab.words.value)
-  if (filter.value !== 'all') {
+  if (filter.value === 'due') {
+    const horizon = Date.now() + 7 * 864e5
+    list = list.filter(e => e.srs && e.srs.due && Date.parse(e.srs.due) <= horizon)
+  } else if (filter.value === 'learning') {
+    list = list.filter(e => e.srs && e.srs.state === 1)
+  } else if (filter.value === 'review') {
+    list = list.filter(e => e.srs && (e.srs.state === 2 || e.srs.state === 3))
+  } else if (filter.value !== 'all') {
     list = list.filter(e => e.snapshot.level === filter.value)
   }
   if (chapterFilter.value) {
