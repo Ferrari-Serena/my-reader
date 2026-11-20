@@ -60,7 +60,7 @@
       </div>
 
       <!-- 阅读统计（UI-23 · 18.1 零成本层；全部从本机已有数据算） -->
-      <div class="sec"><b>阅读统计</b><span></span></div>
+      <div class="sec"><b>阅读统计（本机）</b><span></span></div>
       <div class="blk" v-if="readStats">
         <div class="krow"><span>生词总量</span><b>{{ readStats.total }} 词</b></div>
         <div class="krow"><span>本周新增</span><b>{{ readStats.weekNew }} 词</b></div>
