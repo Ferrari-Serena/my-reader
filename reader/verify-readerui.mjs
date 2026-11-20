@@ -165,6 +165,30 @@ for (const [i, s] of [
   ['⑥ 离线', "lookupState='offline'：分片未到本机文案，不置「在线查词」"],
 ].entries()) console.log(`  ${s[0]}  ${s[1]}`)
 
+// —— G5-A4 top500 生成器口径（只读源码；本单只提交生成器，不提交 500 条生成物）——
+{
+  const fsMod = await import('node:fs')
+  const genFile = new URL('../generator/build_a4_top500.py', import.meta.url)
+  const genExists = fsMod.existsSync(genFile)
+  if (!genExists) {
+    fail++
+    failures.push('G5-A4 top500 生成器缺失：generator/build_a4_top500.py')
+  } else {
+    const genSrc = fsMod.readFileSync(genFile, 'utf8')
+    const a4Checks = [
+      ['top_n=500 口径', /top_n\D{0,6}500/],
+      ['a4_top500 输出路径', /a4_top500/],
+    ]
+    for (const [name, re] of a4Checks) {
+      if (!re.test(genSrc)) {
+        fail++
+        failures.push(`G5-A4 ${name} 未在生成器中体现`)
+      }
+    }
+  }
+  console.log(`\n[G5-A4] top500 生成器：${genExists ? '存在' : '缺失'}（本单只提交生成器，不提交 500 条生成物）`)
+}
+
 console.log(`\n[结果] 基线 ${pass} 通过 / ${fail} 失败；UI-02 缺口 ${gaps.length} 项。`)
 if (fail) {
   console.log('基线失败：' + failures.join('；'))
