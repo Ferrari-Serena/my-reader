@@ -132,6 +132,7 @@
         <span class="score-big">{{ correctCount }}/{{ questions.length }}</span>
         <span class="score-pct">{{ Math.round(correctCount / questions.length * 100) }}%</span>
         <span class="score-split">正确 {{ correctCount }} · 错误 {{ wrongCount }}</span>
+        <span v-if="vocab.errorPool.value.length" class="score-split">错题池：{{ vocab.errorPool.value.length }} 张</span>
       </div>
       <div class="result-bar">
         <div class="bar-correct" :style="{ width: (correctCount / questions.length * 100) + '%' }"></div>
