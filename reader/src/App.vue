@@ -28,23 +28,37 @@
 
     <nav class="app-tabbar" v-if="showTabbar">
       <router-link to="/books" class="tab-item">
-        <span class="tab-icon">📚</span>
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 0-3 3V4z" />
+          <path d="M5 20a3 3 0 0 1 3-3h9" />
+        </svg>
         <span class="tab-label">书架</span>
       </router-link>
       <router-link to="/vocabulary" class="tab-item">
-        <span class="tab-icon">📝</span>
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 20l4-1 10-10-3-3L5 16l-1 4z" />
+          <path d="M13 6l3 3" />
+        </svg>
         <span class="tab-label">生词本</span>
       </router-link>
       <router-link to="/flashcards" class="tab-item">
-        <span class="tab-icon">🔄</span>
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 12a8 8 0 1 1-2.3-5.7" />
+          <path d="M20 4v5h-5" />
+        </svg>
         <span class="tab-label">复习</span>
       </router-link>
       <router-link to="/quiz" class="tab-item">
-        <span class="tab-icon">✅</span>
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 12l5 5L20 6" />
+        </svg>
         <span class="tab-label">测验</span>
       </router-link>
       <router-link to="/account" class="tab-item">
-        <span class="tab-icon">👤</span>
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="3.2"></circle>
+          <path d="M5 20c1.5-4 4-6 7-6s5.5 2 7 6" />
+        </svg>
         <span class="tab-label">我的</span>
       </router-link>
     </nav>
@@ -194,8 +208,8 @@ function goBack() {
   align-items: center;
   padding: 8px 0;
   padding-bottom: max(8px, env(safe-area-inset-bottom));
-  background: #fff;
-  border-top: 1px solid #999;
+  background: var(--bg, #fff);
+  border-top: 1px solid var(--line, #e5e5e5);
   position: sticky;
   bottom: 0;
   z-index: 100;
@@ -205,25 +219,30 @@ function goBack() {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-decoration: none;
-  color: #666;
-  font-size: 10px;
-  gap: 2px;
+  color: var(--muted, #666);
+  font-size: 12px;
+  gap: 3px;
   padding: 4px 12px;
+  min-height: 44px;
   transition: color 0.2s;
 }
 
 .tab-item.router-link-active {
-  color: #000;
+  color: var(--ink, #000);
   font-weight: 600;
 }
 
 .tab-icon {
-  font-size: 20px;
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 
 .tab-label {
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 14px;
 }
 
 .update-banner {
