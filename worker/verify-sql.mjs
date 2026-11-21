@@ -386,10 +386,11 @@ console.log('\n[0007 与 schema.sql 同形：feedback 的列**与顺序**逐字�
   t('schema.sql 含表 feedback', /CREATE TABLE IF NOT EXISTS feedback\b/.test(schemaSql))
   t('schema.sql 含四个反馈索引',
     ['idx_feedback_created', 'idx_feedback_status', 'idx_feedback_user', 'idx_feedback_anon'].every(n => schemaSql.includes(n)))
+  db.exec(readFileSync(new URL('./migrations/0015_feedback_response_times.sql', import.meta.url), 'utf8'))
   const fresh2 = new DatabaseSync(':memory:')
   fresh2.exec(schemaSql)
   const cols = (d) => d.prepare("SELECT name FROM pragma_table_info('feedback')").all().map(r => r.name).join(',')
-  t('迁移链（0007）与 schema.sql 的 feedback 列同序', cols(db) === cols(fresh2))
+  t('迁移链（0007→0015）与 schema.sql 的 feedback 列同序', cols(db) === cols(fresh2))
 }
 
 console.log('\n[0008 迁移 — 词组云端终判缓存（第 17.5 步）]')

@@ -286,8 +286,30 @@ console.log('\n[⑥ 后台：只读列表 ＋ 改状态]')
     const r = db.prepare('SELECT status, status_at FROM feedback WHERE id = ?').get(id)
     return r.status === 'read' && typeof r.status_at === 'number'
   })())
+  const frAfterRead = db.prepare('SELECT first_response_at FROM feedback WHERE id = ?').get(id).first_response_at
+  const readAtAfterRead = db.prepare('SELECT read_at FROM feedback WHERE id = ?').get(id).read_at
+  t('  new→read 写入 first_response_at（首响可测）', typeof frAfterRead === 'number')
+  t('  new→read 写入 read_at（首读可测）', typeof readAtAfterRead === 'number')
   const p2 = await call(`/api/feedback/${id}`, { method: 'PATCH', headers: { Authorization: `Bearer ${METRICS}` }, body: { status: 'closed' } })
   t('再改一次 → closed（状态可来回改）', p2.status === 200 && (await p2.json()).status === 'closed')
+  t('  read→closed 不覆盖 first_response_at（首响只写一次）',
+    db.prepare('SELECT first_response_at FROM feedback WHERE id = ?').get(id).first_response_at === frAfterRead)
+  t('  read→closed 不覆盖 read_at（首读只写一次）',
+    db.prepare('SELECT read_at FROM feedback WHERE id = ?').get(id).read_at === readAtAfterRead)
+  const fresh = await call('/api/feedback', { method: 'POST', ip: '203.0.113.71', body: { message: '首响 new→new 不该写。' } })
+  t('  新建一条用于 new→new', fresh.status === 201)
+  const freshId = one(db, "SELECT id FROM feedback WHERE message = '首响 new→new 不该写。'").id
+  await call(`/api/feedback/${freshId}`, { method: 'PATCH', headers: { Authorization: `Bearer ${METRICS}` }, body: { status: 'new' } })
+  const freshRow = db.prepare('SELECT first_response_at, read_at FROM feedback WHERE id = ?').get(freshId)
+  t('  new→new 不写 first_response_at（没有离开 new）', freshRow.first_response_at === null)
+  t('  new→new 不写 read_at（没有读过）', freshRow.read_at === null)
+  const closedFresh = await call('/api/feedback', { method: 'POST', ip: '203.0.113.72', body: { message: '首响 new→closed 直接结单。' } })
+  t('  新建一条用于 new→closed', closedFresh.status === 201)
+  const closedId = one(db, "SELECT id FROM feedback WHERE message = '首响 new→closed 直接结单。'").id
+  await call(`/api/feedback/${closedId}`, { method: 'PATCH', headers: { Authorization: `Bearer ${METRICS}` }, body: { status: 'closed' } })
+  const closedRow = db.prepare('SELECT first_response_at, read_at FROM feedback WHERE id = ?').get(closedId)
+  t('  new→closed 写 first_response_at（首响可测）', typeof closedRow.first_response_at === 'number')
+  t('  new→closed 不写 read_at（没有「读」这一步）', closedRow.read_at === null)
   t('未知状态 → 400（白名单外一律不收）',
     (await call(`/api/feedback/${id}`, { method: 'PATCH', headers: { Authorization: `Bearer ${METRICS}` }, body: { status: 'deleted' } })).status === 400)
   t('  状态没被改坏', db.prepare('SELECT status FROM feedback WHERE id = ?').get(id).status === 'closed')
@@ -305,9 +327,11 @@ console.log('\n[形状函数（后台／我的反馈两边都不外泄多余字�
   t('shapeRow 只出 6 个字段（没有 user_id／anon_key／context）',
     eq(Object.keys(r1).sort(), ['category', 'createdAt', 'id', 'message', 'status', 'statusAt'].sort()))
   t('shapeRow：created_at → ISO、空 status_at → null', r1.createdAt === new Date(1000).toISOString() && r1.statusAt === null)
-  const r2 = shapeAdminRow({ id: 2, created_at: 1000, user_id: null, anon_key: 'k', category: 'idea', message: 'm', contact: null, context: 'not-json', status: 'read', status_at: 2000 })
+  const r2 = shapeAdminRow({ id: 2, created_at: 1000, user_id: null, anon_key: 'k', category: 'idea', message: 'm', contact: null, context: 'not-json', status: 'read', status_at: 2000, first_response_at: 2000, read_at: 2000 })
   t('shapeAdminRow：坏 context 当空对象（一行坏数据不打崩整页）', eq(r2.context, {}))
   t('shapeAdminRow：null 的 user_id／contact 出 null（不是 undefined）', r2.userId === null && r2.contact === null)
+  t('shapeAdminRow：firstResponseAt 从 first_response_at 出来', r2.firstResponseAt === new Date(2000).toISOString())
+  t('shapeAdminRow：readAt 从 read_at 出来', r2.readAt === new Date(2000).toISOString())
 }
 
 console.log('\n[⑥ 后台 limit 的硬顶：把库里堆到 250 条再问 —— 只有真夹了顶才会回 200 条]')

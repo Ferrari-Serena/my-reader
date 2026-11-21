@@ -78,15 +78,18 @@ export const SQL_MINE = `SELECT id, created_at, category, message, status, statu
   WHERE (user_id IS NOT NULL AND user_id = ?) OR (anon_key IS NOT NULL AND anon_key = ?)
   ORDER BY created_at DESC, id DESC LIMIT ?`
 
-export const SQL_ADMIN_LIST = `SELECT id, created_at, user_id, anon_key, category, message, contact, context, status, status_at
+export const SQL_ADMIN_LIST = `SELECT id, created_at, user_id, anon_key, category, message, contact, context, status, status_at, first_response_at, read_at
   FROM feedback ORDER BY created_at DESC, id DESC LIMIT ?`
 
-export const SQL_ADMIN_LIST_BY_STATUS = `SELECT id, created_at, user_id, anon_key, category, message, contact, context, status, status_at
+export const SQL_ADMIN_LIST_BY_STATUS = `SELECT id, created_at, user_id, anon_key, category, message, contact, context, status, status_at, first_response_at, read_at
   FROM feedback WHERE status = ? ORDER BY created_at DESC, id DESC LIMIT ?`
 
 export const SQL_STATUS_COUNTS = `SELECT status, COUNT(*) AS n FROM feedback GROUP BY status`
 
-export const SQL_SET_STATUS = `UPDATE feedback SET status = ?, status_at = ? WHERE id = ?`
+export const SQL_SET_STATUS = `UPDATE feedback SET status = ?, status_at = ?,
+  first_response_at = CASE WHEN status = 'new' AND ? <> 'new' AND first_response_at IS NULL THEN ? ELSE first_response_at END,
+  read_at = CASE WHEN status = 'new' AND ? = 'read' AND read_at IS NULL THEN ? ELSE read_at END
+  WHERE id = ?`
 
 function json(cors, data, status = 200, extra = {}) {
   return new Response(JSON.stringify(data), {
@@ -179,6 +182,8 @@ export function shapeAdminRow(row) {
     createdAt: iso(row.created_at),
     userId: row.user_id || null,
     anonKey: row.anon_key || null,
+    firstResponseAt: iso(row.first_response_at),
+    readAt: iso(row.read_at),
     category: row.category,
     message: row.message,
     contact: row.contact || null,
@@ -323,7 +328,7 @@ async function handlePatch(request, env, cors, id) {
   if (!STATUSES.includes(status)) return json(cors, { error: 'bad-status' }, 400)
   const now = Date.now()
   try {
-    const r = await env.DB.prepare(SQL_SET_STATUS).bind(status, now, id).run()
+    const r = await env.DB.prepare(SQL_SET_STATUS).bind(status, now, status, now, status, now, id).run()
     const changes = (r && r.meta && r.meta.changes) || 0
     if (!changes) return json(cors, { error: 'not-found' }, 404)
     return json(cors, { ok: true, id, status, statusAt: iso(now) })

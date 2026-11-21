@@ -154,7 +154,9 @@ CREATE TABLE IF NOT EXISTS feedback (
   contact    TEXT,
   context    TEXT,
   status     TEXT    NOT NULL DEFAULT 'new',
-  status_at  INTEGER
+  status_at  INTEGER,
+  first_response_at INTEGER,
+  read_at    INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_status  ON feedback (status, created_at);
