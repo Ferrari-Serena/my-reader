@@ -54,6 +54,98 @@
   }
 }
 
+/* === Design tokens v1（2026-11-21；只加变量，不改现有样式） === */
+:root {
+  /* spacing */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 48px;
+  --space-11: 64px;
+
+  /* radius */
+  --radius-sm: 3px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+  --radius: 3px;
+  --radius-sheet: 12px;
+
+  /* type scale */
+  --text-display: 28px;
+  --text-title: 20px;
+  --text-section: 12px;
+  --text-body: 14px;
+  --text-small: 13px;
+  --text-meta: 12px;
+  --leading-display: 36px;
+  --leading-title: 28px;
+  --leading-body: 22px;
+
+  /* controls */
+  --control-sm: 32px;
+  --control-md: 40px;
+  --control-lg: 44px;
+  --control-xl: 48px;
+  --page-x: 16px;
+
+  /* elevation */
+  --shadow-none: none;
+  --shadow-sheet: 0 -8px 30px rgba(0, 0, 0, 0.18);
+
+  /* A 系统色（迁移时映射到现有 --*-primary / --border-color；先不定义 --accent，避免改 AccountView 蓝链） */
+  --bg: #ffffff;
+  --surface: #f5f5f5;
+  --ink: #000000;
+  --text: #333333;
+  --muted: #666666;
+  --faint: #767676;
+  --line: #e5e5e5;
+
+  /* C 阅读主题 · 森系纸感 */
+  --paper: #fbf7ec;
+  --paper-surface: #f1ede2;
+  --paper-ink: #1e2a22;
+  --paper-text: #33443a;
+  --paper-muted: #5f6f63;
+  --paper-faint: #7a8a7d;
+  --paper-line: #d8d2c4;
+  --pine: #2f5d46;
+  --pine-hover: #244a37;
+  --moss: #5b7f63;
+  --paper-highlight: #e8e2cf;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e;
+    --surface: #2c2c2e;
+    --ink: #f5f5f7;
+    --text: #e5e5e7;
+    --muted: #a1a1a6;
+    --faint: #8e8e93;
+    --line: #48484a;
+
+    --paper: #1e1a15;
+    --paper-surface: #2a241d;
+    --paper-ink: #eae2d2;
+    --paper-text: #d8cfc0;
+    --paper-muted: #a89c8a;
+    --paper-faint: #8c8173;
+    --paper-line: #4a4136;
+    --pine: #7fa88f;
+    --pine-hover: #9bc0a8;
+    --moss: #8fae97;
+    --paper-highlight: #3a3326;
+  }
+}
+
 /* === Reset & Base === */
 *,
 *::before,
