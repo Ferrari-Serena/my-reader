@@ -22,6 +22,12 @@ bucket_name = "REPLACE_WITH_R2_STAGING_BUCKET_NAME"
 
 # 所需 vars：CF_ACCOUNT_ID / AUDIO_BUCKET / STAGING_BUCKET（见 src/inputtoken.js、src/stagingtoken.js）。
 
+# 邀请码注册门禁（2026-11-21）：
+#   生产置 INVITE_REQUIRED="1"：注册必须带 invite_code；本地/测试不设即关闭。
+#   部署后核对：POST /api/auth/register 无码 -> 400 invite-required。
+[vars]
+INVITE_REQUIRED = "0"
+
 # 所需 secret 在 Cloudflare 控制台（或 `wrangler secret put`）配置。
 # 具体名称见 worker/src 中读取的 env.*；本模板不列真实 secret 名。
 #

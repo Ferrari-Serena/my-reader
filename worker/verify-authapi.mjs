@@ -195,6 +195,50 @@ console.log('\n[authapi — SQL：注销标记 / 撤销 / 到期扫描]')
 
 // ═══ ③ 端到端 ═══════════════════════════════════════════════════════════════
 
+console.log('\n[authapi — 邀请码门禁（INVITE_REQUIRED=1）]')
+{
+  const db = newDb()
+  const env = { DB: d1(db), INVITE_REQUIRED: '1' }
+  const NOW = Date.now()
+  const ORIGIN = 'https://my-reader.ferrari11.com'
+  const SITE = 'https://my-reader.ferrari11.com'
+  const req = (path, { method = 'GET', body, origin = ORIGIN } = {}) => new Request(SITE + path, {
+    method,
+    headers: { ...(origin ? { Origin: origin } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const post = (path, body, opts = {}) => req(path, { method: 'POST', body, ...opts })
+  const bodyOf = async (r) => { try { return await r.json() } catch { return {} } }
+  const invite = (code, over = {}) => db.prepare(`INSERT INTO invite_codes
+    (code, created_at, created_by, note, used_at, used_by_user_id, expires_at, disabled_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(code, NOW, 'test', '', over.used_at ?? null, over.used_by_user_id ?? null, over.expires_at ?? null, over.disabled_at ?? null)
+  const reg = (email, extra = {}) => handleAuth(post('/api/auth/register', { email, password: 'correct horse 1', ...extra }), env)
+
+  t('无码 -> 400 invite-required', await (async () => {
+    const r = await reg('i1@qq.com'); return r.status === 400 && (await bodyOf(r)).error === 'invite-required'
+  })())
+  invite('ABCDEFGH')
+  const ok = await reg('i1@qq.com', { invite_code: 'ABCDEFGH' })
+  t('合法码 -> 201', ok.status === 201)
+  const consumed = db.prepare("SELECT used_at, used_by_user_id FROM invite_codes WHERE code='ABCDEFGH'").get()
+  t('码被消费：used_at 有值、used_by_user_id 对齐账号', typeof consumed.used_at === 'number' && consumed.used_by_user_id === db.prepare(SQL_USER_BY_EMAIL).get('i1@qq.com').id)
+  t('同码二次 -> 400 invite-invalid', (await reg('i2@qq.com', { invite_code: 'ABCDEFGH' })).status === 400)
+  invite('ABCDEFGJ', { used_at: NOW, used_by_user_id: 'u_old' })
+  t('已用 -> 400 invite-invalid', (await reg('i3@qq.com', { invite_code: 'ABCDEFGJ' })).status === 400)
+  invite('ABCDEFGK', { expires_at: NOW - 1 })
+  t('过期 -> 400 invite-invalid', (await reg('i4@qq.com', { invite_code: 'ABCDEFGK' })).status === 400)
+  invite('ABCDEFGL', { disabled_at: NOW })
+  t('禁用 -> 400 invite-invalid', (await reg('i5@qq.com', { invite_code: 'ABCDEFGL' })).status === 400)
+  invite('ABCDEFGM')
+  t('先注册一个占位邮箱', (await reg('taken@qq.com', { invite_code: 'ABCDEFGM' })).status === 201)
+  invite('ABCDEFGN')
+  t('邮箱重复 -> 409，且新码未消费', await (async () => {
+    const r = await reg('taken@qq.com', { invite_code: 'ABCDEFGN' })
+    const row = db.prepare("SELECT used_at FROM invite_codes WHERE code='ABCDEFGN'").get()
+    return r.status === 409 && row.used_at === null
+  })())
+}
+
 console.log('\n[authapi — 端到端：注册 / 登录 / 我是谁 / 登出]')
 {
   const db = newDb()

@@ -70,6 +70,18 @@ export const SQL_INSERT_USER = `INSERT INTO users
    (id, email, password_hash, created_at, updated_at, email_verified_at, sync_code, deleted_at)
    VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)`
 
+export const SQL_INVITE_BY_CODE = `SELECT code, used_at, used_by_user_id, disabled_at, expires_at
+   FROM invite_codes WHERE code = ?`
+
+export const SQL_CLAIM_INVITE = `UPDATE invite_codes
+   SET used_at = ?, used_by_user_id = ?
+   WHERE code = ? AND used_at IS NULL AND disabled_at IS NULL
+     AND (expires_at IS NULL OR expires_at > ?)`
+
+export const SQL_RELEASE_INVITE = `UPDATE invite_codes
+   SET used_at = NULL, used_by_user_id = NULL
+   WHERE code = ? AND used_by_user_id = ?`
+
 /** 登录用：连 password_hash 一起取；**只按归一化邮箱查**（唯一索引就是这个形态） */
 export const SQL_USER_BY_EMAIL = `SELECT id, email, password_hash, email_verified_at, deleted_at, sync_code
    FROM users WHERE email = ?`
@@ -280,10 +292,21 @@ async function handleRegister(request, env, cors) {
   if (existing) return json(cors, { error: 'email-taken' }, 409)
 
   const userId = crypto.randomUUID()
-  const hash = await hashPassword(String(body.password))
+  const inviteRequired = String(env.INVITE_REQUIRED || '') === '1'
+  let rawCode = ''
+  if (inviteRequired) {
+    rawCode = typeof (body && body.invite_code) === 'string' ? body.invite_code.trim().toUpperCase() : ''
+    if (!rawCode) return json(cors, { error: 'invite-required' }, 400)
+    const claim = await env.DB.prepare(SQL_CLAIM_INVITE).bind(nowMs, userId, rawCode, nowMs).run()
+    const claimed = (claim && claim.meta && claim.meta.changes) || 0
+    if (!claimed) return json(cors, { error: 'invite-invalid' }, 400)
+  }
+
   try {
+    const hash = await hashPassword(String(body.password))
     await env.DB.prepare(SQL_INSERT_USER).bind(userId, email, hash, nowMs, nowMs).run()
   } catch (e) {
+    if (inviteRequired) await env.DB.prepare(SQL_RELEASE_INVITE).bind(rawCode, userId).run()
     if (String(e && e.message).includes(UNIQUE_VIOLATION)) return json(cors, { error: 'email-taken' }, 409)
     throw e
   }
