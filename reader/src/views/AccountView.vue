@@ -468,26 +468,26 @@ function forgetPending() {
   max-width: 390px;
   margin: 0 auto;
   padding: 12px 14px 32px;
-  background: #fff;
-  color: #333;
+  background: var(--bg, #fff);
+  color: var(--text, #333);
   font-size: 13px;
   line-height: 1.55;
 }
 .banner {
   margin: 0 0 12px;
   padding: 8px 10px;
-  border: 1px solid #999;
+  border: 1px solid var(--faint, #767676);
   border-radius: 3px;
   font-size: 12px;
 }
-.banner.notice { background: #f5f5f5; color: #333; }
+.banner.notice { background: var(--surface, #f5f5f5); color: var(--text, #333); }
 
 .idrow {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 2px 0 10px;
-  border-bottom: 1px solid #999;
+  border-bottom: 1px solid var(--faint, #767676);
 }
 .av {
   width: 38px;
@@ -496,9 +496,9 @@ function forgetPending() {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #999;
-  background: #f5f5f5;
-  color: #333;
+  border: 1px solid var(--faint, #767676);
+  background: var(--surface, #f5f5f5);
+  color: var(--text, #333);
   font-size: 15px;
   font-weight: 600;
 }
@@ -506,12 +506,12 @@ function forgetPending() {
 .idmain .nm {
   font-size: 12px;
   font-weight: 600;
-  color: #000;
+  color: var(--ink, #000);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.idmain .st { font-size: 10px; color: #666; }
+.idmain .st { font-size: 12px; color: var(--muted, #666); }
 
 .sync-line {
   display: flex;
@@ -520,7 +520,7 @@ function forgetPending() {
   gap: 8px;
   margin: 8px 0 0;
   font-size: 11px;
-  color: #666;
+  color: var(--muted, #666);
 }
 .sync-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -530,16 +530,16 @@ function forgetPending() {
   align-items: baseline;
   margin: 16px 0 6px;
   font-size: 11px;
-  color: #666;
+  color: var(--muted, #666);
 }
-.sec b { font-size: 12px; color: #000; font-weight: 600; }
+.sec b { font-size: 12px; color: var(--ink, #000); font-weight: 600; }
 
 .blk {
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--line, #e5e5e5);
   border-radius: 3px;
   padding: 9px 10px;
 }
-.blk-title { margin: 0 0 6px; font-size: 15px; color: #000; font-weight: 600; }
+.blk-title { margin: 0 0 6px; font-size: 15px; color: var(--ink, #000); font-weight: 600; }
 
 .krow {
   display: flex;
@@ -547,22 +547,22 @@ function forgetPending() {
   align-items: baseline;
   gap: 10px;
   font-size: 11px;
-  color: #333;
+  color: var(--text, #333);
 }
-.krow b { font-size: 12px; color: #000; font-weight: 600; }
-.krow .muted { color: #999; }
+.krow b { font-size: 12px; color: var(--ink, #000); font-weight: 600; }
+.krow .muted { color: var(--faint, #767676); }
 
 .bar {
   height: 4px;
-  background: #e5e5e5;
+  background: var(--line, #e5e5e5);
   border-radius: 2px;
   overflow: hidden;
   margin: 6px 0 8px;
 }
-.bar i { display: block; height: 100%; background: #333; }
+.bar i { display: block; height: 100%; background: var(--text, #333); }
 
-.sub { margin: 4px 0 0; font-size: 10px; color: #666; line-height: 1.6; }
-.sub.warn { color: #333; }
+.sub { margin: 4px 0 0; font-size: 12px; color: var(--muted, #666); line-height: 1.6; }
+.sub.warn { color: var(--text, #333); }
 
 .task {
   display: flex;
@@ -570,14 +570,14 @@ function forgetPending() {
   align-items: flex-start;
   gap: 10px;
   padding: 6px 0;
-  border-bottom: 1px solid #999;
+  border-bottom: 1px solid var(--faint, #767676);
 }
 .task:last-of-type { border-bottom: 0; padding-bottom: 0; }
 .task-main { min-width: 0; }
-.task .tl { font-size: 11px; color: #000; }
-.task .ts { margin-top: 1px; font-size: 10px; color: #666; }
-.task .tr { flex: 0 0 auto; font-size: 10px; color: #333; text-align: right; white-space: nowrap; }
-.task .tr.bad { color: #000; font-weight: 600; }
+.task .tl { font-size: 11px; color: var(--ink, #000); }
+.task .ts { margin-top: 1px; font-size: 12px; color: var(--muted, #666); }
+.task .tr { flex: 0 0 auto; font-size: 12px; color: var(--text, #333); text-align: right; white-space: nowrap; }
+.task .tr.bad { color: var(--danger, #b3261e); font-weight: 600; }
 
 .retry {
   display: flex;
@@ -586,18 +586,18 @@ function forgetPending() {
   gap: 8px;
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px dashed #999;
+  border-top: 1px dashed var(--faint, #767676);
 }
-.retry .rd { font-size: 10px; color: #333; line-height: 1.6; }
+.retry .rd { font-size: 12px; color: var(--text, #333); line-height: 1.6; }
 .rbtn {
   flex: 0 0 auto;
   min-height: 32px;
   padding: 4px 10px;
-  border: 1px solid #333;
-  background: #fff;
-  color: #333;
+  border: 1px solid var(--text, #333);
+  background: var(--bg, #fff);
+  color: var(--text, #333);
   border-radius: 3px;
-  font-size: 10px;
+  font-size: 12px;
   font-family: inherit;
 }
 .rbtn:disabled { opacity: 0.55; }
@@ -605,11 +605,11 @@ function forgetPending() {
 .more {
   margin-top: 16px;
   text-align: center;
-  font-size: 10px;
-  color: #666;
+  font-size: 12px;
+  color: var(--muted, #666);
   line-height: 1.9;
 }
-.more a { color: #333; text-decoration: underline; text-underline-offset: 2px; }
+.more a { color: var(--text, #333); text-decoration: underline; text-underline-offset: 2px; }
 .more span { margin: 0 4px; }
 
 .lnk {
@@ -618,7 +618,7 @@ function forgetPending() {
   background: none;
   font: inherit;
   font-size: 11px;
-  color: #333;
+  color: var(--text, #333);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -627,19 +627,19 @@ function forgetPending() {
 
 .login-prompt .btn { margin-top: 10px; }
 
-.label { display: block; margin: 10px 0 4px; font-size: 11px; color: #000; font-weight: 600; }
+.label { display: block; margin: 10px 0 4px; font-size: 11px; color: var(--ink, #000); font-weight: 600; }
 .input {
   width: 100%;
   box-sizing: border-box;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid #999;
+  border: 1px solid var(--faint, #767676);
   border-radius: 3px;
   font-size: 13px;
-  color: #333;
-  background: #fff;
+  color: var(--text, #333);
+  background: var(--bg, #fff);
 }
-.error { margin: 8px 0 0; font-size: 11px; color: #000; font-weight: 600; }
+.error { margin: 8px 0 0; font-size: 11px; color: var(--danger, #b3261e); font-weight: 600; }
 
 .btn {
   display: flex;
@@ -648,30 +648,30 @@ function forgetPending() {
   align-items: center;
   justify-content: center;
   margin-top: 10px;
-  border: 1px solid #999;
+  border: 1px solid var(--faint, #767676);
   border-radius: 3px;
-  background: #fff;
-  color: #333;
+  background: var(--bg, #fff);
+  color: var(--text, #333);
   font-size: 12px;
   box-sizing: border-box;
   text-decoration: none;
 }
-.btn.primary { background: #000; border-color: #000; color: #fff; }
-.btn.strong { background: #000; border-color: #000; color: #fff; }
-.btn.danger { background: #000; border-color: #000; color: #fff; }
+.btn.primary { background: var(--ink, #000); border-color: var(--ink, #000); color: var(--bg, #fff); }
+.btn.strong { background: var(--ink, #000); border-color: var(--ink, #000); color: var(--bg, #fff); }
+.btn.danger { background: var(--danger, #b3261e); border-color: var(--danger, #b3261e); color: var(--bg, #fff); }
 .btn:disabled { opacity: 0.55; }
 
 .confirm {
   margin-top: 14px;
-  border: 1px solid #999;
-  background: #f5f5f5;
+  border: 1px solid var(--faint, #767676);
+  background: var(--surface, #f5f5f5);
   border-radius: 3px;
   padding: 10px;
 }
-.confirm-text { margin: 0 0 8px; font-size: 12px; color: #000; line-height: 1.6; }
+.confirm-text { margin: 0 0 8px; font-size: 12px; color: var(--ink, #000); line-height: 1.6; }
 .actions { display: flex; gap: 8px; }
 .actions .btn { margin-top: 0; }
-.switch { margin: 10px 0 0; font-size: 11px; color: #666; }
-.lnk { color: var(--accent, #2f6fed); text-decoration: none; }
+.switch { margin: 10px 0 0; font-size: 11px; color: var(--muted, #666); }
+.lnk { color: var(--text, #333); text-decoration: underline; }
 .lnk:hover { text-decoration: underline; }
 </style>
