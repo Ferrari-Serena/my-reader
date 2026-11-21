@@ -209,61 +209,61 @@ onBeforeUnmount(() => {
   max-width: 390px;
   margin: 0 auto;
   padding: 18px 18px 32px;
-  background: #fff;
-  color: #333;
+  background: var(--bg, #fff);
+  color: var(--text, #333);
   min-height: 100%;
   font-size: 13px;
   line-height: 1.6;
 }
 .banner {
-  border: 1px solid #999;
-  background: #f5f5f5;
+  border: 1px solid var(--faint, #767676);
+  background: var(--surface, #f5f5f5);
   border-radius: 3px;
   padding: 8px 10px;
   font-size: 12px;
   margin-bottom: 14px;
 }
-.banner a { color: #333; text-decoration: underline; }
-.brand { font-size: 22px; color: #000; font-weight: 600; margin: 8px 0 4px; }
-.lead { font-size: 12px; color: #666; margin-bottom: 8px; }
-.label { display: block; font-size: 12px; color: #000; font-weight: 600; margin: 14px 0 6px; }
+.banner a { color: var(--text, #333); text-decoration: underline; }
+.brand { font-size: 22px; color: var(--ink, #000); font-weight: 600; margin: 8px 0 4px; }
+.lead { font-size: 12px; color: var(--muted, #666); margin-bottom: 8px; }
+.label { display: block; font-size: 12px; color: var(--ink, #000); font-weight: 600; margin: 14px 0 6px; }
 .input {
   width: 100%;
   min-height: 44px;
-  border: 1px solid #999;
+  border: 1px solid var(--faint, #767676);
   border-radius: 3px;
   padding: 0 12px;
   font-size: 13px;
-  color: #333;
-  background: #fff;
+  color: var(--text, #333);
+  background: var(--bg, #fff);
 }
-.input:focus { outline: 2px solid #000; outline-offset: -1px; }
+.input:focus { outline: 2px solid var(--ink, #000); outline-offset: -1px; }
 .pw-row { display: flex; gap: 8px; align-items: stretch; }
 .pw-row .input { flex: 1; }
 .eye {
   min-width: 52px;
-  border: 1px solid #999;
-  background: #fff;
-  color: #333;
+  border: 1px solid var(--faint, #767676);
+  background: var(--bg, #fff);
+  color: var(--text, #333);
   border-radius: 3px;
   font-size: 12px;
 }
 .meter { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
-.bar { height: 6px; flex: 1; border: 1px solid #999; background: #fff; }
-.bar.on { background: #333; }
-.meter-label { font-size: 11px; color: #333; min-width: 56px; text-align: right; }
-.error { color: #000; font-weight: 600; font-size: 12px; margin-top: 10px; }
-.notice { color: #333; font-size: 12px; margin-top: 10px; }
+.bar { height: 6px; flex: 1; border: 1px solid var(--faint, #767676); background: var(--bg, #fff); }
+.bar.on { background: var(--text, #333); }
+.meter-label { font-size: 12px; color: var(--text, #333); min-width: 56px; text-align: right; }
+.error { color: var(--danger, #b3261e); font-weight: 600; font-size: 12px; margin-top: 10px; }
+.notice { color: var(--text, #333); font-size: 12px; margin-top: 10px; }
 .agree {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   padding: 14px 0 6px;
   font-size: 12px;
-  color: #333;
+  color: var(--text, #333);
 }
-.agree input { width: 18px; height: 18px; margin-top: 1px; }
-.agree a { color: #333; text-decoration: underline; }
+.agree input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--ink, #000); }
+.agree a { color: var(--text, #333); text-decoration: underline; }
 .btn {
   display: flex;
   width: 100%;
@@ -271,21 +271,21 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   margin-top: 16px;
-  border: 1px solid #000;
-  background: #000;
-  color: #fff;
+  border: 1px solid var(--ink, #000);
+  background: var(--ink, #000);
+  color: var(--bg, #fff);
   border-radius: 3px;
   font-size: 13px;
 }
-.btn:disabled { background: #999; border-color: #999; }
-.switch { margin-top: 12px; font-size: 12px; color: #666; text-align: center; }
+.btn:disabled { background: var(--faint, #767676); border-color: var(--faint, #767676); }
+.switch { margin-top: 12px; font-size: 12px; color: var(--muted, #666); text-align: center; }
 .link {
   border: 0;
   background: transparent;
-  color: #333;
+  color: var(--text, #333);
   text-decoration: underline;
   font-size: 12px;
   padding: 0 2px;
 }
-.foot { margin-top: 24px; font-size: 11px; color: #666; text-align: center; }
+.foot { margin-top: 24px; font-size: 12px; color: var(--muted, #666); text-align: center; }
 </style>
