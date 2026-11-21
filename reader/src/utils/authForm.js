@@ -10,6 +10,7 @@
 
 export const PASSWORD_MIN = 8
 export const PASSWORD_MAX = 200
+export const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 /** 邮箱弱校验（前端只挡明显的错，真伪靠验证信）；过 -> null，否则回一句给用户看的话 */
 export function emailProblem(raw) {
@@ -38,6 +39,17 @@ export function retryMinutes(seconds) {
   const s = Number(seconds)
   if (!Number.isFinite(s) || s <= 0) return 0
   return Math.max(1, Math.ceil(s / 60))
+}
+
+/** 邀请码：8 位大写字母数字，字母表去掉 0/O/1/I；过 -> null */
+export function inviteCodeProblem(raw) {
+  const s = typeof raw === 'string' ? raw.trim().toUpperCase() : ''
+  if (!s) return '请输入邀请码。'
+  if (s.length !== 8) return '邀请码应为 8 位大写字母或数字。'
+  for (const ch of s) {
+    if (!INVITE_ALPHABET.includes(ch)) return '邀请码应为 8 位大写字母或数字。'
+  }
+  return null
 }
 
 /**
