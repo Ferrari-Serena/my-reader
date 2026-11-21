@@ -117,8 +117,8 @@ export async function signIn(email, password) {
 }
 
 /** 注册（后端只建号 + 发信，**不下发会话**）；成功回 { ok, data:{ mailSent } } */
-export async function signUp(email, password) {
-  return await post('/register', { email, password })
+export async function signUp(email, password, inviteCode) {
+  return await post('/register', { email, password, ...(inviteCode ? { invite_code: inviteCode } : {}) })
 }
 
 export async function sendReset(email) {

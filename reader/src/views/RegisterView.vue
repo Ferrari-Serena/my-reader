@@ -20,6 +20,15 @@
         placeholder="you@example.com" :disabled="auth.busy.value"
       />
 
+      <template v-if="mode === 'signup'">
+        <label class="label" for="reg-invite">邀请码</label>
+        <input
+          id="reg-invite" v-model.trim="inviteCode" class="input" maxlength="8"
+          autocapitalize="characters" autocomplete="off"
+          placeholder="8 位邀请码" :disabled="auth.busy.value"
+        />
+      </template>
+
       <template v-if="mode !== 'reset'">
         <label class="label" for="reg-pw">密码</label>
         <div class="pw-row">
@@ -80,7 +89,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
-import { emailProblem, passwordProblem } from '../utils/authForm.js'
+import { emailProblem, passwordProblem, inviteCodeProblem } from '../utils/authForm.js'
 import { passwordStrength, commonPasswordProblem, sameAsEmailProblem } from '../utils/authPolicy.js'
 import { markAuthSeen } from '../utils/authGate.js'
 
@@ -91,6 +100,7 @@ const auth = useAuth()
 const mode = ref('signup') // 'signup' | 'signin' | 'reset'
 const email = ref('')
 const password = ref('')
+const inviteCode = ref('')
 const agree = ref(false)
 const showPw = ref(false)
 const error = ref('')
@@ -131,6 +141,7 @@ const canSubmit = computed(() => {
   if (mode.value === 'reset') return true
   if (!password.value) return false
   if (mode.value === 'signup' && !agree.value) return false
+  if (mode.value === 'signup' && inviteCodeProblem(inviteCode.value) !== null) return false
   return true
 })
 
@@ -138,6 +149,7 @@ function setMode(next) {
   mode.value = next
   error.value = ''
   password.value = ''
+  inviteCode.value = ''
   auth.clearMessages()
 }
 
@@ -163,7 +175,10 @@ async function submit() {
     const cp = commonPasswordProblem(password.value) || sameAsEmailProblem(email.value, password.value)
     if (cp) { error.value = cp; return }
 
-    const created = await auth.signUp(email.value, password.value)
+    const ip = inviteCodeProblem(inviteCode.value)
+    if (ip) { error.value = ip; return }
+
+    const created = await auth.signUp(email.value, password.value, inviteCode.value)
     if (!created.ok) { error.value = auth.error.value || '创建失败，请稍后再试。'; return }
 
     const signed = await auth.signIn(email.value, password.value)

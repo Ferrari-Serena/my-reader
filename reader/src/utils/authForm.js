@@ -67,6 +67,8 @@ export function authErrorMessage(status, payload) {
       : '密码至少 ' + PASSWORD_MIN + ' 位。'
   }
   if (code === 'email-taken') return '这个邮箱已经注册过了，直接登录就行。'
+  if (code === 'invite-required') return '请输入邀请码。'
+  if (code === 'invite-invalid') return '邀请码无效或已使用。'
   if (code === 'invalid-credentials') return '邮箱或密码不对。'
   if (code === 'too-many-attempts' || status === 429) {
     const mins = retryMinutes(data.retryAfter)
