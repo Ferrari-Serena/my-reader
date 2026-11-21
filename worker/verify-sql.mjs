@@ -393,6 +393,20 @@ console.log('\n[0007 与 schema.sql 同形：feedback 的列**与顺序**逐字�
   t('迁移链（0007→0015）与 schema.sql 的 feedback 列同序', cols(db) === cols(fresh2))
 }
 
+console.log('\n[0016 迁移 — 邀请码表（2026-11-21）]')
+{
+  db.exec(readFileSync(new URL('./migrations/0016_invite_codes.sql', import.meta.url), 'utf8'))
+  const hasTable = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name=?").get(n).n === 1
+  const cols = db.prepare("SELECT name FROM pragma_table_info('invite_codes')").all().map(r => r.name)
+  t('invite_codes 建出', hasTable('invite_codes'))
+  t('列齐全且顺序固定', JSON.stringify(cols) === JSON.stringify(['code', 'created_at', 'created_by', 'note', 'used_at', 'used_by_user_id', 'expires_at', 'disabled_at']))
+  t('code 是主键', db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('invite_codes') WHERE name='code' AND pk=1").get().n === 1)
+  t('0016 幂等：重复执行不报错', (() => {
+    try { db.exec(readFileSync(new URL('./migrations/0016_invite_codes.sql', import.meta.url), 'utf8')); return true }
+    catch { return false }
+  })())
+}
+
 console.log('\n[0008 迁移 — 词组云端终判缓存（第 17.5 步）]')
 {
   const hasTable = (n) => db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name=?").get(n).n === 1
@@ -586,8 +600,8 @@ console.log('\n[schema.sql 单独建库（权威源：空库直接建出最终�
   let ok = true
   try { fresh.exec(schemaSql) } catch (e) { ok = false; console.log('   ', e.message) }
   t('schema.sql 能在空库上跑通', ok)
-  t('schema.sql 建出 13 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表 + audio_tasks + feedback + phrase_cloud_cache + phrase_rate_events + metric_counters）',
-    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 13)
+  t('schema.sql 建出 14 张表（dict_cache/sync_data/sync_progress/rate_limit_events + 账号四表 + audio_tasks + feedback + invite_codes + phrase_cloud_cache + phrase_rate_events + metric_counters）',
+    ok && fresh.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n === 14)
   t('schema.sql 幂等：重复执行不报错', ok && (() => {
     try { fresh.exec(schemaSql); return true } catch { return false }
   })())

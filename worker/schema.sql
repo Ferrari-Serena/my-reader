@@ -163,6 +163,19 @@ CREATE INDEX IF NOT EXISTS idx_feedback_status  ON feedback (status, created_at)
 CREATE INDEX IF NOT EXISTS idx_feedback_user    ON feedback (user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_anon    ON feedback (anon_key, created_at);
 
+-- ── 邀请码注册门禁（2026-11-21；增量迁移：migrations/0016_invite_codes.sql）──
+CREATE TABLE IF NOT EXISTS invite_codes (
+  code            TEXT PRIMARY KEY,
+  created_at      INTEGER NOT NULL,
+  created_by      TEXT,
+  note            TEXT,
+  used_at         INTEGER,
+  used_by_user_id TEXT,
+  expires_at      INTEGER,
+  disabled_at     INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_invite_codes_created ON invite_codes (created_at);
+
 -- ── 词组运行时云端终判缓存（第 17.5 步；增量迁移：migrations/0008_phrase_cloud.sql）──
 -- 只存「SHA-256 摘要键 → 义项 rank」；请求句子不落 D1，BYO 的键按 user 隔离。
 CREATE TABLE IF NOT EXISTS phrase_cloud_cache (
